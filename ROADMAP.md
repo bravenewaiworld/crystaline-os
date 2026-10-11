@@ -28,6 +28,7 @@ Audio, WiFi/Bluetooth and power tuning fit in alongside.
 | SD card | Fastest mode (UHS SDR104, 150 MHz, 1.8 V signalling), as stock; survives deep sleep |
 | USB | Device mode only (adb and a network link to a PC), forced on |
 | Power chip voltage outputs | Correct |
+| Thermal limits | As stock: CPU slows from 58/63 °C, shuts down at 90 °C (shutdown not tested) |
 
 ## Hardware: missing
 
@@ -42,8 +43,7 @@ Roughly by impact on the goal.
 | Audio | Working: speaker and headphones, jack switches between them, amplifiers off when idle, volume controls in the standard direction. To do: the frontend's volume (one level mapped onto the codec's controls; separate levels for speaker and headphones) | Polish |
 | Rumble | Working: standard force feedback (FF_RUMBLE), strength as motor voltage (2.0–3.3 V), forwarded from the virtual gamepad so games can use it; motor supply off when idle | — |
 | LEDs | Working: 14 LEDs (top bar 0–7, F2, F1, under L1, L2, R2, R1), correct colours, off in sleep and restored after. To do: zone names and effects for the frontend | Polish |
-| USB cable detection | Can't tell charger, PC and host mode apart; top USB-A port untested | Charging, PC transfer |
-| Thermal limits | Not verified on our kernel | Performance, safety |
+| USB cable detection | Can't tell charger, PC and host mode apart; top USB-C port (host only) untested | Charging, PC transfer |
 | Internal storage | Not visible when booting from the SD card | Installing to internal storage |
 
 ## Beyond the kernel
