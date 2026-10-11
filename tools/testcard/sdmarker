@@ -17,14 +17,10 @@ part_by_name() {
 }
 
 # Our kernel lacks TrimUI's led_anim driver, so there we use the standard LED interface (one
-# entry per colour of each of the 23 LEDs, brightness 0-255) and switch on the LEDs' 5 V
-# supply (PD11 = GPIO 107; Allwinner GPIO number = port index * 32 + pin, D = 3) ourselves, since TrimUI's UI startup isn't run with our kernel.
+# entry per colour of each LED, brightness 0-255); the kernel switches on the LEDs' 5 V supply.
 # Under TrimUI's kernel, led_anim zones are: lr = left/right LEDs, m = top bar, f1/f2 = front.
 leds_red() {
 	if [ ! -d /sys/class/led_anim ]; then
-		[ -d /sys/class/gpio/gpio107 ] || echo 107 >/sys/class/gpio/export
-		echo out >/sys/class/gpio/gpio107/direction
-		echo 1 >/sys/class/gpio/gpio107/value
 		# Red channel of each LED (sunxi_led<N>r); 64 of 255 is dim but visible.
 		for f in /sys/class/leds/sunxi_led*r/brightness; do echo 64 >"$f"; done
 		return
