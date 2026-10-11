@@ -39,7 +39,7 @@ Roughly by impact on the goal.
 | Sleep | Deep sleep works (through Allwinner's firmware, as stock's kernel is configured); power button and alarm wake. To do: measure how deep (overnight drain test), check every device after resume | Battery life |
 | Power tuning | Voltage regulators stuck in their least efficient mode; unused clocks left running; rumble, speaker amp and USB-A power always on; CPUs never reach their deepest idle state | Battery life |
 | WiFi and Bluetooth (XR829) | WiFi works (2.4 GHz only; connects from a config on the SD card; SSH and WebDAV file transfer over it). Bluetooth and Bluetooth audio untested | Bluetooth headphones |
-| Audio | Sound card appears; playback, volume, headphone detection and the speaker on/off switch are untested or missing | Core |
+| Audio | Working: speaker and headphones, jack switches between them, amplifiers off when idle, volume controls in the standard direction. To do: the frontend's volume (one level mapped onto the codec's controls; separate levels for speaker and headphones) | Polish |
 | Rumble | Needs the standard rumble interface (on/off pin plus a strength voltage) | Polish |
 | LEDs | Working: 14 LEDs (top bar 0–7, F2, F1, under L1, L2, R2, R1), correct colours, off in sleep and restored after. To do: zone names and effects for the frontend | Polish |
 | USB cable detection | Can't tell charger, PC and host mode apart; top USB-A port untested | Charging, PC transfer |
