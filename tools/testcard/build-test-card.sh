@@ -101,6 +101,10 @@ if [ -n "$KBUILD" ]; then
 		# (runtrimui) and start our placeholder frontend instead.
 		echo "rm /etc/rc.d/S99runtrimui"
 		service sdcard
+		# WiFi (see wifi), replacing the stock WiFi start-up, which runs before the driver is
+		# loaded and uses a configuration under /etc.
+		echo "rm /etc/rc.d/S96wpa_supplicant"
+		service wifi
 		put "$ROOT/build/frontend/status" /usr/bin/status 755
 		service frontend
 		put "$HERE/sdinit" /sbin/sdinit 755     # run via init= below

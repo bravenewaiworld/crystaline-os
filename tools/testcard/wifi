@@ -1,0 +1,31 @@
+#!/bin/sh /etc/rc.common
+# WiFi on test cards running our kernel: loads the XR829 driver and, if the user-data partition
+# (see sdcard) has a wpa_supplicant.conf, connects with it and gets an address by DHCP.
+# The file is in wpa_supplicant's standard format, e.g.
+#   network={
+#       ssid="MyNetwork"
+#       psk="password"
+#   }
+# The XR829 is 2.4 GHz only. procd, OpenWrt's service supervisor, restarts both programs if they
+# exit (e.g. wpa_supplicant started before the driver had created wlan0).
+START=95
+USE_PROCD=1
+CONF=/mnt/SDCARD/wpa_supplicant.conf
+
+start_service() {
+	for m in xr829_mac xr829_core xr829_wlan; do
+		grep -q "^$m " /proc/modules || insmod /lib/modules/$(uname -r)/$m.ko
+	done
+	[ -f $CONF ] || return 0
+
+	procd_open_instance wpa_supplicant
+	procd_set_param command wpa_supplicant -i wlan0 -D nl80211 -c $CONF
+	procd_set_param stderr 1
+	procd_set_param respawn
+	procd_close_instance
+
+	procd_open_instance dhcp
+	procd_set_param command udhcpc -f -i wlan0	# -f: stay in the foreground, under procd
+	procd_set_param respawn
+	procd_close_instance
+}
