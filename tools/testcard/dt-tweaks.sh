@@ -6,16 +6,11 @@
 set -eu
 DTB=$1
 REGS=/soc@03000000/s_twi@0x07081400/pmu@34/regulators@0   # power-management chip's rails
-SD=/soc@03000000/sdmmc@04020000                           # SD card controller
 
 # Keep the panel powered. Its rails (CLDO1, CLDO4) are switched by TrimUI's panel driver, which
 # our kernel lacks, so Linux would cut them as unused and the screen would go blank.
 fdtput "$DTB" $REGS/cldo1 regulator-always-on
 fdtput "$DTB" $REGS/cldo4 regulator-always-on
-
-# SD card: no UHS modes (1.8 V signalling). Our SD driver can't switch the card's signalling
-# rails correctly, and with UHS enabled it never finishes initialising the card.
-fdtput -d "$DTB" $SD sd-uhs-sdr50 sd-uhs-ddr50 sd-uhs-sdr104
 
 # CPU voltage regulator (TCS4838 at I2C 0x41): register-compatible with the Silergy SYR827, so
 # use the standard fan53555 driver. TrimUI's node describes the chip as two child regulators

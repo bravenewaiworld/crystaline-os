@@ -25,7 +25,7 @@ Audio, WiFi/Bluetooth and power tuning fit in alongside.
 | Display | Panel, backlight, panel off/on |
 | GPU | TrimUI's closed driver (v1.19), rebuilt from source; 60 fps, vsync-locked |
 | Buttons, FN switch, power key | Standard input devices; `padbridge` presents them as the usual gamepad |
-| SD card | Works, but at 50 MHz (stock: 150 MHz) |
+| SD card | Fastest mode (UHS SDR104, 150 MHz, 1.8 V signalling), as stock; survives deep sleep |
 | USB | Device mode only (adb and a network link to a PC), forced on |
 | Power chip voltage outputs | Correct |
 
@@ -43,7 +43,6 @@ Roughly by impact on the goal.
 | Rumble | Working: standard force feedback (FF_RUMBLE), strength as motor voltage (2.0–3.3 V), forwarded from the virtual gamepad so games can use it; motor supply off when idle | — |
 | LEDs | Working: 14 LEDs (top bar 0–7, F2, F1, under L1, L2, R2, R1), correct colours, off in sleep and restored after. To do: zone names and effects for the frontend | Polish |
 | USB cable detection | Can't tell charger, PC and host mode apart; top USB-A port untested | Charging, PC transfer |
-| SD card fast mode | Card runs at a third of stock speed | Load times |
 | Thermal limits | Not verified on our kernel | Performance, safety |
 | Internal storage | Not visible when booting from the SD card | Installing to internal storage |
 

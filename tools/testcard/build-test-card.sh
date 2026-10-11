@@ -97,7 +97,7 @@ if [ -n "$KBUILD" ]; then
 		put "$ROOT/build/userspace/padbridge" /usr/bin/padbridge 755
 		service padbridge "$ROOT/userspace/padbridge/padbridge.init"
 		# Test tools (tools/device/), if built.
-		for t in dispctl glspin rumble i2creg; do
+		for t in dispctl glspin rumble i2creg memreg; do
 			[ -f "$ROOT/build/tools/$t" ] && put "$ROOT/build/tools/$t" /usr/bin/$t 755
 		done
 		put "$ROOT/tools/device/powertest" /usr/bin/powertest 755
