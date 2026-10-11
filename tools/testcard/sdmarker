@@ -1,0 +1,74 @@
+#!/bin/sh /etc/rc.common
+# Test-card marker for the stock system running from an SD card (added to the card's copy of
+# the stock root filesystem; never installed on the internal storage).
+# - LEDs turn red once the system is up (breathing under TrimUI's kernel, solid under ours),
+#   so you can tell this card's system is running.
+# - The kernel log and boot details are saved to the card's "bootloader" partition (FAT,
+#   readable on a PC) in sd-boot-log/.
+START=96
+
+# Print the device name of the partition with GPT name $1 (the kernel's PARTNAME), only if
+# exactly one exists. The internal eMMC has partitions with the same names; it is normally
+# invisible when booting from the card, but if it ever shows up we must not pick (and write to)
+# its partition.
+part_by_name() {
+	set -- $(grep -l "^PARTNAME=$1\$" /sys/class/block/*/uevent 2>/dev/null)
+	[ $# -eq 1 ] && sed -n 's/^DEVNAME=//p' "$1"
+}
+
+# Our kernel lacks TrimUI's led_anim driver, so there we use the standard LED interface (one
+# entry per colour of each of the 23 LEDs, brightness 0-255) and switch on the LEDs' 5 V
+# supply (PD11 = GPIO 107; Allwinner GPIO number = port index * 32 + pin, D = 3) ourselves, since TrimUI's UI startup isn't run with our kernel.
+# Under TrimUI's kernel, led_anim zones are: lr = left/right LEDs, m = top bar, f1/f2 = front.
+leds_red() {
+	if [ ! -d /sys/class/led_anim ]; then
+		[ -d /sys/class/gpio/gpio107 ] || echo 107 >/sys/class/gpio/export
+		echo out >/sys/class/gpio/gpio107/direction
+		echo 1 >/sys/class/gpio/gpio107/value
+		# Red channel of each LED (sunxi_led<N>r); 64 of 255 is dim but visible.
+		for f in /sys/class/leds/sunxi_led*r/brightness; do echo 64 >"$f"; done
+		return
+	fi
+	for z in lr m f1 f2; do
+		echo "FF0000 " >/sys/class/led_anim/effect_rgb_hex_$z   # "RRGGBB " as stock userspace writes it
+		echo 2000 >/sys/class/led_anim/effect_duration_$z   # ms per breath
+		echo -1 >/sys/class/led_anim/effect_cycles_$z   # -1 = repeat forever
+		echo 2 >/sys/class/led_anim/effect_$z   # 2 = breath; writing the effect starts it
+	done
+}
+
+save_logs() {
+	dev=$(part_by_name bootloader)
+	[ -n "$dev" ] || return
+	mkdir -p /tmp/sdlog
+	mount -t vfat "/dev/$dev" /tmp/sdlog || return
+	d=/tmp/sdlog/sd-boot-log
+	mkdir -p $d
+	{
+		cat /etc/sd-boot-marker
+		uname -a
+		echo "log saved at uptime: $(cut -d' ' -f1 /proc/uptime) s"
+		echo "cmdline: $(cat /proc/cmdline)"
+		echo; cat /proc/partitions
+		echo; grep -H . /sys/class/block/*/uevent | grep -E 'DEVNAME|PARTNAME'
+		echo; cat /proc/mounts
+		echo; cat /proc/modules
+	} >$d/summary.txt 2>&1
+	dmesg >$d/dmesg.txt 2>&1
+	logread >$d/logread.txt 2>&1
+	ps w >$d/ps.txt 2>&1
+	sync
+	umount /tmp/sdlog
+}
+
+boot() {
+	# Save logs right away and then every 30 s for a few minutes, so something survives even if
+	# the system dies soon after starting. LEDs wait 30 s because TrimUI's UI (when it runs) sets
+	# its own LED effects at startup.
+	(
+		save_logs
+		sleep 30; leds_red
+		for i in 1 2 3 4 5; do save_logs; sleep 30; done
+		save_logs
+	) >/dev/null 2>&1 &
+}

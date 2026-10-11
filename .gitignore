@@ -1,0 +1,4 @@
+# Build output
+/build/
+# Earlier work, vendor firmware and third-party sources (not part of the project)
+/.scratch/
