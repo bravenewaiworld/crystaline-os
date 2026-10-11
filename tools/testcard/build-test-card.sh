@@ -108,6 +108,11 @@ if [ -n "$KBUILD" ]; then
 		echo "rm /etc/rc.local"		# debugfs can't overwrite a file
 		put "$HERE/rc.local" /etc/rc.local 644
 		service sdcard
+		# Stock automounting would mount USB drives (and some other disks) over /mnt/SDCARD, hiding
+		# the card's user-data partition, which sdcard mounts: remove its hotplug script and boot-time
+		# mounts. USB drives aren't mounted automatically.
+		echo "rm /etc/hotplug.d/block/10-mount"
+		echo "rm /etc/rc.d/S40fstab"
 		# WiFi (see wifi), replacing the stock WiFi start-up, which runs before the driver is
 		# loaded and uses a configuration under /etc.
 		echo "rm /etc/rc.d/S96wpa_supplicant"
