@@ -113,6 +113,7 @@ if [ -n "$KBUILD" ]; then
 		service wifi
 		put "$DUFS" /usr/bin/dufs 755
 		service webdav
+		service bluetooth
 		put "$ROOT/build/frontend/status" /usr/bin/status 755
 		service frontend
 		put "$HERE/sdinit" /sbin/sdinit 755     # run via init= below
