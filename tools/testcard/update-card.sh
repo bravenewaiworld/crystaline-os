@@ -67,7 +67,8 @@ reboot -f			# in case the kernel has the sysrq trigger disabled
 EOF
 
 adb shell "grep -q ' /mnt/SDCARD ' /proc/mounts && mkdir -p $STAGE && echo ready" | grep -q ready ||
-	{ echo "the user-data partition isn't mounted" >&2; exit 1; }
+	{ echo "no adb device, or the user-data partition isn't mounted (with several adb devices," \
+		"set ANDROID_SERIAL)" >&2; exit 1; }
 for f in pkg boot rootfs apply; do adb push "$TMP/$f" "$STAGE/$f" >/dev/null; done
 OUT=$(adb shell "sh $STAGE/apply $STAGE $2 $4 $PKG_SECTOR $((PKG_SECTOR + PKG_SECTORS))" | tr -d '\r')
 echo "$OUT"
