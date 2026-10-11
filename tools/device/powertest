@@ -1,0 +1,154 @@
+#!/bin/sh
+# powertest: unattended overnight power and stability test. Runs a sequence of phases, logging the
+# battery, temperatures and CPU state, so that the phases' battery drain can be compared afterwards.
+# The battery gauge reports only whole percent (about 30 mAh) and no discharge current, hence the
+# long phases.
+# Start it detached, then unplug USB within a minute (charging hides the drain):
+#   start-stop-daemon -S -b -x /usr/bin/powertest
+# Results go to /mnt/SDCARD/powertest/<start time>/:
+# - log.csv: time, phase, battery %, battery µV, USB online, CPU kHz, temperatures (°C, in
+#   /sys/class/thermal zone order, listed in zones.txt), load average;
+# - <phase>.start/.end.*: interrupt counts, CPU idle-state statistics, per-process wakeups
+#   (voluntary context switches) and CPU time, to attribute what keeps the CPUs awake.
+# Phases (minutes); "tuned" = the power settings under evaluation (see tuned()):
+#   sleep       deep sleep, woken by the real-time clock's alarm
+#   idle-base   screen on (status frontend), current settings
+#   idle-tuned  screen on, tuned
+#   off-tuned   panel switched off and frontend stopped, tuned
+#   load-tuned  all four CPUs busy and the GPU drawing, tuned; also checks the tuned regulator modes
+#               stay stable under load (if the device crashes, the log stops there)
+#   load-base   the same load, current settings
+# Stops early below 10 % battery. Ends with the current settings restored and the device asleep.
+set -u
+# Phase lengths in minutes; each can be overridden from the environment (e.g. all 1 for a dry run).
+SLEEP_MIN=${SLEEP_MIN:-120} IDLE_MIN=${IDLE_MIN:-90} OFF_MIN=${OFF_MIN:-60} LOAD_MIN=${LOAD_MIN:-30}
+OUT=/mnt/SDCARD/powertest/$(date +%Y%m%d-%H%M)
+BAT=/sys/class/power_supply/axp2202-battery
+CPU=/sys/devices/system/cpu/cpufreq/policy0
+PHASE=start LOAD_PIDS=
+
+sample() {
+	t=
+	for z in /sys/class/thermal/thermal_zone*; do t="$t,$(($(cat $z/temp) / 1000))"; done
+	echo "$(date +%s),$PHASE,$(cat $BAT/capacity),$(cat $BAT/voltage_now)," \
+		"$(cat /sys/class/power_supply/axp2202-usb/online),$(cat $CPU/scaling_cur_freq)$t," \
+		"$(cut -d' ' -f1 /proc/loadavg)" | tr -d ' ' >>$OUT/log.csv
+	sync
+}
+
+snapshot() {	# $1: file name prefix
+	cat /proc/interrupts >$OUT/$1.interrupts
+	for s in /sys/devices/system/cpu/cpu*/cpuidle/state*; do
+		echo "$s $(cat $s/usage) $(cat $s/time)"
+	done >$OUT/$1.cpuidle
+	for p in /proc/[0-9]*; do	# pid, name, wakeups, CPU time (ticks: user, system)
+		echo "${p#/proc/} $(cat $p/comm 2>/dev/null)" \
+			"$(awk '/^voluntary_ctxt_switches/ {print $2}' $p/status 2>/dev/null)" \
+			"$(awk '{print $14, $15}' $p/stat 2>/dev/null)"
+	done >$OUT/$1.processes
+	sync
+}
+
+# The CPU regulator (TCS4838, I2C bus 6 address 0x41) keeps its mode bit (6: forced PWM) in the
+# same register as its voltage, which the CPU frequency driver changes, so the CPU is held at its
+# lowest speed while the register is rewritten.
+cpu_regulator_pwm() {	# $1: 1 = forced PWM (how the bootloader leaves it), 0 = automatic
+	max=$(cat $CPU/scaling_max_freq)
+	cat $CPU/scaling_min_freq >$CPU/scaling_max_freq
+	sleep 1
+	v=$(i2creg 6 0x41 0)
+	i2creg 6 0x41 0 $(( $1 ? v | 0x40 : v & ~0x40 ))
+	echo $max >$CPU/scaling_max_freq
+}
+
+# The top USB port's host controllers, and with them its 5 V supply (they are its only users).
+usb_host() {	# $1: bind | unbind
+	echo 5200000.ehci1-controller >/sys/bus/platform/drivers/sunxi-ehci/$1 2>/dev/null
+	echo 5200000.ohci1-controller >/sys/bus/platform/drivers/sunxi-ohci/$1 2>/dev/null
+}
+
+current() {	# the settings the system starts with
+	cpu_regulator_pwm 1
+	i2creg 6 0x34 0x81 0x0c		# PMIC DCDC1 and DCDC2 forced PWM
+	usb_host bind
+	echo ondemand >$CPU/scaling_governor
+}
+
+tuned() {
+	cpu_regulator_pwm 0
+	i2creg 6 0x34 0x81 0x00		# PMIC DCDC1 and DCDC2 automatic mode
+	usb_host unbind
+	echo schedutil >$CPU/scaling_governor
+}
+
+# Deep sleep. The WiFi driver refuses to suspend while connected, so WiFi is stopped first.
+deep_sleep() {	# $1: minutes to sleep, 0 = until woken by the power button
+	/etc/init.d/wifi stop
+	ifconfig wlan0 down 2>/dev/null
+	echo 0 >/sys/class/rtc/rtc0/wakealarm	# clear any old alarm: a new one can't be set over it
+	[ $1 -gt 0 ] && echo "+$(($1 * 60))" >/sys/class/rtc/rtc0/wakealarm
+	echo mem >/sys/power/state
+	/etc/init.d/wifi start
+}
+
+finish() {	# $1: reason
+	PHASE="end ($1)"
+	kill $LOAD_PIDS 2>/dev/null
+	current
+	sample
+	snapshot end
+	deep_sleep 0
+	exit 0
+}
+
+phase() {	# $1: name, $2: minutes, $3: seconds between samples
+	PHASE=$1
+	snapshot $1.start
+	end=$(($(date +%s) + $2 * 60))
+	while [ "$(date +%s)" -lt $end ]; do
+		sample
+		[ "$(cat $BAT/capacity)" -ge 10 ] || finish "low battery"
+		sleep $3
+	done
+	snapshot $1.end
+}
+
+load() {	# all four CPUs busy and the GPU drawing, until stopped with kill $LOAD_PIDS
+	for i in 1 2 3 4; do
+		sh -c 'while :; do :; done' &
+		LOAD_PIDS="$LOAD_PIDS $!"
+	done
+	glspin 100000 >/dev/null 2>&1 &
+	LOAD_PIDS="$LOAD_PIDS $!"
+}
+
+mkdir -p $OUT
+cat /sys/class/thermal/thermal_zone*/type >$OUT/zones.txt
+for f in /sys/class/leds/*/brightness; do echo 0 >$f; done	# LEDs off for the whole test
+sleep 60					# time to unplug USB
+current
+sample
+
+PHASE=sleep
+snapshot sleep.start
+deep_sleep $SLEEP_MIN
+sample
+snapshot sleep.end
+
+phase idle-base $IDLE_MIN 60
+tuned
+phase idle-tuned $IDLE_MIN 60
+
+/etc/init.d/frontend stop
+dispctl off
+phase off-tuned $OFF_MIN 60
+dispctl on
+
+load
+phase load-tuned $LOAD_MIN 10
+current
+phase load-base $LOAD_MIN 10
+kill $LOAD_PIDS
+LOAD_PIDS=
+/etc/init.d/frontend start
+finish done

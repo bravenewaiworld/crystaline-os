@@ -97,10 +97,10 @@ if [ -n "$KBUILD" ]; then
 		put "$ROOT/build/userspace/padbridge" /usr/bin/padbridge 755
 		service padbridge "$ROOT/userspace/padbridge/padbridge.init"
 		# Test tools (tools/device/), if built.
-		for t in dispctl glspin rumble; do
+		for t in dispctl glspin rumble i2creg; do
 			[ -f "$ROOT/build/tools/$t" ] && put "$ROOT/build/tools/$t" /usr/bin/$t 755
 		done
-		put "$ROOT/tools/device/sleeptest" /usr/bin/sleeptest 755
+		put "$ROOT/tools/device/powertest" /usr/bin/powertest 755
 		# TrimUI's UI expects TrimUI's own drivers and interfaces, so remove the boot link that
 		# starts it (runtrimui) and start our placeholder frontend instead.
 		echo "rm /etc/rc.d/S99runtrimui"
