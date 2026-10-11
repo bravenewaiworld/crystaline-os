@@ -91,3 +91,10 @@ fdtput -t u "$DTB" /led-5v regulator-max-microvolt 5000000
 fdtput -t u "$DTB" /led-5v gpio "$PIO" 3 11 1 0 0xffffffff 0
 fdtput "$DTB" /led-5v enable-active-high
 fdtput -t s "$DTB" $LEDC led_regulator led-5v
+
+# Headphone jack: its detect signal is the opposite polarity from the vendor tree's setting
+# (0 reported headphones with the jack empty).
+fdtput -t u "$DTB" /soc@03000000/sound@0 hp_detect_case 1
+# Start-up headphone amplifier setting (a register value: 0 = loudest, each step 6 dB quieter;
+# it also drives the speaker). 3 = -18 dB, what TrimUI's start-up script set; 0 is very loud.
+fdtput -t u "$DTB" /soc@03000000/codec@0x05096000 headphonegain 3
