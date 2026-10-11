@@ -25,10 +25,6 @@ connected() { [ -n "$(cat $G/UDC)" ]; }
 have_usb0() { [ -d /sys/class/net/usb0 ]; }
 
 setup_gadget() {
-	# Reading usb_device switches the port to device mode. Normally the port follows cable
-	# detection by the PMIC's USB power-supply driver, which our kernel doesn't have yet.
-	cat /sys/devices/platform/soc/usbc0/usb_device >/dev/null
-
 	[ -d /sys/kernel/config/usb_gadget ] || mount -t configfs none /sys/kernel/config
 	mkdir -p $G/strings/0x409 $G/configs/c.1/strings/0x409 $G/functions/ncm.usb0
 	echo 0x18d1 >$G/idVendor     # Google's USB vendor ID, which adb on the PC recognises,

@@ -107,3 +107,11 @@ fdtput -t u "$DTB" $RUMBLE min-microvolt 2000000
 fdtput -t u "$DTB" $RUMBLE max-microvolt 3300000
 # PH3: port 7 pin 3, output, active high (cells as for the buttons).
 fdtput -t u "$DTB" $RUMBLE enable-gpios "$PIO" 7 3 1 0 0xffffffff 0
+
+# Bottom USB-C port role from the power chip's cable detection (see axp2202_usb_power.c): the
+# port manager (usbc0) follows its cables instead of polling an ID pin, which never changes on
+# this board. The chip's own charger detection (BC1.2) is turned on and sets the input current
+# limit itself.
+USB_PSY=/soc@03000000/s_twi@0x07081400/pmu@34/usb_power_supply
+fdtput -t u "$DTB" $USB_PSY pmu_bc12_en 1
+fdtput -t u "$DTB" /soc@03000000/usbc0@0 extcon "$(fdtget "$DTB" $USB_PSY phandle)"
