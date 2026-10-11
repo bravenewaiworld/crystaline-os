@@ -4,7 +4,8 @@
 # (sd-logo.bmp, same byte size as the stock bootlogo.bmp), red LEDs ~30 s after boot,
 # /etc/sd-boot-marker, and boot logs saved to sd-boot-log/ on the card's FAT "bootloader"
 # partition (boot-resource.fex: the boot logo and other images U-Boot reads).
-# With our kernel the card also: starts NextUI instead of TrimUI's UI (nextui), buzzes the rumble
+# With our kernel the card also: mounts a user-data partition (sdcard) and starts our placeholder
+# frontend (frontend/status) instead of TrimUI's UI, buzzes the rumble
 # motor when the system starts (sdinit), offers adb and SSH over USB (sdusb), applies
 # dt-tweaks.sh, and adds the GPU modules and test tools if they've been built
 # (tools/build-gpu.sh, tools/device/).
@@ -96,13 +97,11 @@ if [ -n "$KBUILD" ]; then
 		done
 		# TrimUI's UI needs drivers our kernel doesn't have yet and can power the device off
 		# (e.g. its battery monitor finds no battery), so remove the boot link that starts it
-		# (runtrimui) and start NextUI instead (see nextui).
+		# (runtrimui) and start our placeholder frontend instead.
 		echo "rm /etc/rc.d/S99runtrimui"
-		service nextui
-		# NextUI starts trimui_inputd, which reads the buttons itself (through /dev/mem) and
-		# creates a second virtual gamepad, so every press would arrive twice. NextUI carries on
-		# without it.
-		echo "rm /usr/trimui/bin/trimui_inputd"
+		service sdcard
+		put "$ROOT/build/frontend/status" /usr/bin/status 755
+		service frontend
 		put "$HERE/sdinit" /sbin/sdinit 755     # run via init= below
 		service sdusb
 		for t in rsa ecdsa ed25519; do

@@ -1,0 +1,13 @@
+#!/bin/sh /etc/rc.common
+# Starts the frontend (for now the placeholder frontend/status) on test cards running our kernel.
+# procd, OpenWrt's service supervisor, restarts it if it exits.
+START=99
+USE_PROCD=1
+
+start_service() {
+	procd_open_instance
+	procd_set_param command /usr/bin/status
+	procd_set_param stderr 1	# error messages go to the system log (logread)
+	procd_set_param respawn
+	procd_close_instance
+}

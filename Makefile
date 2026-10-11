@@ -16,7 +16,7 @@ CFLAGS := -O2 -Wall -Wextra
 # glibc also needs the unwinder (-lgcc_eh).
 STATIC := -static -s -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 
-.PHONY: help all kernel gpu userspace device-tools test-card update-card live-image \
+.PHONY: help all kernel gpu userspace frontend device-tools test-card update-card live-image \
 	install-image clean
 
 help:
@@ -26,7 +26,7 @@ help:
 	@echo '  test-card      development SD card: our kernel and services on TrimUI'"'"'s stock system'
 	@echo '  update-card    write test-card'"'"'s kernel and boot files to the card in a running Brick (adb)'
 	@echo 'Parts:'
-	@echo '  kernel  gpu  userspace  device-tools'
+	@echo '  kernel  gpu  userspace  frontend  device-tools'
 	@echo '  clean          remove build/ (keeps the test card'"'"'s SSH host keys)'
 
 all: test-card
@@ -49,6 +49,18 @@ userspace: $(B)/userspace/padbridge
 $(B)/userspace/padbridge: userspace/padbridge/padbridge.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $< $(STATIC)
+
+# --- Frontend ----------------------------------------------------------------------------------
+frontend: $(B)/frontend/status
+
+# The placeholder frontend draws text with the kernel's 8x16 console font.
+$(B)/frontend/font8x16.h: linux/lib/fonts/font_8x16.c
+	@mkdir -p $(@D)
+	sed -n '/^static const unsigned char fontdata_8x16/,/^};/p' $< | \
+		sed '1s/.*/static const unsigned char font8x16[4096] = {/' > $@
+
+$(B)/frontend/status: frontend/status/status.c $(B)/frontend/font8x16.h
+	$(CC) $(CFLAGS) -I$(B)/frontend -o $@ $< $(STATIC)
 
 # --- Development tools that run on the device -----------------------------------------------
 device-tools: $(B)/tools/dispctl $(B)/tools/glspin
@@ -73,7 +85,7 @@ $(B)/stock-root/usr/lib: $(B)/stock-fw/rootfs.fex
 	debugfs -R 'rdump /usr/lib $(B)/stock-root/usr' $< 2>/dev/null
 
 # --- Development test card ------------------------------------------------------------------
-test-card: kernel gpu userspace device-tools $(B)/stock-fw/rootfs.fex
+test-card: kernel gpu userspace frontend device-tools $(B)/stock-fw/rootfs.fex
 	tools/testcard/build-test-card.sh $(B)/stock-fw $(B)/test-card.img $(B)/kernel
 
 update-card:

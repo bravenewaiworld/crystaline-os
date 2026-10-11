@@ -1,0 +1,45 @@
+#!/bin/sh /etc/rc.common
+# Mounts the card's user-data partition ("sdcard": games, saves, settings) at /mnt/SDCARD, on test
+# cards running our kernel. It is FAT32, so PCs can read it.
+#
+# A freshly written card has no such partition, since the card image only covers the system
+# partitions, so it is made over two boots:
+# 1. add a partition named "sdcard-new" over the rest of the card, then reboot (the kernel won't
+#    re-read a disk's partition table while partitions on it, here the root filesystem, are in use);
+# 2. format "sdcard-new" and rename it to "sdcard".
+# Only a partition this script added is ever formatted.
+START=90
+SGDISK=/usr/trimui/bin/sgdisk  # part of the stock system, outside the default PATH
+
+# Print the device name of the partition with GPT name $1 (the kernel's PARTNAME), only if
+# exactly one exists, so that the built-in storage (eMMC), which has the same partition names, is
+# never picked. It is normally invisible when booting from the card: the card's U-Boot leaves its
+# controller disabled.
+part_by_name() {
+	set -- $(grep -l "^PARTNAME=$1\$" /sys/class/block/*/uevent 2>/dev/null)
+	[ $# -eq 1 ] && sed -n 's/^DEVNAME=//p' "$1"
+}
+
+boot() {
+	root=$(part_by_name rootfs) || { logger -t sdcard "can't tell which disk is the card"; return 1; }
+	disk=/dev/${root%p*}		# mmcblk0p5 -> mmcblk0
+	if dev=$(part_by_name sdcard-new); then
+		mkfs.fat -F 32 -n BRICK /dev/$dev || return
+		$SGDISK -c "${dev##*p}:sdcard" $disk >/dev/null || return	# mmcblk0p6 -> 6
+	elif ! dev=$(part_by_name sdcard); then
+		# The table on the card already has an sdcard(-new) partition the kernel doesn't show
+		# (e.g. step 1 ran but no reboot followed): don't add a second one.
+		if $SGDISK -p $disk | grep -q ' sdcard'; then
+			logger -t sdcard "$disk lists an sdcard partition that the kernel doesn't show"
+			return 1
+		fi
+		# -e: move the backup partition table to the card's end (it is at the image's end);
+		# -n 0:0:0: new partition, next free number, over the largest free space; -t 0: and
+		# -c 0: set that new partition's type and name; 0700: "Microsoft basic data", the usual
+		# type for FAT.
+		$SGDISK -e -n 0:0:0 -t 0:0700 -c 0:sdcard-new $disk && reboot
+		return
+	fi
+	# The mount options stock firmware uses for its SD card.
+	mount -t vfat -o rw,sync,iocharset=utf8,errors=continue /dev/$dev /mnt/SDCARD
+}
