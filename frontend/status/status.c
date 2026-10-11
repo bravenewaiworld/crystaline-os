@@ -35,6 +35,10 @@
 #define CELL_H		(16 * SCALE)
 #define MAX_INPUTS	16
 #define REFRESH_MS	500
+/* Battery, USB and temperature readings each take many I2C transfers to the power chip (about 300
+ * interrupts for a full battery read), so they are refreshed this often rather than every frame;
+ * the battery driver itself only updates every 10 s. */
+#define SLOW_REFRESH_MS	5000
 #define BACKLIGHT	128	/* 0-255; the bootloader leaves it nearly dark */
 /* Ignore power-button events this long after waking: the press that woke the device arrives
  * once it is running again and must not send it straight back to sleep. */
@@ -51,6 +55,9 @@ static uint8_t *fb;		/* both pages, mapped */
 static uint32_t *page;		/* the hidden page being drawn */
 static int fb_fd, stride;	/* stride in pixels */
 static int row;			/* next text row */
+/* Lines recorded by line() while refreshing the slowly changing sections, replayed every frame. */
+static struct { uint32_t rgb; int row; char text[128]; } slow[16];
+static int nslow, recording;
 
 static long now_ms(void)
 {
@@ -95,6 +102,11 @@ static void line(uint32_t rgb, const char *fmt, ...)
 	va_start(ap, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, ap);
 	va_end(ap);
+	if (recording && nslow < (int)(sizeof(slow) / sizeof(slow[0]))) {
+		slow[nslow].rgb = rgb;
+		slow[nslow].row = row;
+		strcpy(slow[nslow++].text, buf);
+	}
 	for (i = 0; buf[i] && (i + 1) * CELL_W <= (int)var.xres; i++)
 		draw_char(i * CELL_W, row * CELL_H, buf[i], pixel(rgb));
 	row++;
@@ -295,19 +307,31 @@ static void show_sleep(void)
 
 static void draw(int pad_fd, int jack_fd)
 {
+	static long next_slow;
 	struct timespec up;
-	int shown = var.yoffset ? 1 : 0;
+	int back = !var.yoffset, i;
 
-	page = (uint32_t *)(fb + (size_t)(!shown) * var.yres * stride * 4);
+	page = (uint32_t *)(fb + (size_t)back * var.yres * stride * 4);
 	memset(page, 0, (size_t)var.yres * stride * 4);
 	row = 0;
 	clock_gettime(CLOCK_BOOTTIME, &up);
 	line(GREEN, "Brick status          up %ld:%02ld:%02ld", up.tv_sec / 3600,
 	     up.tv_sec / 60 % 60, up.tv_sec % 60);
 	row++;
-	show_power();
-	row++;
-	show_cpu();
+	if (now_ms() >= next_slow) {
+		nslow = 0;
+		recording = 1;
+		show_power();
+		row++;
+		show_cpu();
+		recording = 0;
+		next_slow = now_ms() + SLOW_REFRESH_MS;
+	} else {
+		for (i = 0; i < nslow; i++) {
+			row = slow[i].row;
+			line(slow[i].rgb, "%s", slow[i].text);
+		}
+	}
 	show_memory();
 	show_network();
 	row++;
@@ -318,7 +342,7 @@ static void draw(int pad_fd, int jack_fd)
 	row++;
 	line(GREY, "POWER: sleep / wake");
 
-	var.yoffset = !shown * var.yres;
+	var.yoffset = back * var.yres;
 	ioctl(fb_fd, FBIOPAN_DISPLAY, &var);
 }
 
