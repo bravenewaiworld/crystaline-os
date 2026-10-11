@@ -17,6 +17,7 @@ set -eu
 FW=$1 OUT=$2 KBUILD=${3:-} KARGS=${4:-}
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$HERE/../..
+. "$ROOT/tools/env.sh"
 TOOLS=$ROOT/tools/sdboot
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
@@ -108,6 +109,8 @@ if [ -n "$KBUILD" ]; then
 		# loaded and uses a configuration under /etc.
 		echo "rm /etc/rc.d/S96wpa_supplicant"
 		service wifi
+		put "$DUFS" /usr/bin/dufs 755
+		service webdav
 		put "$ROOT/build/frontend/status" /usr/bin/status 755
 		service frontend
 		put "$HERE/sdinit" /sbin/sdinit 755     # run via init= below
