@@ -360,15 +360,21 @@ static void set_backlight(int level)
 	}
 }
 
-/* Put the device to sleep; returns once it has woken up again. */
+/* Put the device to sleep; returns once it has woken up again. The WiFi driver refuses to suspend
+ * while connected, so WiFi is stopped first and restarted afterwards. */
 static void sleep_now(void)
 {
-	int fd = open("/sys/power/state", O_WRONLY);
+	int fd;
 
+	if (system("/etc/init.d/wifi stop; ifconfig wlan0 down") < 0)
+		perror("status: stop WiFi");
+	fd = open("/sys/power/state", O_WRONLY);
 	if (fd < 0 || write(fd, "mem", 3) < 0)
 		perror("status: sleep");
 	if (fd >= 0)
 		close(fd);
+	if (system("/etc/init.d/wifi start") < 0)
+		perror("status: start WiFi");
 }
 
 /* Open every input device; returns how many, and the fds of the virtual gamepad in @pad and the

@@ -36,7 +36,7 @@ Roughly by impact on the goal.
 | Area | What's missing | Matters for |
 |---|---|---|
 | Battery and charger | Driver works (level, status, voltage, current, temperature; charge settings as stock). Missing: input current limit by charger type, as stock does | Charging speed on wall chargers |
-| Sleep | Deep sleep works (through Allwinner's firmware, as stock's kernel is configured); power button and alarm wake. To do: measure how deep (overnight drain test), check every device after resume | Battery life |
+| Sleep | Deep sleep works (through Allwinner's firmware, as stock's kernel is configured); power button and alarm wake. The WiFi driver refuses to suspend while connected, so sleep must stop WiFi first and restart it after. To do: measure how deep (overnight powertest), check every device after resume | Battery life |
 | Power tuning | Voltage regulators stuck in their least efficient mode; unused clocks left running; rumble, speaker amp and USB-A power always on; CPUs never reach their deepest idle state | Battery life |
 | WiFi and Bluetooth (XR829) | Working: WiFi (2.4 GHz only; SSH and WebDAV over it) and Bluetooth audio (pairing, automatic reconnection). Missing: the XR829 has no Bluetooth address of its own and stock hciattach assigns a random one at every start, so pairings don't survive a reboot; our own BlueZ build must set a fixed per-device address (derived from the chip serial). Bluetooth audio uses SBC only | Bluetooth headphones |
 | Audio | Working: speaker and headphones, jack switches between them, amplifiers off when idle, volume controls in the standard direction. To do: the frontend's volume (one level mapped onto the codec's controls; separate levels for speaker and headphones) | Polish |
