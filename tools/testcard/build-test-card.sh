@@ -76,6 +76,9 @@ if [ -n "$KBUILD" ]; then
 	for t in rsa ecdsa ed25519; do
 		[ -f "$KEYS/ssh_host_${t}_key" ] || ssh-keygen -q -N '' -t $t -f "$KEYS/ssh_host_${t}_key"
 	done
+	# Development login key: the card authorizes it for root, so tools can log in over WiFi or
+	# USB without a password (ssh -i build/ssh-host-keys/dev_key root@<address>).
+	[ -f "$KEYS/dev_key" ] || ssh-keygen -q -N '' -t ed25519 -C brick-dev -f "$KEYS/dev_key"
 	{
 		# Modules go straight into /lib/modules/<release>/ (no subdirectories), where OpenWrt's
 		# module loader looks. Nothing lists them in /etc/modules.d, so none auto-load: a driver
@@ -109,6 +112,8 @@ if [ -n "$KBUILD" ]; then
 		service frontend
 		put "$HERE/sdinit" /sbin/sdinit 755     # run via init= below
 		service sdusb
+		echo "mkdir /root/.ssh"
+		put "$KEYS/dev_key.pub" /root/.ssh/authorized_keys 600
 		for t in rsa ecdsa ed25519; do
 			put "$KEYS/ssh_host_${t}_key" /etc/ssh/ssh_host_${t}_key 600
 			put "$KEYS/ssh_host_${t}_key.pub" /etc/ssh/ssh_host_${t}_key.pub 644
