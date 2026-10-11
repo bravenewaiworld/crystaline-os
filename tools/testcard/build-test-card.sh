@@ -115,6 +115,11 @@ if [ -n "$KBUILD" ]; then
 		service webdav
 		echo "rm /etc/rc.d/S80hciattach"	# replaced by our bluetooth service
 		service bluetooth
+		echo "symlink /etc/bluetooth/xr_bt.conf /tmp/state/bluetooth/xr_bt.conf"
+		# BlueZ's storage directory (see bluetooth); its mesh files are for the unused mesh daemon.
+		for f in local_node.json prov_db.json; do echo "rm /etc/lib/bluetooth/mesh/$f"; done
+		echo "rmdir /etc/lib/bluetooth/mesh"; echo "rmdir /etc/lib/bluetooth"
+		echo "symlink /etc/lib/bluetooth /tmp/state/bluetooth"
 		put "$ROOT/build/frontend/status" /usr/bin/status 755
 		service frontend
 		put "$HERE/sdinit" /sbin/sdinit 755     # run via init= below

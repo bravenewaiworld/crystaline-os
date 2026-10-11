@@ -4,27 +4,31 @@
 # headphones/speakers usable as ALSA outputs ("bluealsa:DEV=<address>"; playback only:
 # -p a2dp-source). Pairings are kept in the state area, /tmp/state (see sdcard). procd, OpenWrt's
 # service supervisor, restarts the programs if they exit.
-# Replaces the stock hciattach service. The XR829 has no address of its own, and stock hciattach
-# gives the controller a random one each time (so pairings don't survive a reboot); fixing that
-# needs our own BlueZ build (see ROADMAP.md).
+# Replaces the stock hciattach service.
+# The XR829 has no Bluetooth address of its own. Stock hciattach sets the one in
+# /etc/bluetooth/xr_bt.conf ("%02x " bytes, most significant first), or makes up a random one and
+# saves it there. The card's image links that file, and BlueZ's storage directory
+# (/etc/lib/bluetooth in this build), into the state area, so the address and pairings survive
+# reboots.
 START=80
 USE_PROCD=1
 
+# Both programs keep files in the state area, so wait for it: procd doesn't wait for one start
+# script to finish before starting the next (webdav was seen starting before sdcard had mounted
+# the partition).
+WAIT_FOR_STATE='until grep -q " /tmp/state " /proc/mounts; do sleep 1; done
+	mkdir -p /tmp/state/bluetooth'
+
 start_service() {
 	procd_open_instance hciattach
-	procd_set_param command /usr/bin/hciattach -n ttyS1 xradio	# -n: stay in the foreground
+	procd_set_param command /bin/sh -c "$WAIT_FOR_STATE
+		exec /usr/bin/hciattach -n ttyS1 xradio"	# -n: stay in the foreground
 	procd_set_param respawn
 	procd_close_instance
 
 	procd_open_instance bluetoothd
-	# BlueZ's storage directory is kept in the state area, so wait for it: procd doesn't wait for
-	# one start script to finish before starting the next (webdav was seen starting before sdcard
-	# had mounted the partition).
-	procd_set_param command /bin/sh -c 'until grep -q " /tmp/state " /proc/mounts; do sleep 1; done
-		mkdir -p /tmp/state/bluetooth /var/lib
-		rm -rf /var/lib/bluetooth
-		ln -snf /tmp/state/bluetooth /var/lib/bluetooth
-		exec /usr/bin/bluetoothd -n'
+	procd_set_param command /bin/sh -c "$WAIT_FOR_STATE
+		exec /usr/bin/bluetoothd -n"
 	procd_set_param respawn
 	procd_close_instance
 
