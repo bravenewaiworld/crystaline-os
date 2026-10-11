@@ -14,8 +14,8 @@ Decisions so far:
 - **PC transfer:** WebDAV over WiFi first; later our own simple browser page for uploading and
   downloading games and saves. No MTP.
 
-Order of work: battery and charger, then sleep, then our own system image, then the frontend.
-Audio, WiFi/Bluetooth and power tuning fit in alongside.
+Order of work: hardware support (nearly done), power tuning (after the overnight power test),
+then our own system image, then the frontend.
 
 ## Hardware: working
 
@@ -26,8 +26,10 @@ Audio, WiFi/Bluetooth and power tuning fit in alongside.
 | GPU | TrimUI's closed driver (v1.19), rebuilt from source; 60 fps, vsync-locked |
 | Buttons, FN switch, power key | Standard input devices; `padbridge` presents them as the usual gamepad |
 | SD card | Fastest mode (UHS SDR104, 150 MHz, 1.8 V signalling), as stock; survives deep sleep |
-| USB | Bottom USB-C port switches by itself: PC mode (adb, network link) with a computer or charger, host with 5 V for USB devices, off when unplugged. Top USB-C port: host |
+| USB | Bottom USB-C port switches by itself: PC mode (adb, network link) with a computer or charger, host with 5 V for USB devices, off when unplugged; the cable and charger type are readable (`/sys/class/extcon`). Top USB-C port: host, 5 V always on |
 | Power chip voltage outputs | Correct |
+| Battery and charger | Level, status, voltage, current, temperature; charge settings as stock; input current limit set by the chip's charger detection (also when booted already plugged in) |
+| Rumble | Standard force feedback (FF_RUMBLE), strength as motor voltage (2.0–3.3 V), forwarded from the virtual gamepad so games can use it; motor supply off when idle |
 | Thermal limits | As stock: CPU slows from 58/63 °C, shuts down at 90 °C (shutdown not tested) |
 
 ## Hardware: missing
@@ -36,14 +38,12 @@ Roughly by impact on the goal.
 
 | Area | What's missing | Matters for |
 |---|---|---|
-| Battery and charger | Working: level, status, voltage, current, temperature; charge settings as stock; input current limit set by the chip's charger detection | — |
-| Sleep | Deep sleep works (through Allwinner's firmware, as stock's kernel is configured); power button and alarm wake. The WiFi driver refuses to suspend while connected, so sleep must stop WiFi first and restart it after. To do: measure how deep (overnight powertest), check every device after resume | Battery life |
-| Power tuning | Voltage regulators stuck in their least efficient mode; unused clocks left running; rumble, speaker amp and USB-A power always on; CPUs never reach their deepest idle state | Battery life |
-| WiFi and Bluetooth (XR829) | Working: WiFi (2.4 GHz only; SSH and WebDAV over it) and Bluetooth audio (pairing, automatic reconnection). The XR829 has no Bluetooth address of its own: the first random one is saved in the state area and reused, so pairings survive reboots (our own image must keep that file). Missing: Bluetooth audio uses SBC only | Bluetooth headphones |
+| Sleep | Deep sleep works (through Allwinner's firmware, as stock's kernel is configured); power button and alarm wake; SD card, USB, Bluetooth and LEDs come back after resume. The WiFi driver refuses to suspend while connected, so `sleepnow` stops WiFi first and restarts it after. To do: measure how deep (overnight `powertest`) | Battery life |
+| Power tuning | Voltage regulators run in their least efficient mode (forced PWM); unused clocks left running; top USB-C port's 5 V always on; CPUs never reach their deepest idle state. The overnight `powertest` compares candidate settings (regulators in automatic mode, top port off, `schedutil` governor) and records what keeps the CPUs awake; decisions follow from its results | Battery life |
+| WiFi and Bluetooth (XR829) | Working: WiFi (2.4 GHz only; SSH and WebDAV over it) and Bluetooth audio (pairing, automatic reconnection, pairings kept across reboots). The XR829 has no Bluetooth address of its own: the first random one is saved in the state area and reused (our own image must keep that file). Missing: Bluetooth audio uses SBC only (see item 10 below) | Bluetooth headphones |
 | Audio | Working: speaker and headphones, jack switches between them, amplifiers off when idle, volume controls in the standard direction. To do: the frontend's volume (one level mapped onto the codec's controls; separate levels for speaker and headphones) | Polish |
-| Rumble | Working: standard force feedback (FF_RUMBLE), strength as motor voltage (2.0–3.3 V), forwarded from the virtual gamepad so games can use it; motor supply off when idle | — |
 | LEDs | Working: 14 LEDs (top bar 0–7, F2, F1, under L1, L2, R2, R1), correct colours, off in sleep and restored after. To do: zone names and effects for the frontend | Polish |
-| Internal storage | Not visible when booting from the SD card | Installing to internal storage |
+| Internal storage | Not visible when booting from the SD card. Deferred to the install work: the internal storage has partitions with the same names as the card's ("boot", "rootfs"), so scripts must first be limited to the disk the system booted from | Installing to internal storage |
 
 ## Beyond the kernel
 
@@ -55,15 +55,19 @@ Roughly by impact on the goal.
    games, saves, BIOS files and settings; power-loss-safe saving.
 4. **Install, update and recovery:** flash-an-image install, updates from a file on the card or
    over WiFi, and a recovery path.
-5. **PC transfer over WiFi:** a WebDAV server for games and saves, then a simple browser page on
-   top of it.
+5. **PC transfer over WiFi:** a WebDAV server for games and saves (running on the test card:
+   `dufs`, no login yet), then a simple browser page on top of it.
 6. **Cores:** a curated set, built and tuned for this CPU, with chosen defaults per system.
 7. **Power policy:** CPU/GPU profiles, screen dimming and off, sleep, low-battery auto-save and
-   shutdown.
+   shutdown; whether the top USB-C port's 5 V stays on (decide after the power test).
 8. **Clock:** set from WiFi time, and kept across power-off if the hardware allows.
-9. **Dev workflow:** one reproducible build of the whole image; a hardware test checklist.
+9. **Dev workflow:** one reproducible build of the whole image; a hardware test checklist. Today:
+   `make test-card` builds a development SD card and `make update-card` rewrites a running one
+   over adb.
 10. **Bluetooth audio codecs:** build bluealsa with aptX / aptX HD (libopenaptx), AAC (fdk-aac)
     and LDAC (libldac) besides SBC. Check each library's licence for redistribution (fdk-aac's
     is not GPL-compatible) and the CPU cost of encoding, especially LDAC, on this chip.
 11. **USB mass storage, done safely:** expose the SD card's data partition to a PC over USB
     without corrupting it (the device must stop using the card while it's shared).
+12. **USB drives:** when to mount a drive plugged into either port, and safe removal. Nothing is
+    mounted automatically for now (stock's automounting covered the SD card's data partition).

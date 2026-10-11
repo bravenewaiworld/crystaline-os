@@ -30,8 +30,8 @@ life and functionality out of this hardware.
 |---|---|
 | `linux/` | Our kernel: Allwinner's 4.9 vendor kernel with our changes (its own git repository, branch `brick`) |
 | `userspace/` | System services (e.g. `padbridge`, which turns the buttons into a standard gamepad) |
-| `frontend/` | User interface and emulation (not started) |
-| `tools/` | Development scripts and utilities |
+| `frontend/` | User interface and emulation; for now only a placeholder status screen (`status`) |
+| `tools/` | Development scripts: kernel and GPU builds, the development SD card (`testcard/`), tools that run on the device (`device/`) |
 | `Makefile` | Builds everything; `make help` lists the targets |
 | `ROADMAP.md` | What works, what's missing, and what's next |
 | `.scratch/` | Earlier work, research notes (`JOURNAL.md`), vendor firmware and third-party sources, to be sorted out later |
@@ -39,4 +39,5 @@ life and functionality out of this hardware.
 ## Installation
 
 Not available yet. For now, `make test-card` builds a development SD card (our kernel and
-services on top of TrimUI's stock system); see `ROADMAP.md`.
+services on top of TrimUI's stock system), and `make update-card` updates one in a running
+device over adb; see `ROADMAP.md`.
