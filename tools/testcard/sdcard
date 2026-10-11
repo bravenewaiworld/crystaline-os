@@ -20,6 +20,7 @@ part_by_name() {
 	[ $# -eq 1 ] && sed -n 's/^DEVNAME=//p' "$1"
 }
 
+# boot(), not start(): runs once at system start-up.
 boot() {
 	root=$(part_by_name rootfs) || { logger -t sdcard "can't tell which disk is the card"; return 1; }
 	disk=/dev/${root%p*}		# mmcblk0p5 -> mmcblk0
@@ -51,7 +52,9 @@ boot() {
 	# filesystem is read-only. Mounted at /tmp/state, also reachable as /var/state since /var
 	# links to /tmp (in RAM); /proc/mounts lists the /tmp path.
 	img=/mnt/SDCARD/.system-state.img
-	[ -f $img ] || { dd if=/dev/zero of=$img bs=1M count=32 && mkfs.ext4 -q -F $img; } || return
+	# Made under a temporary name so a failed mkfs doesn't leave an image later boots try to mount.
+	[ -f $img ] || { dd if=/dev/zero of=$img.new bs=1M count=32 && mkfs.ext4 -q -F $img.new &&
+		mv $img.new $img; } || return
 	e2fsck -p $img		# repairs after a power cut; non-zero exit even when it fixed things
 	mkdir -p /tmp/state && mount -o loop,noatime $img /tmp/state
 }

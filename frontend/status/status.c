@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * status: placeholder frontend that shows the device's hardware state (battery, CPU, temperatures,
- * memory, network, buttons, headphone jack, sleep statistics) until the real frontend exists. The power button puts
- * the device to sleep; pressing it again wakes it.
+ * memory, network, buttons, headphone jack, sleep statistics) until the real frontend exists. The
+ * power button puts the device to sleep; pressing it again wakes it.
  *
  * Draws text straight into the framebuffer (/dev/fb0), so it needs neither the GPU nor SDL. The
  * framebuffer has two screen-sized pages: each frame is drawn into the hidden one, then shown by
@@ -141,6 +141,7 @@ static void show_power(void)
 	long cap = readn(BAT "capacity");
 
 	line(WHITE, "Battery  %ld%%  %s", cap, readf(BAT "status"));
+	/* The driver reports only the charge current. */
 	line(GREY, "  %.2f V  %ld mA charging  %.1f C", readn(BAT "voltage_now") / 1e6,
 	     readn(BAT "current_now") / 1000, readn(BAT "temp") / 10.0);
 	line(GREY, "  to empty %ld min, to full %ld min", readn(BAT "time_to_empty_now") / 60,
@@ -230,12 +231,14 @@ static void show_network(void)
 	line(WHITE, "Network  %s", text);
 }
 
+/* Bit n of an evdev bitmask. */
 #define TEST(bits, n)	((bits)[(n) / 8] & (1 << ((n) % 8)))
 
 /* Held buttons, read from padbridge's virtual gamepad ("TRIMUI Player1"), labelled as printed
  * on the Brick. Codes as padbridge sends them (see userspace/padbridge/padbridge.c). */
 static void show_buttons(int pad_fd)
 {
+	/* padbridge sends the Brick's X (top) as SDL's Xbox Y (0x134) and Y (left) as 0x133. */
 	static const struct { int code; const char *name; } keys[] = {
 		{ BTN_EAST, "A" }, { BTN_SOUTH, "B" }, { 0x134, "X" }, { 0x133, "Y" },
 		{ BTN_TL, "L1" }, { BTN_TR, "R1" }, { BTN_SELECT, "SELECT" }, { BTN_START, "START" },
@@ -368,8 +371,8 @@ static void sleep_now(void)
 		close(fd);
 }
 
-/* Open every input device; returns how many, and the indices of the virtual gamepad in @pad and
- * the headphone jack in @jack (-1 if absent). */
+/* Open every input device; returns how many, and the fds of the virtual gamepad in @pad and the
+ * headphone jack in @jack (-1 if absent). Opened once: devices that appear later aren't seen. */
 static int open_inputs(struct pollfd *fds, int *pad, int *jack)
 {
 	struct dirent *e;
@@ -389,9 +392,9 @@ static int open_inputs(struct pollfd *fds, int *pad, int *jack)
 			continue;
 		ioctl(fd, EVIOCGNAME(sizeof(name)), name);
 		if (!strcmp(name, "TRIMUI Player1"))
-			*pad = n;
+			*pad = fd;
 		else if (strstr(name, "Audio Jack"))
-			*jack = n;
+			*jack = fd;
 		fds[n].fd = fd;
 		fds[n++].events = POLLIN;
 	}
@@ -425,7 +428,7 @@ int main(void)
 	nfds = open_inputs(fds, &pad, &jack);
 
 	for (;;) {
-		draw(pad >= 0 ? fds[pad].fd : -1, jack >= 0 ? fds[jack].fd : -1);
+		draw(pad, jack);
 		if (poll(fds, nfds, REFRESH_MS) <= 0)
 			continue;
 		for (i = 0; i < nfds; i++) {

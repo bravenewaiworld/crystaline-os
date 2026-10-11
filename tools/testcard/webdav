@@ -8,8 +8,9 @@ USE_PROCD=1
 
 start_service() {
 	procd_open_instance
-	# procd runs the start scripts concurrently, so the partition may not be mounted yet: wait for
-	# it, then serve it. -A: allow uploads, deletes and search; files are written as root.
+	# Wait for the partition to be mounted: procd doesn't wait for one start script to finish
+	# before starting the next (webdav was seen starting before sdcard had mounted the partition).
+	# -A: allow uploads, deletes and search; files are written as root.
 	procd_set_param command /bin/sh -c 'until grep -q " /mnt/SDCARD " /proc/mounts; do sleep 1; done
 		exec /usr/bin/dufs -A -p 80 /mnt/SDCARD'
 	procd_set_param stderr 1

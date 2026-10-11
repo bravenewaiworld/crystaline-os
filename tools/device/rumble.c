@@ -42,6 +42,7 @@ static int open_rumble(void)
 int main(int argc, char **argv)
 {
 	int strength = argc > 1 ? atoi(argv[1]) : 100, ms = argc > 2 ? atoi(argv[2]) : 500;
+	/* .id = -1: the kernel assigns a new effect id */
 	struct ff_effect effect = { .type = FF_RUMBLE, .id = -1 };
 	struct input_event play = { .type = EV_FF, .value = 1 };
 	int fd = argc > 3 ? open(argv[3], O_RDWR) : open_rumble();

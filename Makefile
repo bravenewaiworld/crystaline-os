@@ -28,7 +28,7 @@ help:
 	@echo '                 running Brick (adb)'
 	@echo 'Parts:'
 	@echo '  kernel  gpu  userspace  frontend  device-tools'
-	@echo '  clean          remove build/ (keeps the test card'"'"'s SSH host keys)'
+	@echo '  clean          remove build/ (keeps the test card'"'"'s SSH keys)'
 
 all: test-card
 
@@ -66,11 +66,7 @@ $(B)/frontend/status: frontend/status/status.c $(B)/frontend/font8x16.h
 # --- Development tools that run on the device -----------------------------------------------
 device-tools: $(B)/tools/dispctl $(B)/tools/glspin $(B)/tools/rumble
 
-$(B)/tools/dispctl: tools/device/dispctl.c
-	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -o $@ $< $(STATIC)
-
-$(B)/tools/rumble: tools/device/rumble.c
+$(B)/tools/dispctl $(B)/tools/rumble: $(B)/tools/%: tools/device/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $< $(STATIC)
 
@@ -85,7 +81,8 @@ $(B)/tools/glspin: tools/device/glspin.c $(B)/stock-root/.done
 $(B)/stock-fw/rootfs.fex: $(STOCK_FW)
 	python3 -I tools/sdboot/awimg_unpack.py $< $(B)/stock-fw
 
-# A marker file, since the extracted files keep their original (older) dates.
+# A marker file: the extracted files keep their original (older) dates, so make would otherwise
+# see usr/lib as always out of date and extract again.
 $(B)/stock-root/.done: $(B)/stock-fw/rootfs.fex
 	@mkdir -p $(B)/stock-root/usr
 	debugfs -R 'rdump /usr/lib $(B)/stock-root/usr' $< 2>/dev/null

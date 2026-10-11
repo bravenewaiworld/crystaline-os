@@ -15,7 +15,8 @@ log() {
 
 sleep 60
 log "start, sleeping $MINUTES min"
-echo 0 >/sys/class/rtc/rtc0/wakealarm			# clear any old alarm first
+# Clear any old alarm first: setting a new one fails while one is pending.
+echo 0 >/sys/class/rtc/rtc0/wakealarm
 echo "+$((MINUTES * 60))" >/sys/class/rtc/rtc0/wakealarm
 echo mem >/sys/power/state
 log "woke"

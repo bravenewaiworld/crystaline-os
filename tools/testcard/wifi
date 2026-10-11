@@ -6,6 +6,7 @@
 #       ssid="MyNetwork"
 #       psk="password"
 #   }
+# The file is read at start-up; after adding or changing it, run /etc/init.d/wifi restart.
 # The XR829 is 2.4 GHz only. procd, OpenWrt's service supervisor, restarts both programs if they
 # exit (e.g. wpa_supplicant started before the driver had created wlan0).
 START=95

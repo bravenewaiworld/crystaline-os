@@ -15,9 +15,7 @@ fdtput "$DTB" $REGS/cldo4 regulator-always-on
 
 # SD card: no UHS modes (1.8 V signalling). Our SD driver can't switch the card's signalling
 # rails correctly, and with UHS enabled it never finishes initialising the card.
-fdtput -d "$DTB" $SD sd-uhs-sdr50
-fdtput -d "$DTB" $SD sd-uhs-ddr50
-fdtput -d "$DTB" $SD sd-uhs-sdr104
+fdtput -d "$DTB" $SD sd-uhs-sdr50 sd-uhs-ddr50 sd-uhs-sdr104
 
 # CPU voltage regulator (TCS4838 at I2C 0x41): register-compatible with the Silergy SYR827, so
 # use the standard fan53555 driver. TrimUI's node describes the chip as two child regulators
@@ -83,13 +81,14 @@ fdtput -t u "$DTB" $LEDC led_count 14
 fdtput -t u "$DTB" $LEDC swap-rg-leds 0 1 2 3 4 5 6 7 8 9
 # Their 5 V supply, switched on by PD11, as a fixed regulator that the LED driver enables and
 # switches off during sleep. GPIO cells as for the buttons: mux 1 = output, data 0 = active high.
-fdtput -c "$DTB" /led-5v
-fdtput -t s "$DTB" /led-5v compatible regulator-fixed
-fdtput -t s "$DTB" /led-5v regulator-name led-5v
-fdtput -t u "$DTB" /led-5v regulator-min-microvolt 5000000
-fdtput -t u "$DTB" /led-5v regulator-max-microvolt 5000000
-fdtput -t u "$DTB" /led-5v gpio "$PIO" 3 11 1 0 0xffffffff 0
-fdtput "$DTB" /led-5v enable-active-high
+LED5V=/led-5v
+fdtput -c "$DTB" $LED5V
+fdtput -t s "$DTB" $LED5V compatible regulator-fixed
+fdtput -t s "$DTB" $LED5V regulator-name led-5v
+fdtput -t u "$DTB" $LED5V regulator-min-microvolt 5000000
+fdtput -t u "$DTB" $LED5V regulator-max-microvolt 5000000
+fdtput -t u "$DTB" $LED5V gpio "$PIO" 3 11 1 0 0xffffffff 0
+fdtput "$DTB" $LED5V enable-active-high
 fdtput -t s "$DTB" $LEDC led_regulator led-5v
 
 # Headphone jack: its detect signal is the opposite polarity from the vendor tree's setting
@@ -103,11 +102,12 @@ fdtput -t u "$DTB" /soc@03000000/codec@0x05096000 headphonegain 3
 # whose voltage sets the strength (min-microvolt for the weakest effect, max for the strongest),
 # and PH3 switches it on. BLDO3 is no longer always on: the driver powers it only while rumbling.
 BLDO3=$REGS/bldo3
-fdtput -d "$DTB" $BLDO3 regulator-always-on
-fdtput -d "$DTB" $BLDO3 regulator-boot-on
-fdtput -c "$DTB" /brick-rumble
-fdtput -t s "$DTB" /brick-rumble compatible regulator-haptic
-fdtput -t u "$DTB" /brick-rumble haptic-supply "$(fdtget "$DTB" $BLDO3 phandle)"
-fdtput -t u "$DTB" /brick-rumble min-microvolt 2000000
-fdtput -t u "$DTB" /brick-rumble max-microvolt 3300000
-fdtput -t u "$DTB" /brick-rumble enable-gpios "$PIO" 7 3 1 0 0xffffffff 0
+fdtput -d "$DTB" $BLDO3 regulator-always-on regulator-boot-on
+RUMBLE=/brick-rumble
+fdtput -c "$DTB" $RUMBLE
+fdtput -t s "$DTB" $RUMBLE compatible regulator-haptic
+fdtput -t u "$DTB" $RUMBLE haptic-supply "$(fdtget "$DTB" $BLDO3 phandle)"
+fdtput -t u "$DTB" $RUMBLE min-microvolt 2000000
+fdtput -t u "$DTB" $RUMBLE max-microvolt 3300000
+# PH3: port 7 pin 3, output, active high (cells as for the buttons).
+fdtput -t u "$DTB" $RUMBLE enable-gpios "$PIO" 7 3 1 0 0xffffffff 0

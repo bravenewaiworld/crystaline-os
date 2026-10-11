@@ -20,7 +20,8 @@
  *   F1/F2 buttons BTN_THUMBL/BTN_THUMBR;  SELECT/START/MENU (BTN_MODE) and volume keys unchanged
  *   FN slider     switch SW_TABLET_MODE, unchanged
  *   rumble        FF_RUMBLE effects are forwarded to the vibration motor's input device (see
- *                 handle_rumble); declared only when the device has one
+ *                 handle_rumble); declared only if an input device that can rumble exists
+ *                 when padbridge starts
  *
  * Options: trimui_inputd's option files in /tmp/trimui_inputd/, which NextUI creates and deletes;
  * an option is on while its file exists, and they are re-read every second:
@@ -95,7 +96,8 @@ static int turbo_phase;		/* auto-fire buttons read as pressed while this is 1 */
 static int no_dpad, dpad_to_stick;
 static int fn_switch;		/* FN slider position */
 static int rumble_fd = -1;	/* the vibration motor's input device, if any */
-static int motor_id[MAX_EFFECTS];	/* the motor's effect id for each of the pad's, or -1 */
+/* motor_id[i]: the motor device's id for the virtual pad's effect i; -1 if not uploaded */
+static int motor_id[MAX_EFFECTS];
 
 static long now_ms(void)
 {
@@ -174,49 +176,35 @@ static void read_state(int in_fd)
 	fn_switch = BIT_SET(sw, SW_TABLET_MODE);
 }
 
-/* Open the gpio-keys device by name; -1 if it isn't there. */
-static int open_keys(void)
+static int is_keys(int fd)
 {
-	DIR *d = opendir("/dev/input");
-	struct dirent *e;
-	int fd = -1;
+	char name[64] = "";
 
-	while (d && (e = readdir(d))) {
-		char path[300], name[64] = "";
-
-		if (strncmp(e->d_name, "event", 5))
-			continue;
-		snprintf(path, sizeof(path), "/dev/input/%s", e->d_name);
-		fd = open(path, O_RDONLY | O_NONBLOCK);	/* the main loop reads until EAGAIN */
-		if (fd >= 0 && ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0 &&
-		    !strcmp(name, KEYS_NAME))
-			break;
-		if (fd >= 0)
-			close(fd);
-		fd = -1;
-	}
-	if (d)
-		closedir(d);
-	return fd;
+	return ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0 && !strcmp(name, KEYS_NAME);
 }
 
-/* Open the first input device that can rumble (the vibration motor); -1 if there is none. */
-static int open_rumble(void)
+static int can_rumble(int fd)
+{
+	unsigned char ff[FF_MAX / 8 + 1] = { 0 };
+
+	return ioctl(fd, EVIOCGBIT(EV_FF, sizeof(ff)), ff) >= 0 && BIT_SET(ff, FF_RUMBLE);
+}
+
+/* Open the first input device for which match() is true; -1 if there is none. */
+static int open_input(int (*match)(int fd))
 {
 	DIR *d = opendir("/dev/input");
 	struct dirent *e;
 	int fd = -1;
 
 	while (d && (e = readdir(d))) {
-		unsigned char ff[FF_MAX / 8 + 1] = { 0 };
 		char path[300];
 
 		if (strncmp(e->d_name, "event", 5))
 			continue;
 		snprintf(path, sizeof(path), "/dev/input/%s", e->d_name);
-		fd = open(path, O_RDWR | O_NONBLOCK);
-		if (fd >= 0 && ioctl(fd, EVIOCGBIT(EV_FF, sizeof(ff)), ff) >= 0 &&
-		    BIT_SET(ff, FF_RUMBLE))
+		fd = open(path, O_RDWR | O_NONBLOCK);	/* the main loop reads until EAGAIN */
+		if (fd >= 0 && match(fd))
 			break;
 		if (fd >= 0)
 			close(fd);
@@ -229,8 +217,8 @@ static int open_rumble(void)
 
 /*
  * Rumble: games upload effects to the virtual pad and play them; uinput passes those requests to
- * us as events on out_fd. Each effect is uploaded to the motor's device in turn, and play/stop
- * requests are forwarded using the motor's id for it.
+ * us as events on out_fd. Each upload is passed on to the motor's device (motor_id maps the pad's
+ * effect ids to the motor's), and play/stop requests are forwarded with the mapped id.
  */
 static void handle_rumble(const struct input_event *ev)
 {
@@ -319,7 +307,7 @@ static int create_pad(void)
 int main(void)
 {
 	long next_options = 0, next_turbo = 0;	/* the first pass reads options and syncs */
-	int in_fd = open_keys();
+	int in_fd = open_input(is_keys);
 
 	if (in_fd < 0) {
 		fprintf(stderr, "padbridge: no \"%s\" input device\n", KEYS_NAME);
@@ -331,7 +319,7 @@ int main(void)
 	}
 	read_state(in_fd);
 	memset(motor_id, -1, sizeof(motor_id));
-	rumble_fd = open_rumble();
+	rumble_fd = open_input(can_rumble);
 	if (create_pad() < 0) {
 		perror("padbridge: create virtual pad");
 		return 1;
@@ -392,8 +380,9 @@ int main(void)
 		while (read(out_fd, &ev, sizeof(ev)) == sizeof(ev))
 			handle_rumble(&ev);
 
-		/* Sleep until the next auto-fire toggle (if a button is auto-firing) or options check;
-		 * both are in the future here, so the timeout is positive. */
+		/* Wait for button input, a rumble request, or the next auto-fire toggle (if a button
+		 * is auto-firing) / options check; both deadlines are in the future here, so the
+		 * timeout is positive. */
 		wake = any_turbo && next_turbo < next_options ? next_turbo : next_options;
 		poll(pfd, 2, wake - t);
 	}

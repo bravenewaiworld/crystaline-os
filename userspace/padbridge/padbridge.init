@@ -1,7 +1,7 @@
 #!/bin/sh /etc/rc.common
 # Start padbridge (see padbridge.c) at boot under procd, OpenWrt's service supervisor, which
-# restarts it if it exits (giving up after 5 quick exits). START=70: before NextUI (START=99), so
-# the virtual gamepad normally exists by the time NextUI looks for controllers.
+# restarts it if it exits (giving up after 5 quick exits). START=70: before the frontend (START=99),
+# so the virtual gamepad normally exists by the time the frontend looks for controllers.
 START=70
 USE_PROCD=1
 

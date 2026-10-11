@@ -78,7 +78,8 @@ if [ -n "$KBUILD" ]; then
 		[ -f "$KEYS/ssh_host_${t}_key" ] || ssh-keygen -q -N '' -t $t -f "$KEYS/ssh_host_${t}_key"
 	done
 	# Development login key: the card authorizes it for root, so tools can log in over WiFi or
-	# USB without a password (ssh -i build/ssh-host-keys/dev_key root@<address>).
+	# USB without a password (ssh -i build/ssh-host-keys/dev_key root@<address>). Kept with the
+	# host keys in build/ssh-host-keys/, which `make clean` preserves.
 	[ -f "$KEYS/dev_key" ] || ssh-keygen -q -N '' -t ed25519 -C brick-dev -f "$KEYS/dev_key"
 	{
 		# Modules go straight into /lib/modules/<release>/ (no subdirectories), where OpenWrt's
@@ -100,9 +101,8 @@ if [ -n "$KBUILD" ]; then
 			[ -f "$ROOT/build/tools/$t" ] && put "$ROOT/build/tools/$t" /usr/bin/$t 755
 		done
 		put "$ROOT/tools/device/sleeptest" /usr/bin/sleeptest 755
-		# TrimUI's UI needs drivers our kernel doesn't have yet and can power the device off
-		# (e.g. its battery monitor finds no battery), so remove the boot link that starts it
-		# (runtrimui) and start our placeholder frontend instead.
+		# TrimUI's UI expects TrimUI's own drivers and interfaces, so remove the boot link that
+		# starts it (runtrimui) and start our placeholder frontend instead.
 		echo "rm /etc/rc.d/S99runtrimui"
 		echo "rm /etc/rc.local"		# debugfs can't overwrite a file
 		put "$HERE/rc.local" /etc/rc.local 644
@@ -111,7 +111,7 @@ if [ -n "$KBUILD" ]; then
 		# loaded and uses a configuration under /etc.
 		echo "rm /etc/rc.d/S96wpa_supplicant"
 		service wifi
-		put "$DUFS" /usr/bin/dufs 755
+		put "$DUFS" /usr/bin/dufs 755	# required (see DUFS in tools/env.sh)
 		service webdav
 		echo "rm /etc/rc.d/S80hciattach"	# replaced by our bluetooth service
 		service bluetooth
