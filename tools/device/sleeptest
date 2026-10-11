@@ -1,0 +1,22 @@
+#!/bin/sh
+# Measure battery drain in deep sleep: log the battery state, sleep for MINUTES (woken by the
+# real-time clock's alarm), log it again. Unplug USB during the first minute, since charging
+# hides the drain. Run detached so it survives the USB connection dropping, e.g. over adb:
+#   start-stop-daemon -S -b -x /usr/bin/sleeptest -- 480
+# The log goes to the user-data partition, /mnt/SDCARD/sleeptest.log.
+MINUTES=${1:?usage: sleeptest MINUTES}
+LOG=/mnt/SDCARD/sleeptest.log
+BAT=/sys/class/power_supply/axp2202-battery
+
+log() {
+	echo "$(date '+%F %T') $1: battery $(cat $BAT/capacity)% $(cat $BAT/voltage_now) uV," \
+		"$(cat $BAT/status), USB online $(cat /sys/class/power_supply/axp2202-usb/online)" >>$LOG
+}
+
+sleep 60
+log "start, sleeping $MINUTES min"
+echo 0 >/sys/class/rtc/rtc0/wakealarm			# clear any old alarm first
+echo "+$((MINUTES * 60))" >/sys/class/rtc/rtc0/wakealarm
+echo mem >/sys/power/state
+log "woke"
+sync

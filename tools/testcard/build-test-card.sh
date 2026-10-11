@@ -95,6 +95,7 @@ if [ -n "$KBUILD" ]; then
 		for t in dispctl glspin; do
 			[ -f "$ROOT/build/tools/$t" ] && put "$ROOT/build/tools/$t" /usr/bin/$t 755
 		done
+		put "$ROOT/tools/device/sleeptest" /usr/bin/sleeptest 755
 		# TrimUI's UI needs drivers our kernel doesn't have yet and can power the device off
 		# (e.g. its battery monitor finds no battery), so remove the boot link that starts it
 		# (runtrimui) and start our placeholder frontend instead.
