@@ -40,6 +40,9 @@ boot() {
 		$SGDISK -e -n 0:0:0 -t 0:0700 -c 0:sdcard-new $disk && reboot
 		return
 	fi
-	# The mount options stock firmware uses for its SD card.
-	mount -t vfat -o rw,sync,iocharset=utf8,errors=continue /dev/$dev /mnt/SDCARD
+	# Not "sync" (stock's choice), which writes everything through at once: about 10x slower
+	# uploads and more card wear. "flush" writes a file's data out soon after it is closed;
+	# programs that must survive a power cut (e.g. saving a game) write a temporary file and rename
+	# it. errors=remount-ro: on filesystem damage, stop writing rather than make it worse.
+	mount -t vfat -o rw,noatime,flush,iocharset=utf8,errors=remount-ro /dev/$dev /mnt/SDCARD
 }
