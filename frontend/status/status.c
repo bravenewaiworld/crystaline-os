@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * status: placeholder frontend that shows the device's hardware state (battery, CPU, temperatures,
- * memory, network, buttons, sleep statistics) until the real frontend exists. The power button puts
+ * memory, network, buttons, headphone jack, sleep statistics) until the real frontend exists. The power button puts
  * the device to sleep; pressing it again wakes it.
  *
  * Draws text straight into the framebuffer (/dev/fb0), so it needs neither the GPU nor SDL. The
@@ -256,6 +256,29 @@ static void show_buttons(int pad_fd)
 	line(GREY, "  FN switch %s", TEST(sbits, SW_TABLET_MODE) ? "on" : "off");
 }
 
+/* Headphone jack (its input device's switches) and whether the speaker amplifier is powered (its
+ * enable pin, labelled "SPK" in debugfs's GPIO list). */
+static void show_audio(int jack_fd)
+{
+	unsigned char sbits[SW_MAX / 8 + 1] = { 0 };
+	char line_buf[256];
+	const char *amp = "?";
+	FILE *f = fopen("/sys/kernel/debug/gpio", "r");
+
+	while (f && fgets(line_buf, sizeof(line_buf), f))
+		if (strstr(line_buf, "|SPK "))
+			amp = strstr(line_buf, " hi") ? "on" : "off";
+	if (f)
+		fclose(f);
+	if (jack_fd < 0 || ioctl(jack_fd, EVIOCGSW(sizeof(sbits)), sbits) < 0) {
+		line(WHITE, "Audio    jack unknown, speaker amp %s", amp);
+		return;
+	}
+	line(WHITE, "Audio    headphones %s%s, speaker amp %s",
+	     TEST(sbits, SW_HEADPHONE_INSERT) ? "in" : "out",
+	     TEST(sbits, SW_MICROPHONE_INSERT) ? " (with mic)" : "", amp);
+}
+
 static void show_sleep(void)
 {
 	char text[128] = "";
@@ -270,7 +293,7 @@ static void show_sleep(void)
 	line(WHITE, "Sleep    %s", text[0] ? text : "(no statistics)");
 }
 
-static void draw(int pad_fd)
+static void draw(int pad_fd, int jack_fd)
 {
 	struct timespec up;
 	int shown = var.yoffset ? 1 : 0;
@@ -289,6 +312,7 @@ static void draw(int pad_fd)
 	show_network();
 	row++;
 	show_buttons(pad_fd);
+	show_audio(jack_fd);
 	row++;
 	show_sleep();
 	row++;
@@ -320,14 +344,15 @@ static void sleep_now(void)
 		close(fd);
 }
 
-/* Open every input device; returns how many, and the virtual gamepad's index in @pad. */
-static int open_inputs(struct pollfd *fds, int *pad)
+/* Open every input device; returns how many, and the indices of the virtual gamepad in @pad and
+ * the headphone jack in @jack (-1 if absent). */
+static int open_inputs(struct pollfd *fds, int *pad, int *jack)
 {
 	struct dirent *e;
 	DIR *d = opendir("/dev/input");
 	int n = 0;
 
-	*pad = -1;
+	*pad = *jack = -1;
 	while (d && (e = readdir(d)) && n < MAX_INPUTS) {
 		char path[300], name[64] = "";
 		int fd;
@@ -341,6 +366,8 @@ static int open_inputs(struct pollfd *fds, int *pad)
 		ioctl(fd, EVIOCGNAME(sizeof(name)), name);
 		if (!strcmp(name, "TRIMUI Player1"))
 			*pad = n;
+		else if (strstr(name, "Audio Jack"))
+			*jack = n;
 		fds[n].fd = fd;
 		fds[n++].events = POLLIN;
 	}
@@ -354,7 +381,7 @@ int main(void)
 	struct fb_fix_screeninfo fix;
 	struct pollfd fds[MAX_INPUTS];
 	long ignore_power_until = 0;
-	int nfds, pad, i;
+	int nfds, pad, jack, i;
 
 	fb_fd = open("/dev/fb0", O_RDWR);
 	if (fb_fd < 0 || ioctl(fb_fd, FBIOGET_VSCREENINFO, &var) < 0 ||
@@ -371,10 +398,10 @@ int main(void)
 		return 1;
 	}
 	set_backlight(BACKLIGHT);
-	nfds = open_inputs(fds, &pad);
+	nfds = open_inputs(fds, &pad, &jack);
 
 	for (;;) {
-		draw(pad >= 0 ? fds[pad].fd : -1);
+		draw(pad >= 0 ? fds[pad].fd : -1, jack >= 0 ? fds[jack].fd : -1);
 		if (poll(fds, nfds, REFRESH_MS) <= 0)
 			continue;
 		for (i = 0; i < nfds; i++) {

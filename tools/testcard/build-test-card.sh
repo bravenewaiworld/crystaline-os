@@ -104,6 +104,8 @@ if [ -n "$KBUILD" ]; then
 		# (e.g. its battery monitor finds no battery), so remove the boot link that starts it
 		# (runtrimui) and start our placeholder frontend instead.
 		echo "rm /etc/rc.d/S99runtrimui"
+		echo "rm /etc/rc.local"		# debugfs can't overwrite a file
+		put "$HERE/rc.local" /etc/rc.local 644
 		service sdcard
 		# WiFi (see wifi), replacing the stock WiFi start-up, which runs before the driver is
 		# loaded and uses a configuration under /etc.

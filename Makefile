@@ -24,7 +24,8 @@ help:
 	@echo '  live-image     SD card that runs our system (not available yet)'
 	@echo '  install-image  SD card that installs our system to internal storage (not available yet)'
 	@echo '  test-card      development SD card: our kernel and services on TrimUI'"'"'s stock system'
-	@echo '  update-card    write test-card'"'"'s kernel and boot files to the card in a running Brick (adb)'
+	@echo '  update-card    build test-card, then write its kernel and boot files to the card in a'
+	@echo '                 running Brick (adb)'
 	@echo 'Parts:'
 	@echo '  kernel  gpu  userspace  frontend  device-tools'
 	@echo '  clean          remove build/ (keeps the test card'"'"'s SSH host keys)'
@@ -71,7 +72,7 @@ $(B)/tools/dispctl: tools/device/dispctl.c
 
 # glspin links TrimUI's GPU libraries, taken from the stock system. Their own dependencies are
 # resolved on the device (--allow-shlib-undefined).
-$(B)/tools/glspin: tools/device/glspin.c $(B)/stock-root/usr/lib
+$(B)/tools/glspin: tools/device/glspin.c $(B)/stock-root/.done
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $< -L$(B)/stock-root/usr/lib -lEGL -lGLESv2 -lm \
 		-Wl,--allow-shlib-undefined -Wl,-rpath-link,$(B)/stock-root/usr/lib
@@ -80,15 +81,17 @@ $(B)/tools/glspin: tools/device/glspin.c $(B)/stock-root/usr/lib
 $(B)/stock-fw/rootfs.fex: $(STOCK_FW)
 	python3 -I tools/sdboot/awimg_unpack.py $< $(B)/stock-fw
 
-$(B)/stock-root/usr/lib: $(B)/stock-fw/rootfs.fex
+# A marker file, since the extracted files keep their original (older) dates.
+$(B)/stock-root/.done: $(B)/stock-fw/rootfs.fex
 	@mkdir -p $(B)/stock-root/usr
 	debugfs -R 'rdump /usr/lib $(B)/stock-root/usr' $< 2>/dev/null
+	@touch $@
 
 # --- Development test card ------------------------------------------------------------------
 test-card: kernel gpu userspace frontend device-tools $(B)/stock-fw/rootfs.fex
 	tools/testcard/build-test-card.sh $(B)/stock-fw $(B)/test-card.img $(B)/kernel
 
-update-card:
+update-card: test-card
 	tools/testcard/update-card.sh $(B)/test-card.img
 
 clean:
