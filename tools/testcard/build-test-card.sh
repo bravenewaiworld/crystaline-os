@@ -113,6 +113,7 @@ if [ -n "$KBUILD" ]; then
 		service wifi
 		put "$DUFS" /usr/bin/dufs 755
 		service webdav
+		echo "rm /etc/rc.d/S80hciattach"	# replaced by our bluetooth service
 		service bluetooth
 		put "$ROOT/build/frontend/status" /usr/bin/status 755
 		service frontend

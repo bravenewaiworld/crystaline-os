@@ -38,7 +38,7 @@ Roughly by impact on the goal.
 | Battery and charger | Driver works (level, status, voltage, current, temperature; charge settings as stock). Missing: input current limit by charger type, as stock does | Charging speed on wall chargers |
 | Sleep | Deep sleep works (through Allwinner's firmware, as stock's kernel is configured); power button and alarm wake. To do: measure how deep (overnight drain test), check every device after resume | Battery life |
 | Power tuning | Voltage regulators stuck in their least efficient mode; unused clocks left running; rumble, speaker amp and USB-A power always on; CPUs never reach their deepest idle state | Battery life |
-| WiFi and Bluetooth (XR829) | WiFi works (2.4 GHz only; connects from a config on the SD card; SSH and WebDAV file transfer over it). Bluetooth and Bluetooth audio untested | Bluetooth headphones |
+| WiFi and Bluetooth (XR829) | Working: WiFi (2.4 GHz only; SSH and WebDAV over it) and Bluetooth audio (pairing kept across reboots, automatic reconnection, a unique address per device). Bluetooth audio uses SBC only | — |
 | Audio | Working: speaker and headphones, jack switches between them, amplifiers off when idle, volume controls in the standard direction. To do: the frontend's volume (one level mapped onto the codec's controls; separate levels for speaker and headphones) | Polish |
 | Rumble | Needs the standard rumble interface (on/off pin plus a strength voltage) | Polish |
 | LEDs | Working: 14 LEDs (top bar 0–7, F2, F1, under L1, L2, R2, R1), correct colours, off in sleep and restored after. To do: zone names and effects for the frontend | Polish |
@@ -64,5 +64,8 @@ Roughly by impact on the goal.
    shutdown.
 8. **Clock:** set from WiFi time, and kept across power-off if the hardware allows.
 9. **Dev workflow:** one reproducible build of the whole image; a hardware test checklist.
-10. **USB mass storage, done safely:** expose the SD card's data partition to a PC over USB
+10. **Bluetooth audio codecs:** build bluealsa with aptX / aptX HD (libopenaptx), AAC (fdk-aac)
+    and LDAC (libldac) besides SBC. Check each library's licence for redistribution (fdk-aac's
+    is not GPL-compatible) and the CPU cost of encoding, especially LDAC, on this chip.
+11. **USB mass storage, done safely:** expose the SD card's data partition to a PC over USB
     without corrupting it (the device must stop using the card while it's shared).

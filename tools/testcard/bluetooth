@@ -1,12 +1,31 @@
 #!/bin/sh /etc/rc.common
-# Bluetooth on test cards: BlueZ's daemon (pairing, connections) and bluealsa, which makes paired
-# Bluetooth audio devices usable as ALSA devices ("bluealsa:DEV=<address>"). The controller itself
-# is attached by the stock hciattach service (START=80). Pairings are kept in the state area,
-# /tmp/state (see sdcard). procd, OpenWrt's service supervisor, restarts both programs if they exit.
-START=81
+# Bluetooth on test cards: attaches the XR829's Bluetooth controller (on serial port ttyS1), then
+# runs BlueZ's daemon (pairing, connections) and bluealsa, which makes paired Bluetooth audio
+# devices usable as ALSA devices ("bluealsa:DEV=<address>"). Pairings are kept in the state area,
+# /tmp/state (see sdcard). procd, OpenWrt's service supervisor, restarts the programs if they exit.
+# Replaces the stock hciattach service, so that the address is set before the controller starts.
+START=80
 USE_PROCD=1
 
+# The XR829 has no Bluetooth address of its own: hciattach loads one from
+# /etc/bluetooth/xr_bt.conf, which is the same on every Brick. Derive one from the chip's unique
+# serial number instead (keeping TrimUI's 22:22 prefix) and mount it over that file.
+set_address() {
+	serial=$(sed -n 's/^sunxi_serial *: //p' /sys/class/sunxi_info/sys_info)
+	[ -n "$serial" ] || return
+	set -- $(echo "$serial" | md5sum | cut -c1-8 | sed 's/../& /g')
+	echo "22 22 $1 $2 $3 $4" >/tmp/xr_bt.conf
+	grep -q " /etc/bluetooth/xr_bt.conf " /proc/mounts ||
+		mount --bind /tmp/xr_bt.conf /etc/bluetooth/xr_bt.conf
+}
+
 start_service() {
+	set_address
+	procd_open_instance hciattach
+	procd_set_param command /usr/bin/hciattach -n ttyS1 xradio	# -n: stay in the foreground
+	procd_set_param respawn
+	procd_close_instance
+
 	procd_open_instance bluetoothd
 	# Wait for the state area (procd runs start scripts concurrently), then keep BlueZ's storage
 	# directory there.
