@@ -40,7 +40,7 @@ Roughly by impact on the goal.
 | Power tuning | Voltage regulators stuck in their least efficient mode; unused clocks left running; rumble, speaker amp and USB-A power always on; CPUs never reach their deepest idle state | Battery life |
 | WiFi and Bluetooth (XR829) | Working: WiFi (2.4 GHz only; SSH and WebDAV over it) and Bluetooth audio (pairing kept across reboots, automatic reconnection, a unique address per device). Bluetooth audio uses SBC only | — |
 | Audio | Working: speaker and headphones, jack switches between them, amplifiers off when idle, volume controls in the standard direction. To do: the frontend's volume (one level mapped onto the codec's controls; separate levels for speaker and headphones) | Polish |
-| Rumble | Needs the standard rumble interface (on/off pin plus a strength voltage) | Polish |
+| Rumble | Working: standard force feedback (FF_RUMBLE), strength as motor voltage (2.0–3.3 V), forwarded from the virtual gamepad so games can use it; motor supply off when idle | — |
 | LEDs | Working: 14 LEDs (top bar 0–7, F2, F1, under L1, L2, R2, R1), correct colours, off in sleep and restored after. To do: zone names and effects for the frontend | Polish |
 | USB cable detection | Can't tell charger, PC and host mode apart; top USB-A port untested | Charging, PC transfer |
 | SD card fast mode | Card runs at a third of stock speed | Load times |

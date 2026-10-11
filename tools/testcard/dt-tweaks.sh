@@ -98,3 +98,16 @@ fdtput -t u "$DTB" /soc@03000000/sound@0 hp_detect_case 1
 # Start-up headphone amplifier setting (a register value: 0 = loudest, each step 6 dB quieter;
 # it also drives the speaker). 3 = -18 dB, what TrimUI's start-up script set; 0 is very loud.
 fdtput -t u "$DTB" /soc@03000000/codec@0x05096000 headphonegain 3
+
+# Rumble: a standard force-feedback input device (regulator-haptic). The motor's supply is BLDO3,
+# whose voltage sets the strength (min-microvolt for the weakest effect, max for the strongest),
+# and PH3 switches it on. BLDO3 is no longer always on: the driver powers it only while rumbling.
+BLDO3=$REGS/bldo3
+fdtput -d "$DTB" $BLDO3 regulator-always-on
+fdtput -d "$DTB" $BLDO3 regulator-boot-on
+fdtput -c "$DTB" /brick-rumble
+fdtput -t s "$DTB" /brick-rumble compatible regulator-haptic
+fdtput -t u "$DTB" /brick-rumble haptic-supply "$(fdtget "$DTB" $BLDO3 phandle)"
+fdtput -t u "$DTB" /brick-rumble min-microvolt 2000000
+fdtput -t u "$DTB" /brick-rumble max-microvolt 3300000
+fdtput -t u "$DTB" /brick-rumble enable-gpios "$PIO" 7 3 1 0 0xffffffff 0

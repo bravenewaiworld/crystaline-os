@@ -19,6 +19,8 @@
  *   D-pad         hat axes ABS_HAT0X/ABS_HAT0Y
  *   F1/F2 buttons BTN_THUMBL/BTN_THUMBR;  SELECT/START/MENU (BTN_MODE) and volume keys unchanged
  *   FN slider     switch SW_TABLET_MODE, unchanged
+ *   rumble        FF_RUMBLE effects are forwarded to the vibration motor's input device (see
+ *                 handle_rumble); declared only when the device has one
  *
  * Options: trimui_inputd's option files in /tmp/trimui_inputd/, which NextUI creates and deletes;
  * an option is on while its file exists, and they are re-read every second:
@@ -50,6 +52,7 @@
  * BTN_X/BTN_Y, are aliases of BTN_NORTH/BTN_WEST (top/left), the opposite positions. */
 #define XBOX_X		0x133
 #define XBOX_Y		0x134
+#define MAX_EFFECTS	16	/* rumble effects a game can upload at once */
 
 /* What a gpio-keys code becomes on the virtual pad. */
 enum kind { KEY, TRIGGER, DPAD };
@@ -91,6 +94,8 @@ static int turbo_on[NMAP];	/* auto-fire enabled by option file */
 static int turbo_phase;		/* auto-fire buttons read as pressed while this is 1 */
 static int no_dpad, dpad_to_stick;
 static int fn_switch;		/* FN slider position */
+static int rumble_fd = -1;	/* the vibration motor's input device, if any */
+static int motor_id[MAX_EFFECTS];	/* the motor's effect id for each of the pad's, or -1 */
 
 static long now_ms(void)
 {
@@ -195,6 +200,76 @@ static int open_keys(void)
 	return fd;
 }
 
+/* Open the first input device that can rumble (the vibration motor); -1 if there is none. */
+static int open_rumble(void)
+{
+	DIR *d = opendir("/dev/input");
+	struct dirent *e;
+	int fd = -1;
+
+	while (d && (e = readdir(d))) {
+		unsigned char ff[FF_MAX / 8 + 1] = { 0 };
+		char path[300];
+
+		if (strncmp(e->d_name, "event", 5))
+			continue;
+		snprintf(path, sizeof(path), "/dev/input/%s", e->d_name);
+		fd = open(path, O_RDWR | O_NONBLOCK);
+		if (fd >= 0 && ioctl(fd, EVIOCGBIT(EV_FF, sizeof(ff)), ff) >= 0 &&
+		    BIT_SET(ff, FF_RUMBLE))
+			break;
+		if (fd >= 0)
+			close(fd);
+		fd = -1;
+	}
+	if (d)
+		closedir(d);
+	return fd;
+}
+
+/*
+ * Rumble: games upload effects to the virtual pad and play them; uinput passes those requests to
+ * us as events on out_fd. Each effect is uploaded to the motor's device in turn, and play/stop
+ * requests are forwarded using the motor's id for it.
+ */
+static void handle_rumble(const struct input_event *ev)
+{
+	if (ev->type == EV_UINPUT && ev->code == UI_FF_UPLOAD) {
+		struct uinput_ff_upload up = { .request_id = ev->value };
+
+		if (ioctl(out_fd, UI_BEGIN_FF_UPLOAD, &up) < 0)
+			return;
+		up.retval = -EINVAL;
+		if (up.effect.id >= 0 && up.effect.id < MAX_EFFECTS) {
+			struct ff_effect effect = up.effect;
+
+			effect.id = motor_id[up.effect.id];	/* -1 uploads a new effect */
+			up.retval = ioctl(rumble_fd, EVIOCSFF, &effect) < 0 ? -errno : 0;
+			if (!up.retval)
+				motor_id[up.effect.id] = effect.id;
+		}
+		ioctl(out_fd, UI_END_FF_UPLOAD, &up);
+	} else if (ev->type == EV_UINPUT && ev->code == UI_FF_ERASE) {
+		struct uinput_ff_erase er = { .request_id = ev->value };
+
+		if (ioctl(out_fd, UI_BEGIN_FF_ERASE, &er) < 0)
+			return;
+		er.retval = 0;
+		if (er.effect_id < MAX_EFFECTS && motor_id[er.effect_id] >= 0) {
+			ioctl(rumble_fd, EVIOCRMFF, motor_id[er.effect_id]);
+			motor_id[er.effect_id] = -1;
+		}
+		ioctl(out_fd, UI_END_FF_ERASE, &er);
+	} else if (ev->type == EV_FF && ev->code < MAX_EFFECTS && motor_id[ev->code] >= 0) {
+		/* play (value = repeat count) or stop (value 0) */
+		struct input_event play = { .type = EV_FF, .code = motor_id[ev->code],
+					    .value = ev->value };
+
+		if (write(rumble_fd, &play, sizeof(play)) < 0)
+			perror("padbridge: rumble");
+	}
+}
+
 /* Create the virtual pad with trimui_inputd's capabilities; sets out_fd. */
 static int create_pad(void)
 {
@@ -206,7 +281,7 @@ static int create_pad(void)
 	};
 	struct uinput_user_dev dev = { .id = { BUS_USB, 0x045e, 0x028e, 0x0114 } };
 	size_t i;
-	int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+	int fd = open("/dev/uinput", O_RDWR | O_NONBLOCK);	/* read: rumble requests */
 
 	if (fd < 0)
 		return -1;
@@ -227,6 +302,12 @@ static int create_pad(void)
 		dev.absmax[axes[i].code] = axes[i].max;
 	}
 	ioctl(fd, UI_SET_SWBIT, SW_TABLET_MODE);
+	/* Rumble, if the device has a vibration motor (trimui_inputd has none). */
+	if (rumble_fd >= 0) {
+		ioctl(fd, UI_SET_EVBIT, EV_FF);
+		ioctl(fd, UI_SET_FFBIT, FF_RUMBLE);
+		dev.ff_effects_max = MAX_EFFECTS;
+	}
 	if (write(fd, &dev, sizeof(dev)) != sizeof(dev) || ioctl(fd, UI_DEV_CREATE) < 0) {
 		close(fd);
 		return -1;
@@ -249,13 +330,16 @@ int main(void)
 		return 1;
 	}
 	read_state(in_fd);
+	memset(motor_id, -1, sizeof(motor_id));
+	rumble_fd = open_rumble();
 	if (create_pad() < 0) {
 		perror("padbridge: create virtual pad");
 		return 1;
 	}
 
 	for (;;) {
-		struct pollfd pfd = { .fd = in_fd, .events = POLLIN };
+		struct pollfd pfd[2] = { { .fd = in_fd, .events = POLLIN },
+					 { .fd = out_fd, .events = POLLIN } };
 		struct input_event ev;
 		long t = now_ms(), wake;
 		int any_turbo = 0, changed = 0;
@@ -305,9 +389,12 @@ int main(void)
 		if (changed)
 			sync_pad();
 
+		while (read(out_fd, &ev, sizeof(ev)) == sizeof(ev))
+			handle_rumble(&ev);
+
 		/* Sleep until the next auto-fire toggle (if a button is auto-firing) or options check;
 		 * both are in the future here, so the timeout is positive. */
 		wake = any_turbo && next_turbo < next_options ? next_turbo : next_options;
-		poll(&pfd, 1, wake - t);
+		poll(pfd, 2, wake - t);
 	}
 }

@@ -1,24 +1,11 @@
 #!/bin/sh
 # First program the kernel runs on test cards with our kernel (via init=/sbin/sdinit), before
-# the normal init. It needs no display or LED driver, so it shows whether the kernel got as far
-# as starting the system at all:
-# - buzzes the rumble motor twice (PH3 = GPIO 227: Allwinner GPIO number = port index * 32 +
-#   pin, H = 7; the motor's supply rail is always on);
-# - saves the kernel log to the card's FAT "bootloader" partition as sd-boot-log/early-dmesg.txt.
+# the normal init. It saves the kernel log to the card's FAT "bootloader" partition as
+# sd-boot-log/early-dmesg.txt, which shows whether the kernel got as far as starting the system.
 # Then it undoes its mounts (the normal init mounts /proc and /sys itself) and hands over.
 
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
-
-buzz() {
-	echo 227 >/sys/class/gpio/export
-	echo out >/sys/class/gpio/gpio227/direction
-	for i in 1 2; do
-		echo 1 >/sys/class/gpio/gpio227/value; usleep 300000
-		echo 0 >/sys/class/gpio/gpio227/value; usleep 300000
-	done
-	echo 227 >/sys/class/gpio/unexport
-}
 
 # Print the device name of the partition with GPT name $1 (the kernel's PARTNAME), only if
 # exactly one exists. The internal eMMC has partitions with the same names; it is normally
@@ -39,7 +26,6 @@ save_early_log() {
 	umount /mnt/SDCARD
 }
 
-buzz
 save_early_log
 umount /sys
 umount /proc

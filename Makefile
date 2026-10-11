@@ -64,9 +64,13 @@ $(B)/frontend/status: frontend/status/status.c $(B)/frontend/font8x16.h
 	$(CC) $(CFLAGS) -I$(B)/frontend -o $@ $< $(STATIC)
 
 # --- Development tools that run on the device -----------------------------------------------
-device-tools: $(B)/tools/dispctl $(B)/tools/glspin
+device-tools: $(B)/tools/dispctl $(B)/tools/glspin $(B)/tools/rumble
 
 $(B)/tools/dispctl: tools/device/dispctl.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -o $@ $< $(STATIC)
+
+$(B)/tools/rumble: tools/device/rumble.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $< $(STATIC)
 

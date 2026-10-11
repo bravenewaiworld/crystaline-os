@@ -5,9 +5,9 @@
 # /etc/sd-boot-marker, and boot logs saved to sd-boot-log/ on the card's FAT "bootloader"
 # partition (boot-resource.fex: the boot logo and other images U-Boot reads).
 # With our kernel the card also: mounts a user-data partition (sdcard) and starts our placeholder
-# frontend (frontend/status) instead of TrimUI's UI, buzzes the rumble
-# motor when the system starts (sdinit), offers adb and SSH over USB (sdusb), applies
-# dt-tweaks.sh, and adds the GPU modules and test tools if they've been built
+# frontend (frontend/status) instead of TrimUI's UI, saves the early kernel log (sdinit), offers
+# adb and SSH over USB (sdusb), WiFi (wifi), file transfer (webdav) and Bluetooth (bluetooth),
+# applies dt-tweaks.sh, and adds the GPU modules and test tools if they've been built
 # (tools/build-gpu.sh, tools/device/).
 # Usage: build-test-card.sh <unpacked-firmware-dir> <out.img> [kernel-build-dir [kernel-args]]
 #   unpacked-firmware-dir: output of tools/sdboot/awimg_unpack.py on trimui_tg3040.awimg
@@ -96,7 +96,7 @@ if [ -n "$KBUILD" ]; then
 		put "$ROOT/build/userspace/padbridge" /usr/bin/padbridge 755
 		service padbridge "$ROOT/userspace/padbridge/padbridge.init"
 		# Test tools (tools/device/), if built.
-		for t in dispctl glspin; do
+		for t in dispctl glspin rumble; do
 			[ -f "$ROOT/build/tools/$t" ] && put "$ROOT/build/tools/$t" /usr/bin/$t 755
 		done
 		put "$ROOT/tools/device/sleeptest" /usr/bin/sleeptest 755
