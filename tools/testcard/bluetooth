@@ -4,8 +4,8 @@
 # headphones/speakers usable as ALSA outputs ("bluealsa:DEV=<address>"; playback only:
 # -p a2dp-source). Pairings are kept in the state area, /tmp/state (see sdcard). procd, OpenWrt's
 # service supervisor, restarts the programs if they exit.
-# Replaces the stock hciattach service.
-# The XR829 has no Bluetooth address of its own. Stock hciattach sets the one in
+# Replaces the stock hciattach service (but still uses TrimUI's hciattach program).
+# The XR829 has no Bluetooth address of its own. TrimUI's hciattach sets the one in
 # /etc/bluetooth/xr_bt.conf ("%02x " bytes, most significant first), or makes up a random one and
 # saves it there. The card's image links that file, and BlueZ's storage directory
 # (/etc/lib/bluetooth in this build), into the state area, so the address and pairings survive
@@ -13,9 +13,9 @@
 START=80
 USE_PROCD=1
 
-# Both programs keep files in the state area, so wait for it: procd doesn't wait for one start
-# script to finish before starting the next (webdav was seen starting before sdcard had mounted
-# the partition).
+# hciattach and bluetoothd keep files in the state area (in /tmp/state/bluetooth, created here),
+# so wait for it: procd doesn't wait for one start script to finish before starting the next
+# (webdav was seen starting before sdcard had mounted the partition).
 WAIT_FOR_STATE='until grep -q " /tmp/state " /proc/mounts; do sleep 1; done
 	mkdir -p /tmp/state/bluetooth'
 

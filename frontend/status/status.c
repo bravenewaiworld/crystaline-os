@@ -55,7 +55,8 @@ static uint8_t *fb;		/* both pages, mapped */
 static uint32_t *page;		/* the hidden page being drawn */
 static int fb_fd, stride;	/* stride in pixels */
 static int row;			/* next text row */
-/* Lines recorded by line() while refreshing the slowly changing sections, replayed every frame. */
+/* Lines the power and CPU sections drew at their last refresh, redrawn on the frames in between
+ * (at most 16; any more appear only on refresh frames). */
 static struct { uint32_t rgb; int row; char text[128]; } slow[16];
 static int nslow, recording;
 
@@ -63,7 +64,7 @@ static long now_ms(void)
 {
 	struct timespec ts;
 
-	clock_gettime(CLOCK_MONOTONIC, &ts);
+	clock_gettime(CLOCK_BOOTTIME, &ts);	/* includes time asleep */
 	return ts.tv_sec * 1000L + ts.tv_nsec / 1000000;
 }
 
@@ -321,6 +322,8 @@ static void draw(int pad_fd, int jack_fd)
 	line(GREEN, "Brick status          up %ld:%02ld:%02ld", up.tv_sec / 3600,
 	     up.tv_sec / 60 % 60, up.tv_sec % 60);
 	row++;
+	/* Every SLOW_REFRESH_MS read power and CPU afresh (each read wakes the power chip's I2C bus);
+	 * otherwise redraw the saved lines. */
 	if (now_ms() >= next_slow) {
 		nslow = 0;
 		recording = 1;
@@ -360,21 +363,28 @@ static void set_backlight(int level)
 	}
 }
 
-/* Put the device to sleep; returns once it has woken up again. The WiFi driver refuses to suspend
- * while connected, so WiFi is stopped first and restarted afterwards. */
+/* True within WAKE_GRACE_MS of the device waking from sleep, whoever put it to sleep (e.g. the
+ * powertest tool). Time spent asleep shows as CLOCK_BOOTTIME pulling ahead of CLOCK_MONOTONIC. */
+static int just_woke(void)
+{
+	static long asleep, woke_at = -WAKE_GRACE_MS;
+	struct timespec m;
+	long now = now_ms(), a;
+
+	clock_gettime(CLOCK_MONOTONIC, &m);
+	a = now - (m.tv_sec * 1000L + m.tv_nsec / 1000000);
+	if (a > asleep + 100) {		/* margin: the two clocks are read a moment apart */
+		asleep = a;
+		woke_at = now;
+	}
+	return now - woke_at < WAKE_GRACE_MS;
+}
+
+/* Put the device to sleep (see tools/device/sleepnow); returns once it has woken up again. */
 static void sleep_now(void)
 {
-	int fd;
-
-	if (system("/etc/init.d/wifi stop; ifconfig wlan0 down") < 0)
-		perror("status: stop WiFi");
-	fd = open("/sys/power/state", O_WRONLY);
-	if (fd < 0 || write(fd, "mem", 3) < 0)
-		perror("status: sleep");
-	if (fd >= 0)
-		close(fd);
-	if (system("/etc/init.d/wifi start") < 0)
-		perror("status: start WiFi");
+	if (system("/usr/bin/sleepnow") != 0)
+		fprintf(stderr, "status: sleepnow failed\n");
 }
 
 /* Open every input device; returns how many, and the fds of the virtual gamepad in @pad and the
@@ -413,7 +423,6 @@ int main(void)
 {
 	struct fb_fix_screeninfo fix;
 	struct pollfd fds[MAX_INPUTS];
-	long ignore_power_until = 0;
 	int nfds, pad, jack, i;
 
 	fb_fd = open("/dev/fb0", O_RDWR);
@@ -442,10 +451,9 @@ int main(void)
 
 			while (read(fds[i].fd, &ev, sizeof(ev)) == sizeof(ev)) {
 				if (ev.type != EV_KEY || ev.code != KEY_POWER || ev.value != 1 ||
-				    now_ms() < ignore_power_until)
+				    just_woke())
 					continue;
 				sleep_now();
-				ignore_power_until = now_ms() + WAKE_GRACE_MS;
 			}
 		}
 	}

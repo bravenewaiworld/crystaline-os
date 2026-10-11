@@ -15,9 +15,10 @@ fdtput "$DTB" $REGS/cldo4 regulator-always-on
 # CPU voltage regulator (TCS4838 at I2C 0x41): register-compatible with the Silergy SYR827, so
 # use the standard fan53555 driver. TrimUI's node describes the chip as two child regulators
 # for its own driver; fan53555 instead reads the regulator settings from the chip node itself.
-# Keep "ti,tcs4838" first: vendor U-Boot reads this node too. The suspend-voltage-selector of
-# 1 makes the driver set VSEL0, the voltage slot the chip actually uses (VSEL1 is the off
-# suspend slot); setting the other slot would raise CPU speed without raising its voltage.
+# Keep "ti,tcs4838" first: vendor U-Boot also reads this node and looks for that name.
+# The chip has two voltage registers; on this board VSEL0 is the one in effect. fan53555 writes
+# the register not named as the suspend one, so suspend-voltage-selector = 1 makes it write
+# VSEL0. Getting this wrong would let the CPU speed up without its voltage rising.
 TCS=/soc@03000000/s_twi@0x07081400/tcs@41
 fdtput -t s "$DTB" $TCS compatible ti,tcs4838 silergy,syr827
 fdtput -t s "$DTB" $TCS regulator-name vdd-cpu
@@ -95,7 +96,7 @@ fdtput -t u "$DTB" /soc@03000000/codec@0x05096000 headphonegain 3
 
 # Rumble: a standard force-feedback input device (regulator-haptic). The motor's supply is BLDO3,
 # whose voltage sets the strength (min-microvolt for the weakest effect, max for the strongest),
-# and PH3 switches it on. BLDO3 is no longer always on: the driver powers it only while rumbling.
+# and PH3 switches it on. BLDO3's always-on flags are removed: the driver powers it only while rumbling.
 BLDO3=$REGS/bldo3
 fdtput -d "$DTB" $BLDO3 regulator-always-on regulator-boot-on
 RUMBLE=/brick-rumble

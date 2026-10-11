@@ -96,11 +96,12 @@ if [ -n "$KBUILD" ]; then
 		# expect, replacing TrimUI's trimui_inputd.
 		put "$ROOT/build/userspace/padbridge" /usr/bin/padbridge 755
 		service padbridge "$ROOT/userspace/padbridge/padbridge.init"
-		# Test tools (tools/device/), if built.
-		for t in dispctl glspin rumble i2creg memreg; do
-			[ -f "$ROOT/build/tools/$t" ] && put "$ROOT/build/tools/$t" /usr/bin/$t 755
+		# Device tools (tools/device/): the built C tools, and the scripts. sleepnow is also used by
+		# the frontend.
+		for f in "$ROOT"/build/tools/* "$ROOT/tools/device/powertest" "$ROOT/tools/device/sleepnow"
+		do
+			put "$f" "/usr/bin/${f##*/}" 755
 		done
-		put "$ROOT/tools/device/powertest" /usr/bin/powertest 755
 		# TrimUI's UI expects TrimUI's own drivers and interfaces, so remove the boot link that
 		# starts it (runtrimui) and start our placeholder frontend instead.
 		echo "rm /etc/rc.d/S99runtrimui"
@@ -115,8 +116,10 @@ if [ -n "$KBUILD" ]; then
 		service webdav
 		echo "rm /etc/rc.d/S80hciattach"	# replaced by our bluetooth service
 		service bluetooth
+		# Bluetooth address file and BlueZ's storage directory: links into the state area (see
+		# bluetooth). debugfs removes only empty directories, so first delete the storage
+		# directory's files, which are for BlueZ's mesh daemon (unused).
 		echo "symlink /etc/bluetooth/xr_bt.conf /tmp/state/bluetooth/xr_bt.conf"
-		# BlueZ's storage directory (see bluetooth); its mesh files are for the unused mesh daemon.
 		for f in local_node.json prov_db.json; do echo "rm /etc/lib/bluetooth/mesh/$f"; done
 		echo "rmdir /etc/lib/bluetooth/mesh"; echo "rmdir /etc/lib/bluetooth"
 		echo "symlink /etc/lib/bluetooth /tmp/state/bluetooth"

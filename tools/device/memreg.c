@@ -31,6 +31,7 @@ int main(int argc, char **argv)
 		perror("memreg");
 		return 1;
 	}
+	/* an unaligned address is rounded down to its 32-bit register */
 	reg = (volatile uint32_t *)((char *)map + (addr & (page - 1) & ~3UL));
 	if (argc == 3)
 		*reg = strtoul(argv[2], NULL, 0);

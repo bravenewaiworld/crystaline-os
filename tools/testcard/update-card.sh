@@ -6,7 +6,8 @@
 # - the "boot" partition (kernel);
 # - the "rootfs" partition, so the system (including kernel modules, which must match the kernel)
 #   is exactly what was built.
-# The card's partition table, user-data partition and system-state image are left alone; the
+# The card's partition table and user-data partition (with the system-state image,
+# .system-state.img, on it) are left alone; the
 # areas are staged on the user-data partition (they don't fit in RAM).
 # Usage: update-card.sh <card.img>
 set -eu
@@ -26,7 +27,8 @@ set -- $BOOT $ROOTFS			# $1 $2: boot start, size; $3 $4: rootfs start, size
 dd if="$IMG" of="$TMP/pkg" bs=512 skip=$PKG_SECTOR count=$PKG_SECTORS status=none
 dd if="$IMG" of="$TMP/boot" bs=512 skip="$1" count="$2" status=none
 dd if="$IMG" of="$TMP/rootfs" bs=512 skip="$3" count="$4" status=none
-# Its U-Boot work_mode must be 0: anything else starts the vendor flasher.
+# Check the boot package first: U-Boot's work_mode setting in it must be 0 (normal boot); any
+# other value starts the vendor's flasher instead of booting.
 python3 -I "$(dirname "$0")/../sdboot/toc1.py" "$TMP/pkg" >/dev/null ||
 	{ echo "refusing: the image's boot package is invalid or not in normal-boot mode" >&2; exit 1; }
 
@@ -44,6 +46,7 @@ only() { set -- $(grep -l "^PARTNAME=$1\$" /sys/class/block/*/uevent); [ $# -eq 
 boot=$(only boot) && root=$(only rootfs) ||
 	{ echo "refusing: not exactly one boot and one rootfs partition"; exit 1; }
 disk=${boot%p*}				# mmcblk0p4 -> mmcblk0
+# the root filesystem's device number (major:minor) must be the rootfs partition's
 [ "$(awk '$5 == "/" {print $3}' /proc/self/mountinfo)" = "$(cat /sys/class/block/$root/dev)" ] ||
 	{ echo "refusing: the system isn't running from $root"; exit 1; }
 grep -q ' / ext4 ro[, ]' /proc/mounts || mount -o remount,ro / 2>/dev/null ||
@@ -60,7 +63,7 @@ rm -rf $D
 sync
 echo "UPDATED $disk (boot package), $boot (kernel) and $root (system); rebooting"
 echo b >/proc/sysrq-trigger	# reboot now: the mounted root filesystem was just replaced
-reboot -f
+reboot -f			# in case the kernel has the sysrq trigger disabled
 EOF
 
 adb shell "grep -q ' /mnt/SDCARD ' /proc/mounts && mkdir -p $STAGE && echo ready" | grep -q ready ||
