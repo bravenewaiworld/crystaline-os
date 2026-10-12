@@ -22,7 +22,7 @@ then our own system image, then the frontend (Specular).
 | Area | Status |
 |---|---|
 | CPU speed scaling | 408–2000 MHz, all governors |
-| Display | Panel, backlight, panel off/on |
+| Display | Panel, backlight, panel off/on; `FBIO_WAITFORVSYNC` on `/dev/fb0` waits for the next frame (it was a no-op; Specular paces its frames by it) |
 | GPU | TrimUI's closed driver (v1.19), rebuilt from source; 60 fps, vsync-locked |
 | Buttons, FN switch, power key | Standard input devices; `padbridge` presents them as the usual gamepad |
 | SD card | Fastest mode (UHS SDR104, 150 MHz, 1.8 V signalling), as stock; survives deep sleep |
