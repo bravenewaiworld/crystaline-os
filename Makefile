@@ -52,13 +52,13 @@ $(B)/userspace/padbridge: userspace/padbridge/padbridge.c
 	$(CC) $(CFLAGS) -o $@ $< $(STATIC)
 
 # --- Specular (the frontend) -----------------------------------------------------------------
-# Always run: cargo decides what is out of date. Builds the Brick device crate and its spike
-# examples into $(B)/specular. Linked dynamically, unlike the tools: it loads TrimUI's GPU
+# Always run: cargo decides what is out of date. Builds Specular for the Brick (the specular
+# binary) and the spike examples into $(B)/specular. Linked dynamically, unlike the tools: it loads TrimUI's GPU
 # libraries (and later the emulator cores) at runtime, which static glibc can't do.
 specular:
 	CARGO_TARGET_DIR=$(B)/specular CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(CC) \
 		cargo build --release --target aarch64-unknown-linux-gnu \
-		--manifest-path specular/Cargo.toml -p specular-brick --examples
+		--manifest-path specular/Cargo.toml -p specular-brick --bins --examples
 
 # --- Development tools that run on the device -----------------------------------------------
 DEVICE_TOOLS := dispctl glspin rumble i2creg memreg status
