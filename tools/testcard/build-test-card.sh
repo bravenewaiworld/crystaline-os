@@ -5,10 +5,10 @@
 # /etc/sd-boot-marker, and boot logs saved to sd-boot-log/ on the card's FAT "bootloader"
 # partition (boot-resource.fex: the boot logo and other images U-Boot reads).
 # With our kernel the card also: mounts a user-data partition (sdcard) and starts our placeholder
-# frontend (frontend/status) instead of TrimUI's UI, saves the early kernel log (sdinit), offers
+# frontend (tools/device/status.c) instead of TrimUI's UI, saves the early kernel log (sdinit), offers
 # adb and SSH over USB (sdusb), WiFi (wifi), file transfer (webdav) and Bluetooth (bluetooth),
-# applies dt-tweaks.sh, and adds the GPU modules and test tools if they've been built
-# (tools/build-gpu.sh, tools/device/).
+# applies dt-tweaks.sh, and adds the device tools (tools/device/, including the frontend, status)
+# and, if they've been built, the GPU modules (tools/build-gpu.sh).
 # Usage: build-test-card.sh <unpacked-firmware-dir> <out.img> [kernel-build-dir [kernel-args]]
 #   unpacked-firmware-dir: output of tools/sdboot/awimg_unpack.py on trimui_tg3040.awimg
 #   kernel-build-dir: our kernel's build output (tools/kmake.sh); omit for TrimUI's kernel
@@ -96,8 +96,9 @@ if [ -n "$KBUILD" ]; then
 		# expect, replacing TrimUI's trimui_inputd.
 		put "$ROOT/build/userspace/padbridge" /usr/bin/padbridge 755
 		service padbridge "$ROOT/userspace/padbridge/padbridge.init"
-		# Device tools (tools/device/): the built C tools, and the scripts. sleepnow is also used by
-		# the frontend.
+		# Device tools: every binary built into build/tools/ (including status, the placeholder
+		# frontend that `service frontend` below starts), plus the powertest and sleepnow scripts.
+		# status calls sleepnow to put the device to sleep.
 		for f in "$ROOT"/build/tools/* "$ROOT/tools/device/powertest" "$ROOT/tools/device/sleepnow"
 		do
 			put "$f" "/usr/bin/${f##*/}" 755
@@ -128,7 +129,6 @@ if [ -n "$KBUILD" ]; then
 		for f in local_node.json prov_db.json; do echo "rm /etc/lib/bluetooth/mesh/$f"; done
 		echo "rmdir /etc/lib/bluetooth/mesh"; echo "rmdir /etc/lib/bluetooth"
 		echo "symlink /etc/lib/bluetooth /tmp/state/bluetooth"
-		put "$ROOT/build/frontend/status" /usr/bin/status 755
 		service frontend
 		put "$HERE/sdinit" /sbin/sdinit 755     # run via init= below
 		service sdusb

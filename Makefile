@@ -16,7 +16,7 @@ CFLAGS := -O2 -Wall -Wextra
 # glibc also needs the unwinder (-lgcc_eh).
 STATIC := -static -s -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 
-.PHONY: help all kernel gpu userspace frontend device-tools test-card update-card live-image \
+.PHONY: help all kernel gpu userspace device-tools test-card update-card live-image \
 	install-image clean
 
 help:
@@ -27,7 +27,7 @@ help:
 	@echo '  update-card    build test-card, then write its kernel and boot files to the card in a'
 	@echo '                 running Brick (adb)'
 	@echo 'Parts:'
-	@echo '  kernel  gpu  userspace  frontend  device-tools'
+	@echo '  kernel  gpu  userspace  device-tools'
 	@echo '  clean          remove build/ (keeps the test card'"'"'s SSH keys)'
 
 all: test-card
@@ -51,21 +51,20 @@ $(B)/userspace/padbridge: userspace/padbridge/padbridge.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $< $(STATIC)
 
-# --- Frontend ----------------------------------------------------------------------------------
-frontend: $(B)/frontend/status
+# --- Development tools that run on the device -----------------------------------------------
+DEVICE_TOOLS := dispctl glspin rumble i2creg memreg status
+device-tools: $(addprefix $(B)/tools/,$(DEVICE_TOOLS))
 
-# The placeholder frontend draws text with the kernel's 8x16 console font.
-$(B)/frontend/font8x16.h: linux/lib/fonts/font_8x16.c
+# status: a stand-in frontend used on the test card until Specular is ready. It draws text with the
+# kernel's 8x16 console font, extracted from the kernel source (linux/) into a header.
+$(B)/include/font8x16.h: linux/lib/fonts/font_8x16.c
 	@mkdir -p $(@D)
 	sed -n '/^static const unsigned char fontdata_8x16/,/^};/p' $< | \
 		sed '1s/.*/static const unsigned char font8x16[4096] = {/' > $@
 
-$(B)/frontend/status: frontend/status/status.c $(B)/frontend/font8x16.h
-	$(CC) $(CFLAGS) -I$(B)/frontend -o $@ $< $(STATIC)
-
-# --- Development tools that run on the device -----------------------------------------------
-DEVICE_TOOLS := dispctl glspin rumble i2creg memreg
-device-tools: $(addprefix $(B)/tools/,$(DEVICE_TOOLS))
+$(B)/tools/status: tools/device/status.c $(B)/include/font8x16.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -I$(B)/include -o $@ $< $(STATIC)
 
 $(B)/tools/%: tools/device/%.c
 	@mkdir -p $(@D)
@@ -90,7 +89,7 @@ $(B)/stock-root/.done: $(B)/stock-fw/rootfs.fex
 	@touch $@
 
 # --- Development test card ------------------------------------------------------------------
-test-card: kernel gpu userspace frontend device-tools $(B)/stock-fw/rootfs.fex
+test-card: kernel gpu userspace device-tools $(B)/stock-fw/rootfs.fex
 	tools/testcard/build-test-card.sh $(B)/stock-fw $(B)/test-card.img $(B)/kernel
 
 update-card: test-card

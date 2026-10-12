@@ -4,18 +4,18 @@ Decisions so far:
 - **Kernel:** stay on Allwinner's 4.9 vendor kernel. Mainline Linux lacks this chip's display,
   audio and WiFi drivers and its deep sleep, and the closed GPU libraries depend on vendor display
   code. Userspace sticks to standard interfaces, so a later move stays cheap.
-- **Frontend:** our own launcher, and our own clean-room emulation runtime (libretro), using
-  GPL-licensed code from muOS's runtime ("Pickles") for the hard parts: audio/video rate
-  control, 3D-core rendering, save-state handling. NextUI's tuning for this device serves as a
-  reference only (MinUI-derived code has no licence). Cores are chosen system by system later.
+- **Frontend:** Specular (`specular/`), our own launcher and libretro runtime, built as a
+  separate product that also runs on other devices. Its plans and decisions are in
+  `specular/ROADMAP.md`; the Brick-specific parts live in `specular/devices/brick`.
 - **System image:** our own (not TrimUI's), installable on the SD card or internal storage.
-- **User data** (games, saves, settings) lives on the SD card (FAT32), also when the system is
-  installed internally.
+- **User data** lives on the SD card (FAT32), also when the system is installed internally:
+  `roms/`, `bios/`, `saves/`, `configs/` and `cache/` (downloaded box art and indexes, safe to
+  delete).
 - **PC transfer:** WebDAV over WiFi first; later our own simple browser page for uploading and
   downloading games and saves. No MTP.
 
 Order of work: hardware support (nearly done), power tuning (after the overnight power test),
-then our own system image, then the frontend.
+then our own system image, then the frontend (Specular).
 
 ## Hardware: working
 
@@ -41,23 +41,24 @@ Roughly by impact on the goal.
 | Sleep | Deep sleep works (through Allwinner's firmware, as stock's kernel is configured); power button and alarm wake; SD card, USB, Bluetooth and LEDs come back after resume. The WiFi driver refuses to suspend while connected, so `sleepnow` stops WiFi first and restarts it after. To do: measure how deep (overnight `powertest`) | Battery life |
 | Power tuning | Overnight `powertest` (2026-10-12): deep sleep ~1 %/h; idle with screen on 10–12 %/h; screen off 6 %/h; full load ~40 %/h. Done: CPU regulator and power chip DC-DC 1/2 in automatic mode (−17 % at idle, stable under full load); top USB-C port's 5 V off in sleep (vendor driver). Kept `ondemand`: `schedutil` held the CPU at higher speeds at idle. To do: an 8-hour sleep measurement; unused clocks; the display's 60 Hz interrupt keeps the CPUs out of their deepest idle state whenever the screen is on (see item 14); the LEDs' 5 V supply stays on while awake even with every LED dark | Battery life |
 | WiFi and Bluetooth (XR829) | Working: WiFi (2.4 GHz only; SSH and WebDAV over it) and Bluetooth audio (pairing, automatic reconnection, pairings kept across reboots). The XR829 has no Bluetooth address of its own: the first random one is saved in the state area and reused (our own image must keep that file). Missing: Bluetooth audio uses SBC only (see item 10 below) | Bluetooth headphones |
-| Audio | Working: speaker and headphones, jack switches between them, amplifiers off when idle, volume controls in the standard direction. To do: the frontend's volume (one level mapped onto the codec's controls; separate levels for speaker and headphones) | Polish |
-| LEDs | Working: 14 LEDs (top bar 0–7, F2, F1, under L1, L2, R2, R1), correct colours, off in sleep and restored after. To do: zone names and effects for the frontend | Polish |
+| Audio | Working: speaker and headphones, jack switches between them, amplifiers off when idle, volume controls in the standard direction. To do: Specular's volume control (one level mapped onto the codec's controls; separate levels for speaker and headphones) | Polish |
+| LEDs | Working: 14 LEDs (top bar 0–7, F2, F1, under L1, L2, R2, R1), correct colours, off in sleep and restored after. To do: zone names and effects for Specular (the light bar follows its accent colour) | Polish |
 | Internal storage | Not visible when booting from the SD card. Deferred to the install work: the internal storage has partitions with the same names as the card's ("boot", "rootfs"), so scripts must first be limited to the disk the system booted from | Installing to internal storage |
 
 ## Beyond the kernel
 
 1. **Our own system image**, built with Buildroot: init, our services, Bluetooth stack with audio,
    WiFi tools, SSH, libretro cores. Replaces TrimUI's stock system.
-2. **GPU adapter:** our own SDL2 build with a small video backend for TrimUI's closed GPU
-   libraries, so nothing else depends on TrimUI's libraries.
-3. **Storage layout:** a read-only system partition, plus the SD card's FAT32 data partition for
-   games, saves, BIOS files and settings; power-loss-safe saving.
+2. **Frontend:** Specular; see `specular/ROADMAP.md`. Its Brick device crate is the only code
+   that touches TrimUI's closed GPU libraries (EGL straight to the display).
+3. **Storage layout:** a read-only system partition, plus the SD card's FAT32 data partition
+   with the user-data folders above; power-loss-safe saving.
 4. **Install, update and recovery:** flash-an-image install, updates from a file on the card or
    over WiFi, and a recovery path.
 5. **PC transfer over WiFi:** a WebDAV server for games and saves (running on the test card:
    `dufs`, no login yet), then a simple browser page on top of it.
-6. **Cores:** a curated set, built and tuned for this CPU, with chosen defaults per system.
+6. **Cores:** a curated set, built and tuned for this CPU, in the system image (which cores and
+   their defaults per system: `specular/ROADMAP.md`).
 7. **Power policy:** CPU/GPU profiles, screen dimming and off, sleep, low-battery auto-save and
    shutdown; whether the top USB-C port's 5 V stays on while awake. A **power-saving mode** the
    user can switch on: lower CPU/GPU limits, dimmer screen, WiFi and Bluetooth off when unused,

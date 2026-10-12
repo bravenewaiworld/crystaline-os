@@ -30,8 +30,8 @@ life and functionality out of this hardware.
 |---|---|
 | `linux/` | Our kernel: Allwinner's 4.9 vendor kernel with our changes (its own git repository, branch `brick`) |
 | `userspace/` | System services (e.g. `padbridge`, which turns the buttons into a standard gamepad) |
-| `frontend/` | User interface and emulation; for now only a placeholder status screen (`status`) |
-| `tools/` | Development scripts: kernel and GPU builds, the development SD card (`testcard/`), tools that run on the device (`device/`) |
+| `specular/` | Specular, our frontend (launcher and emulation), kept device-independent so it can run on other handhelds; for now its design spec and mockup (`design/`) and its own `ROADMAP.md` |
+| `tools/` | Development scripts: kernel and GPU builds, the development SD card (`testcard/`), tools that run on the device (`device/`, including the placeholder status screen `status`) |
 | `Makefile` | Builds everything; `make help` lists the targets |
 | `ROADMAP.md` | What works, what's missing, and what's next |
 | `.scratch/` | Earlier work, research notes (`JOURNAL.md`), vendor firmware and third-party sources, to be sorted out later |
