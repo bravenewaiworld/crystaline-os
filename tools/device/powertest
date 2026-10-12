@@ -16,13 +16,15 @@
 #   idle-base   screen on (status frontend), base settings
 #   idle-tuned  screen on, tuned
 #   off-tuned   panel switched off and frontend stopped, tuned
-#   load-tuned  all four CPUs busy and the GPU drawing, tuned; also checks the tuned regulator modes
-#               stay stable under load (if the device crashes, the log stops there)
+#   load-tuned  all four CPUs busy and the GPU drawing, tuned; also checks the tuned settings stay
+#               stable under load (if the device crashes, the log stops there)
 #   load-base   the same load, base settings
 # The frontend is stopped from off-tuned to the end of the load phases. Stops early below 10 %
 # battery. Ends with the base settings, display and frontend restored, and the device asleep.
 set -u
 # Phase lengths in minutes; each can be overridden from the environment (e.g. all 1 for a dry run).
+# A phase of 0 minutes is skipped: e.g. IDLE_MIN=0 OFF_MIN=0 LOAD_MIN=0 SLEEP_MIN=480 measures
+# only an 8-hour deep sleep.
 SLEEP_MIN=${SLEEP_MIN:-120} IDLE_MIN=${IDLE_MIN:-90} OFF_MIN=${OFF_MIN:-60} LOAD_MIN=${LOAD_MIN:-30}
 OUT=/mnt/SDCARD/powertest/$(date +%Y%m%d-%H%M)
 BAT=/sys/class/power_supply/axp2202-battery
@@ -51,20 +53,6 @@ snapshot() {	# $1: file name prefix
 	sync
 }
 
-# Voltage regulators run either in forced PWM mode (always switching at full rate: steady voltage,
-# but wasteful at light load) or in automatic mode (saves power at light load).
-# The CPU regulator (TCS4838, I2C bus 6 address 0x41) keeps its mode (bit 6, 1 = forced PWM) in
-# the same register as its voltage. The CPU is held at its lowest speed while the register is
-# rewritten, so the CPU frequency driver can't change the voltage between our read and write.
-cpu_regulator_pwm() {	# $1: 1 = forced PWM (how the bootloader leaves it), 0 = automatic
-	max=$(cat $CPU/scaling_max_freq)
-	cat $CPU/scaling_min_freq >$CPU/scaling_max_freq
-	sleep 1
-	v=$(i2creg 6 0x41 0)
-	i2creg 6 0x41 0 $(( $1 ? v | 0x40 : v & ~0x40 ))
-	echo $max >$CPU/scaling_max_freq
-}
-
 # Bind or unbind the top USB port's host controller drivers. Unbinding also turns off the port's
 # 5 V supply: they are its only users.
 usb_host() {	# $1: bind | unbind
@@ -72,20 +60,15 @@ usb_host() {	# $1: bind | unbind
 	echo 5200000.ohci1-controller >/sys/bus/platform/drivers/sunxi-ohci/$1 2>/dev/null
 }
 
-# Power chip (AXP2202) register 0x81: bits 2 and 3 = DCDC1 and DCDC2 forced PWM. The whole
-# register is written; its other bits are 0 in both settings.
-base() {	# the settings the system boots with
-	cpu_regulator_pwm 1
-	i2creg 6 0x34 0x81 0x0c
+# Settings to compare: base() restores what the system boots with, tuned() applies the candidates.
+# (2026-10-12: regulator automatic modes adopted, schedutil rejected; candidate left: the top USB
+# port's 5 V off while awake.)
+base() {
 	usb_host bind
-	echo ondemand >$CPU/scaling_governor
 }
 
 tuned() {
-	cpu_regulator_pwm 0
-	i2creg 6 0x34 0x81 0x00
 	usb_host unbind
-	echo schedutil >$CPU/scaling_governor
 }
 
 finish() {	# $1: reason
@@ -100,7 +83,8 @@ finish() {	# $1: reason
 	exit 0
 }
 
-phase() {	# $1: name, $2: minutes, $3: seconds between samples
+phase() {	# $1: name, $2: minutes (0: skip), $3: seconds between samples
+	[ $2 -gt 0 ] || return 0
 	PHASE=$1
 	snapshot $1.start
 	end=$(($(date +%s) + $2 * 60))
@@ -128,23 +112,29 @@ sleep 60					# time to unplug USB
 base
 sample
 
-PHASE=sleep
-snapshot sleep.start
-sleepnow $SLEEP_MIN
-sample
-snapshot sleep.end
+if [ $SLEEP_MIN -gt 0 ]; then
+	PHASE=sleep
+	snapshot sleep.start
+	sleepnow $SLEEP_MIN
+	sample
+	snapshot sleep.end
+fi
 
 phase idle-base $IDLE_MIN 60
 tuned
 phase idle-tuned $IDLE_MIN 60
 
-/etc/init.d/frontend stop
-dispctl off
-phase off-tuned $OFF_MIN 60
-dispctl on
+if [ $OFF_MIN -gt 0 ]; then
+	/etc/init.d/frontend stop
+	dispctl off
+	phase off-tuned $OFF_MIN 60
+	dispctl on
+fi
 
-load
-phase load-tuned $LOAD_MIN 10
-base
-phase load-base $LOAD_MIN 10
+if [ $LOAD_MIN -gt 0 ]; then
+	load
+	phase load-tuned $LOAD_MIN 10
+	base
+	phase load-base $LOAD_MIN 10
+fi
 finish done
