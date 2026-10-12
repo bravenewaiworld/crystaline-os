@@ -16,10 +16,11 @@
 #   idle-base   screen on (status frontend), base settings
 #   idle-tuned  screen on, tuned
 #   off-tuned   panel switched off and frontend stopped, tuned
-#   load-tuned  all four CPUs busy and the GPU drawing, tuned; also checks the tuned settings stay
-#               stable under load (if the device crashes, the log stops there)
+#   load-tuned  all four CPUs busy and the GPU drawing, tuned; also shows whether the regulators'
+#               automatic mode (a boot default) holds under full load: if the device crashes, the
+#               log stops there
 #   load-base   the same load, base settings
-# The frontend is stopped from off-tuned to the end of the load phases. Stops early below 10 %
+# The frontend is stopped from off-tuned to the end of the load phases (if off-tuned runs). Stops early below 10 %
 # battery. Ends with the base settings, display and frontend restored, and the device asleep.
 set -u
 # Phase lengths in minutes; each can be overridden from the environment (e.g. all 1 for a dry run).
@@ -60,9 +61,8 @@ usb_host() {	# $1: bind | unbind
 	echo 5200000.ohci1-controller >/sys/bus/platform/drivers/sunxi-ohci/$1 2>/dev/null
 }
 
-# Settings to compare: base() restores what the system boots with, tuned() applies the candidates.
-# (2026-10-12: regulator automatic modes adopted, schedutil rejected; candidate left: the top USB
-# port's 5 V off while awake.)
+# Settings to compare: base() restores the boot defaults, tuned() applies the candidate under test:
+# the top USB port's 5 V off while awake.
 base() {
 	usb_host bind
 }
