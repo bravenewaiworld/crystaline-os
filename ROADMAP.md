@@ -28,7 +28,7 @@ then our own system image, then the frontend.
 | SD card | Fastest mode (UHS SDR104, 150 MHz, 1.8 V signalling), as stock; survives deep sleep |
 | USB | Bottom USB-C port switches by itself: PC mode (adb, network link) with a computer or charger, host with 5 V for USB devices, off when unplugged; the cable and charger type are readable (`/sys/class/extcon`). Top USB-C port: host, 5 V always on |
 | Power chip voltage outputs | Correct |
-| Battery and charger | Level, status, voltage, current, temperature; charge settings as stock; input current limit set by the chip's charger detection (also when booted already plugged in) |
+| Battery and charger | Level, status, voltage, current, temperature; charge settings as stock; input current limit set by the chip's charger detection (also when booted already plugged in). Open: the reported level once lagged the gauge by 40 % (the driver's level smoothing was left active, cause unknown) |
 | Rumble | Standard force feedback (FF_RUMBLE), strength as motor voltage (2.0–3.3 V), forwarded from the virtual gamepad so games can use it; motor supply off when idle |
 | Thermal limits | As stock: CPU slows from 58/63 °C, shuts down at 90 °C (shutdown not tested) |
 
