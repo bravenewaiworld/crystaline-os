@@ -53,14 +53,15 @@ $(B)/userspace/padbridge: userspace/padbridge/padbridge.c
 
 # --- Specular (the frontend) -----------------------------------------------------------------
 # Always run: cargo decides what is out of date. Builds Specular for the Brick (the specular
-# binary) and the spike examples into $(B)/specular. Linked dynamically, unlike the tools: it loads TrimUI's GPU
-# libraries (and later the emulator cores) at runtime, which static glibc can't do.
+# binary), the spike examples and the runtime's headless player (play) into $(B)/specular.
+# Linked dynamically, unlike the tools: it loads TrimUI's GPU libraries and the emulator cores
+# at runtime, which static glibc can't do.
 specular:
 	CARGO_TARGET_DIR=$(B)/specular CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(CC) \
 		cargo build --release --target aarch64-unknown-linux-gnu \
-		--manifest-path specular/Cargo.toml -p specular-brick --bins --examples
+		--manifest-path specular/Cargo.toml -p specular-brick -p specular-runtime --bins --examples
 
-# The libretro cores Specular runs games with (mGBA, Gambatte), into $(B)/cores/aarch64. Always
+# The libretro cores Specular runs games with (mGBA), into $(B)/cores/aarch64. Always
 # run: the cores' own builds decide what is out of date.
 cores:
 	tools/build-cores.sh
