@@ -16,7 +16,7 @@ CFLAGS := -O2 -Wall -Wextra
 # glibc also needs the unwinder (-lgcc_eh).
 STATIC := -static -s -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 
-.PHONY: help all kernel gpu userspace specular device-tools test-card update-card live-image \
+.PHONY: help all kernel gpu userspace specular cores device-tools test-card update-card live-image \
 	install-image clean
 
 help:
@@ -27,7 +27,7 @@ help:
 	@echo '  update-card    build test-card, then write its kernel and boot files to the card in a'
 	@echo '                 running Brick (adb)'
 	@echo 'Parts:'
-	@echo '  kernel  gpu  userspace  specular  device-tools'
+	@echo '  kernel  gpu  userspace  specular  cores  device-tools'
 	@echo '  clean          remove build/ (keeps the test card'"'"'s SSH keys)'
 
 all: test-card
@@ -59,6 +59,11 @@ specular:
 	CARGO_TARGET_DIR=$(B)/specular CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(CC) \
 		cargo build --release --target aarch64-unknown-linux-gnu \
 		--manifest-path specular/Cargo.toml -p specular-brick --bins --examples
+
+# The libretro cores Specular runs games with (mGBA, Gambatte), into $(B)/cores/aarch64. Always
+# run: the cores' own builds decide what is out of date.
+cores:
+	tools/build-cores.sh
 
 # --- Development tools that run on the device -----------------------------------------------
 DEVICE_TOOLS := dispctl glspin rumble i2creg memreg status

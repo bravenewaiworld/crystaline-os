@@ -12,6 +12,11 @@
 # dufs (github.com/sigoden/dufs), the WebDAV/web file server for the test card: the static aarch64
 # binary of its v0.46.0 release.
 : "${DUFS:=$ROOT/.scratch/src/dufs-v0.46.0/dufs}"
+# libretro cores built for Specular (tools/build-cores.sh): mGBA (GBA, MPL-2.0) from
+# github.com/libretro/mgba at 7a12d6d4b9ac, Gambatte (GB/GBC, GPL-2.0) from
+# github.com/libretro/gambatte-libretro at d9d6cd06382d.
+: "${MGBA_SRC:=$ROOT/.scratch/src/mgba}"
+: "${GAMBATTE_SRC:=$ROOT/.scratch/src/gambatte-libretro}"
 # The OpenWrt gcc wrapper warns when this is unset; its value is unused.
 : "${STAGING_DIR:=/tmp}"
-export CROSS_COMPILE GPU_SRC DUFS STOCK_FW STAGING_DIR
+export CROSS_COMPILE GPU_SRC DUFS STOCK_FW STAGING_DIR MGBA_SRC GAMBATTE_SRC
