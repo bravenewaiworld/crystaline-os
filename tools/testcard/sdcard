@@ -45,7 +45,10 @@ boot() {
 	# uploads and more card wear. "flush" writes a file's data out soon after it is closed;
 	# programs that must survive a power cut (e.g. saving a game) write a temporary file and rename
 	# it. errors=remount-ro: on filesystem damage, stop writing rather than make it worse.
-	mount -t vfat -o rw,noatime,flush,iocharset=utf8,errors=remount-ro /dev/$dev /mnt/SDCARD || return
+	# File names are UTF-8 ("utf8") but matched regardless of case, as FAT is on a PC; with
+	# iocharset=utf8 instead, Linux matches them case-sensitively, so "roms/" wouldn't find a
+	# card's "Roms/" (the kernel's FAT documentation warns against it for this reason).
+	mount -t vfat -o rw,noatime,flush,iocharset=iso8859-1,utf8,errors=remount-ro /dev/$dev /mnt/SDCARD || return
 
 	# System state that must survive reboots (e.g. Bluetooth pairings) lives in an ext4 image on
 	# this partition: FAT can't hold the file names some programs use (colons), and the root
