@@ -28,6 +28,7 @@ rsync -a --delete --exclude=.git \
 # Our fixes to the driver (tools/gpu-patches), applied to the copy. rsync has just restored any
 # patched file to the original, so each applies cleanly every time.
 for p in "$ROOT"/tools/gpu-patches/*.patch; do
+	[ -e "$p" ] || continue	# no patches: the pattern stays unexpanded
 	(cd "$SRC" && git apply "$p")
 done
 

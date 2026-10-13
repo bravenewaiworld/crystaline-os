@@ -150,7 +150,8 @@ if [ -n "$KBUILD" ]; then
 	PKG=$TMP/boot_package.fex
 	python3 -I "$TOOLS/toc1.py" repack "$FW/boot_package.fex" "$PKG" dtb="$TMP/dtb.padded"
 
-	# Appended to U-Boot's boot arguments (the last of a repeated argument wins):
+	# Appended to U-Boot's boot arguments (for these, the last occurrence wins; checked in
+	# /proc/sys/kernel/printk and /proc/cmdline):
 	# - a 1 MiB kernel log buffer (TrimUI's config has 16 KiB, which loses early messages);
 	# - only warnings and worse on the serial console (U-Boot asks for everything, loglevel=8):
 	#   at 115200 baud each line holds a CPU and the console lock for about 5 ms, which the GPU's
