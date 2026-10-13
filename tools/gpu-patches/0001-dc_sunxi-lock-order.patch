@@ -1,0 +1,85 @@
+dc_sunxi: take the console lock before the fb_info lock
+
+The kernel's fbmem code takes console_lock(), then lock_fb_info(). dc_sunxi took them the other
+way round on every flip (and at load and unload), so a GPU app presenting while another program
+made a framebuffer call that takes both (e.g. FBIOPUT_VSCREENINFO) deadlocked the display, and
+suspend behind it. Found on the TrimUI Brick, 2026-10-12.
+
+--- a/services/3rdparty/dc_sunxi/dc_sunxi.c
++++ b/services/3rdparty/dc_sunxi/dc_sunxi.c
+@@ -343,13 +343,17 @@
+ 	DC_FBDEV_Clean(hDisplayContext, ahBuffers);
+ #endif
+ 
++	/* The console lock before the fb_info lock, as the kernel's fbmem code takes them; the
++	 * other order deadlocks against any fbdev ioctl that takes both (e.g. FBIOPUT_VSCREENINFO
++	 * from another program while this one presents).
++	 */
++	console_lock();
+ 	if (!lock_fb_info(psDeviceData->psLINFBInfo))
+ 	{
++		console_unlock();
+ 		return;
+ 	}
+ 
+-	console_lock();
+-
+ 	/* If we're supposed to be able to flip, but the yres_virtual has been
+ 	 * changed to an unsupported (smaller) value, we need to change it back
+ 	 * (this is a workaround for some Linux fbdev drivers that seem to lose any
+@@ -372,8 +376,8 @@
+ 			pr_err("fb_pan_display failed (err=%d)\n", err);
+ 	}
+ 
+-	console_unlock();
+ 	unlock_fb_info(psDeviceData->psLINFBInfo);
++	console_unlock();
+ 
+ 	if (psDeviceContext->hLastConfigData)
+ 	{
+@@ -665,10 +669,13 @@
+ 		goto err_out;
+ 	}
+ 
++	/* Lock order as in DC_SUNXI_ContextConfigure. */
++	console_lock();
+ 	if(!lock_fb_info(psLINFBInfo))
++	{
++		console_unlock();
+ 		goto err_out;
+-
+-	console_lock();
++	}
+ 
+ 	/* Filter out broken FB devices */
+ 	if(!psLINFBInfo->fix.smem_len || !psLINFBInfo->fix.line_length)
+@@ -783,8 +790,8 @@
+ 			ePixFormat, gpsDeviceData->bCanFlip);
+ 	err = 0;
+ err_unlock:
+-	console_unlock();
+ 	unlock_fb_info(psLINFBInfo);
++	console_unlock();
+ err_out:
+ 	return err;
+ err_kfree:
+@@ -799,16 +806,17 @@
+ 	DC_SUNXI_DEVICE *psDeviceData = gpsDeviceData;
+ 	struct fb_info *psLINFBInfo = psDeviceData->psLINFBInfo;
+ 
+-	lock_fb_info(psLINFBInfo);
++	/* Lock order as in DC_SUNXI_ContextConfigure. */
+ 	console_lock();
++	lock_fb_info(psLINFBInfo);
+ 
+     if(psLINFBInfo->fbops->fb_release)
+ 	   psLINFBInfo->fbops->fb_release(psLINFBInfo, 0);
+ 
+ 	module_put(psLINFBInfo->fbops->owner);
+ 
+-	console_unlock();
+ 	unlock_fb_info(psLINFBInfo);
++	console_unlock();
+ 
+ 	DCUnregisterDevice(psDeviceData->hSrvHandle);
+ 	kfree(psDeviceData);

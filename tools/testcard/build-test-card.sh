@@ -150,11 +150,15 @@ if [ -n "$KBUILD" ]; then
 	PKG=$TMP/boot_package.fex
 	python3 -I "$TOOLS/toc1.py" repack "$FW/boot_package.fex" "$PKG" dtb="$TMP/dtb.padded"
 
-	# Appended to U-Boot's boot arguments: a 1 MiB kernel log buffer (TrimUI's config has 16 KiB,
-	# which loses early messages) and sdinit as the first program.
+	# Appended to U-Boot's boot arguments (the last of a repeated argument wins):
+	# - a 1 MiB kernel log buffer (TrimUI's config has 16 KiB, which loses early messages);
+	# - only warnings and worse on the serial console (U-Boot asks for everything, loglevel=8):
+	#   at 115200 baud each line holds a CPU and the console lock for about 5 ms, which the GPU's
+	#   display module needs on every flip, so log bursts dropped frames. dmesg still has it all;
+	# - sdinit as the first program.
 	BOOTIMG=$TMP/boot.img
 	python3 -I "$TOOLS/mkbootimg.py" "$FW/boot.fex" "$KBUILD/arch/arm64/boot/Image" "$BOOTIMG" \
-		"log_buf_len=1M init=/sbin/sdinit $KARGS" >/dev/null
+		"log_buf_len=1M loglevel=4 init=/sbin/sdinit $KARGS" >/dev/null
 fi
 
 "$TOOLS/build_sd_image.sh" "$OUT" "$FW/boot0_sdcard.fex" "$PKG" "$FW/env.fex" \

@@ -10,7 +10,7 @@
 # differs, they refuse to run.
 #
 # The 4.9 kernel writes external-module objects next to the sources, so the tree is mirrored into
-# build/gpu/src (without .git) and built there; the source tree stays clean.
+# build/gpu/src (without .git), patched and built there; the source tree stays clean.
 # The kernel at build/kernel must already be built (Module.symvers is needed to resolve symbols).
 # Results: build/gpu/pvrsrvkm.ko and build/gpu/dc_sunxi.ko (load pvrsrvkm first; dc_sunxi depends on it).
 set -e
@@ -25,6 +25,11 @@ rsync -a --delete --exclude=.git \
 	--exclude='*.o' --exclude='*.ko' --exclude='*.cmd' --exclude='*.mod.c' \
 	--exclude=modules.order --exclude=Module.symvers --exclude=.tmp_versions \
 	"$GPU_SRC/" "$SRC/"
+# Our fixes to the driver (tools/gpu-patches), applied to the copy. rsync has just restored any
+# patched file to the original, so each applies cleanly every time.
+for p in "$ROOT"/tools/gpu-patches/*.patch; do
+	(cd "$SRC" && git apply "$p")
+done
 
 # CONFIG_DRM_IMG_ROGUE=m: the Kbuild file adds its modules to obj-$(CONFIG_DRM_IMG_ROGUE).
 "$ROOT/tools/kmake.sh" "$ROOT/build/kernel" M="$SRC" \
