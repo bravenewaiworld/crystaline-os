@@ -4,11 +4,12 @@
 # (sd-logo.bmp, same byte size as the stock bootlogo.bmp), red LEDs ~30 s after boot,
 # /etc/sd-boot-marker, and boot logs saved to sd-boot-log/ on the card's FAT "bootloader"
 # partition (boot-resource.fex: the boot logo and other images U-Boot reads).
-# With our kernel the card also: mounts a user-data partition (sdcard) and starts our placeholder
-# frontend (tools/device/status.c) instead of TrimUI's UI, saves the early kernel log (sdinit), offers
+# With our kernel the card also: mounts a user-data partition (sdcard) and starts Specular
+# (specular/; see frontend) instead of TrimUI's UI, saves the early kernel log (sdinit), offers
 # adb and SSH over USB (sdusb), WiFi (wifi), file transfer (webdav) and Bluetooth (bluetooth),
-# applies dt-tweaks.sh, and adds the device tools (tools/device/, including the frontend, status)
-# and, if they've been built, the GPU modules (tools/build-gpu.sh).
+# applies dt-tweaks.sh, and adds the device tools (tools/device/, including status, the
+# placeholder frontend Specular falls back to) and, if they've been built, the GPU modules
+# (tools/build-gpu.sh).
 # Usage: build-test-card.sh <unpacked-firmware-dir> <out.img> [kernel-build-dir [kernel-args]]
 #   unpacked-firmware-dir: output of tools/sdboot/awimg_unpack.py on trimui_tg3040.awimg
 #   kernel-build-dir: our kernel's build output (tools/kmake.sh); omit for TrimUI's kernel
@@ -97,14 +98,15 @@ if [ -n "$KBUILD" ]; then
 		put "$ROOT/build/userspace/padbridge" /usr/bin/padbridge 755
 		service padbridge "$ROOT/userspace/padbridge/padbridge.init"
 		# Device tools: every binary built into build/tools/ (including status, the placeholder
-		# frontend that `service frontend` below starts), plus the powertest and sleepnow scripts.
+		# frontend that `service frontend` below falls back to), plus the powertest and sleepnow
+		# scripts.
 		# status calls sleepnow to put the device to sleep.
 		for f in "$ROOT"/build/tools/* "$ROOT/tools/device/powertest" "$ROOT/tools/device/sleepnow"
 		do
 			put "$f" "/usr/bin/${f##*/}" 755
 		done
 		# TrimUI's UI expects TrimUI's own drivers and interfaces, so remove the boot link that
-		# starts it (runtrimui) and start our placeholder frontend instead.
+		# starts it (runtrimui) and start ours instead.
 		echo "rm /etc/rc.d/S99runtrimui"
 		echo "rm /etc/rc.local"		# debugfs can't overwrite a file
 		put "$HERE/rc.local" /etc/rc.local 644
@@ -129,6 +131,12 @@ if [ -n "$KBUILD" ]; then
 		for f in local_node.json prov_db.json; do echo "rm /etc/lib/bluetooth/mesh/$f"; done
 		echo "rmdir /etc/lib/bluetooth/mesh"; echo "rmdir /etc/lib/bluetooth"
 		echo "symlink /etc/lib/bluetooth /tmp/state/bluetooth"
+		# Specular, the frontend (make specular), with its cores (make cores) in cores/ next to it.
+		echo "mkdir /usr/lib/specular"
+		echo "mkdir /usr/lib/specular/cores"
+		put "$ROOT/build/specular/aarch64-unknown-linux-gnu/release/specular" /usr/lib/specular/specular 755
+		for core in "$ROOT"/build/cores/aarch64/*.so; do put "$core" "/usr/lib/specular/cores/${core##*/}" 644; done
+		put "$HERE/frontend-run" /usr/bin/frontend-run 755
 		service frontend
 		put "$HERE/sdinit" /sbin/sdinit 755     # run via init= below
 		service sdusb

@@ -1,13 +1,15 @@
 #!/bin/sh /etc/rc.common
-# Starts the frontend (for now the placeholder status, tools/device/status.c) on test cards running our kernel.
-# procd, OpenWrt's service supervisor, restarts it if it exits.
+# Starts the frontend on test cards running our kernel: Specular (frontend-run), which falls back
+# to the placeholder status (tools/device/status.c) if Specular keeps crashing.
+# procd, OpenWrt's service supervisor, restarts it whenever it exits.
 START=99
 USE_PROCD=1
 
 start_service() {
 	procd_open_instance
-	procd_set_param command /usr/bin/status
+	procd_set_param command /usr/bin/frontend-run
 	procd_set_param stderr 1	# error messages go to the system log (logread)
-	procd_set_param respawn
+	# Restart it however often it exits (procd's default gives up after 5 quick exits).
+	procd_set_param respawn 3600 1 0
 	procd_close_instance
 }

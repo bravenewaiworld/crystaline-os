@@ -104,7 +104,7 @@ $(B)/stock-root/.done: $(B)/stock-fw/rootfs.fex
 	@touch $@
 
 # --- Development test card ------------------------------------------------------------------
-test-card: kernel gpu userspace device-tools $(B)/stock-fw/rootfs.fex
+test-card: kernel gpu userspace device-tools specular cores $(B)/stock-fw/rootfs.fex
 	tools/testcard/build-test-card.sh $(B)/stock-fw $(B)/test-card.img $(B)/kernel
 
 update-card: test-card
