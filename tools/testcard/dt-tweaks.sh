@@ -7,10 +7,10 @@ set -eu
 DTB=$1
 REGS=/soc@03000000/s_twi@0x07081400/pmu@34/regulators@0   # power-management chip's rails
 
-# Keep the panel powered. Its rails (CLDO1, CLDO4) are switched by TrimUI's panel driver, which
-# our kernel lacks, so Linux would cut them as unused and the screen would go blank.
+# Keep CLDO1 (1.8 V) on: besides the panel's I/O it feeds the codec's headphone charge pump and
+# other I/O. CLDO4 (3.3 V) feeds only the panel, so the panel driver (trimui_brick.c) switches it
+# off with the screen and in sleep.
 fdtput "$DTB" $REGS/cldo1 regulator-always-on
-fdtput "$DTB" $REGS/cldo4 regulator-always-on
 
 # Power chip DC-DC converters 1 and 2 in automatic mode (0) rather than forced PWM (1: always
 # switching at full rate, the steadiest voltage but wasteful at light load), which the bootloader
