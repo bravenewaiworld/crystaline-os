@@ -34,7 +34,11 @@ PHASE=start LOAD_PIDS=
 
 sample() {
 	t=
-	for z in /sys/class/thermal/thermal_zone*; do t="$t,$(($(cat $z/temp) / 1000))"; done
+	# A failed read leaves the field empty: the memory sensor's first read after waking fails
+	# ("Resource temporarily unavailable").
+	for z in /sys/class/thermal/thermal_zone*; do
+		v=$(cat $z/temp 2>/dev/null) && t="$t,$((v / 1000))" || t="$t,"
+	done
 	printf '%s,%s,%s,%s,%s,%s%s,%s\n' "$(date +%s)" "$PHASE" "$(cat $BAT/capacity)" \
 		"$(cat $BAT/voltage_now)" "$(cat /sys/class/power_supply/axp2202-usb/online)" \
 		"$(cat $CPU/scaling_cur_freq)" "$t" "$(cut -d' ' -f1 /proc/loadavg)" >>$OUT/log.csv
@@ -106,6 +110,10 @@ load() {	# all four CPUs busy and the GPU drawing, until stopped with kill $LOAD
 }
 
 mkdir -p $OUT
+# errors.txt: the script's error output and why it stopped (a kill -9 leaves no line)
+exec 2>>$OUT/errors.txt
+trap 'echo "$(date) exit status $? in phase $PHASE" >&2' EXIT
+trap 'echo "$(date) stopped by a signal in phase $PHASE" >&2; exit 1' HUP INT TERM
 cat /sys/class/thermal/thermal_zone*/type >$OUT/zones.txt
 for f in /sys/class/leds/*/brightness; do echo 0 >$f; done	# LEDs off for the whole test
 sleep 60					# time to unplug USB
