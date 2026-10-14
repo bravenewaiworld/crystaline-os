@@ -83,3 +83,6 @@ Roughly by impact on the goal.
     and display engine allow; check how far the panel's refresh can be lowered (blanking or pixel
     clock) for menus and still screens; and stop the display engine's 60-per-second interrupt
     while nothing is being drawn, so the CPUs can reach their deepest idle state.
+15. **exFAT data cards:** most cards over 32 GB come formatted exFAT, which our 4.9 kernel can't
+    read; for now the data partition must be FAT32 (an installed system uses the card's first
+    FAT32 partition). Options: a backported exFAT driver, or reformatting from the device.
