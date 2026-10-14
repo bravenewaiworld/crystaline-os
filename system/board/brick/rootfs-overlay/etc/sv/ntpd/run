@@ -1,4 +1,6 @@
 #!/bin/sh
-# Sets the clock from the network whenever there is one.
+# Sets the clock from the network whenever there is one. Without a network (WiFi off), it checks
+# again every 30 s instead of failing (and logging) every few seconds.
 exec 2>&1
+ip route | grep -q '^default' || { sleep 30; exit 0; }
 exec ntpd -n -p pool.ntp.org
