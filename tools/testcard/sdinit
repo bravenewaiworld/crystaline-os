@@ -8,9 +8,9 @@
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 
-# Detach the internal storage (enabled in the card's device tree by dt-tweaks.sh) before anything
-# else runs, and keep it from attaching again (driver_override names no driver, which also stops
-# a delayed probe). TrimUI's start-up links /dev/by-name/* to mmcblk0p*, taken from U-Boot's
+# Detach the internal storage (enabled in the device tree by system/board/brick/dt-tweaks.sh)
+# before anything else runs, and keep it from attaching again (driver_override names no driver,
+# which also stops a delayed probe). TrimUI's start-up links /dev/by-name/* to mmcblk0p*, taken from U-Boot's
 # partition list, which assumes the card is mmcblk0. The internal storage may take mmcblk0
 # instead, and the stock scripts would then format or mount its partitions (rootfs_data, UDISK).
 # The emmc tool attaches it on request.

@@ -1,0 +1,73 @@
+# Buildroot configuration for the Brick's base system. Buildroot builds only the base (C library,
+# BusyBox, daemons); our kernel, GPU driver, Specular, cores and TrimUI's blobs are built by the
+# top-level Makefile and added when the image is assembled (tools/system/build-system.sh), so
+# changing them never rebuilds anything here.
+
+# Allwinner A133P: 4x Cortex-A53.
+BR2_aarch64=y
+BR2_cortex_a53=y
+
+# Toolchain: glibc (TrimUI's GPU libraries need it; they ask for glibc 2.17 or newer), with C++
+# for later packages. Kernel headers must not be newer than the kernel: ours is 4.9.191.
+BR2_TOOLCHAIN_BUILDROOT_GLIBC=y
+BR2_TOOLCHAIN_BUILDROOT_CXX=y
+BR2_KERNEL_HEADERS_VERSION=y
+BR2_DEFAULT_KERNEL_VERSION="4.9.191"
+BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_4_9=y
+
+# System: BusyBox init (services are supervised by BusyBox's runit applets, see
+# board/brick/rootfs-overlay/etc/sv), devices by the kernel's devtmpfs plus mdev.
+BR2_TARGET_GENERIC_HOSTNAME="brick"
+BR2_TARGET_GENERIC_ISSUE="Brick"
+BR2_INIT_BUSYBOX=y
+BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_MDEV=y
+BR2_SYSTEM_DHCP=""
+# Development: root logs in without a password on the serial console (ttyS0); SSH takes keys only.
+BR2_TARGET_GENERIC_GETTY_PORT="ttyS0"
+BR2_TARGET_GENERIC_GETTY_BAUDRATE_115200=y
+BR2_TARGET_ENABLE_ROOT_LOGIN=y
+BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_BRICK_PATH)/board/brick/rootfs-overlay"
+BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_BRICK_PATH)/board/brick/post-build.sh"
+BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_BRICK_PATH)/board/brick/busybox.fragment"
+
+# Sound: amixer sets the volume (Specular); bluez-alsa plays to Bluetooth headphones.
+BR2_PACKAGE_ALSA_UTILS=y
+BR2_PACKAGE_ALSA_UTILS_AMIXER=y
+BR2_PACKAGE_BLUEZ5_UTILS=y
+BR2_PACKAGE_BLUEZ5_UTILS_CLIENT=y
+BR2_PACKAGE_BLUEZ_ALSA=y
+BR2_PACKAGE_DBUS=y
+
+# Networking: WiFi, SSH (OpenSSH: reads the development host keys as they are, and has the SFTP
+# server modern scp uses).
+BR2_PACKAGE_WPA_SUPPLICANT=y
+BR2_PACKAGE_WPA_SUPPLICANT_NL80211=y
+BR2_PACKAGE_WPA_SUPPLICANT_CLI=y
+BR2_PACKAGE_IW=y
+BR2_PACKAGE_OPENSSH=y
+# BR2_PACKAGE_OPENSSH_CLIENT is not set
+BR2_PACKAGE_OPENSSH_SERVER=y
+# BR2_PACKAGE_OPENSSH_KEY_UTILS is not set
+
+# Storage: checking and making filesystems, partitioning (the data card, the installer).
+BR2_PACKAGE_E2FSPROGS=y
+BR2_PACKAGE_E2FSPROGS_FSCK=y
+BR2_PACKAGE_DOSFSTOOLS=y
+BR2_PACKAGE_DOSFSTOOLS_FSCK_FAT=y
+BR2_PACKAGE_DOSFSTOOLS_MKFS_FAT=y
+BR2_PACKAGE_DOSFSTOOLS_FATLABEL=y
+BR2_PACKAGE_UTIL_LINUX=y
+BR2_PACKAGE_UTIL_LINUX_BINARIES=y
+BR2_PACKAGE_UTIL_LINUX_PARTX=y
+BR2_PACKAGE_ZSTD=y
+
+# Output: a tar of the root filesystem, which build-system.sh extends and packs into squashfs
+# (with the host's sqfstar, so no root rights are needed for file owners).
+BR2_TARGET_ROOTFS_TAR=y
+# BR2_TARGET_ROOTFS_EXT2 is not set
+BR2_PACKAGE_HOST_SQUASHFS=y
+# depmod, for our kernel modules' dependency lists (also added by build-system.sh).
+BR2_PACKAGE_HOST_KMOD=y
+
+# Our patches to Buildroot's packages, in system/patches/<package>/.
+BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_BRICK_PATH)/patches"

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Turns the buttons into the standard virtual gamepad games expect (userspace/padbridge).
+exec 2>&1
+exec /usr/bin/padbridge

@@ -1,0 +1,4 @@
+#!/bin/sh
+# The system log, kept in memory (-C: 512 KiB); read it with logread. Nothing is written to
+# storage, so logging never wears it.
+exec syslogd -n -C512

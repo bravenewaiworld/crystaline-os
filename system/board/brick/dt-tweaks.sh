@@ -1,7 +1,7 @@
 #!/bin/sh
-# Device-tree changes for test cards running our kernel, applied by build-test-card.sh to the DTB
-# (compiled device tree: the hardware description the kernel reads) inside the card's boot
-# package, which is the one vendor U-Boot hands the kernel.
+# Device-tree changes for our kernel, applied by tools/sdboot/patch-boot-package.sh to the DTB
+# (compiled device tree: the hardware description the kernel reads) inside the boot package, which
+# is the one vendor U-Boot hands the kernel. Used by our system image and the test card.
 # Usage: dt-tweaks.sh <dtb>
 set -eu
 DTB=$1
@@ -133,8 +133,9 @@ fdtput -t u "$DTB" /soc@03000000/usbc0@0 extcon "$(fdtget "$DTB" $USB_PSY phandl
 # Internal storage (eMMC, controller sdc2), which U-Boot leaves disabled when booting from the card.
 # Enabled with the limits U-Boot itself sets when it boots TrimUI's system from the eMMC, the
 # settings stock has always used: 50 MHz and no HS200/HS400, so the eMMC runs in DDR52 mode.
-# sdinit keeps it detached while the system starts, and the emmc tool attaches it only on request
-# (see both). For an eMMC boot U-Boot also fills in sample delays tuned for each unit
+# On the test card, sdinit keeps it detached while TrimUI's system starts and the emmc tool
+# attaches it only on request (see both); our own system leaves it attached and never mounts it
+# by itself. For an eMMC boot U-Boot also fills in sample delays tuned for each unit
 # (sdc_tm4_sm<speed mode>_freq<frequency band>, one byte per band); 0xff bytes mean "not set", so
 # the driver uses its defaults, which read the eMMC without errors (emmc survey, 2026-10-14).
 SDC2=/soc@03000000/sdmmc@04022000

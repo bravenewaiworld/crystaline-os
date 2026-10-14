@@ -3,9 +3,16 @@
 # real-time clock's alarm after that long. Returns once the device is awake again.
 # The WiFi driver (XR829) refuses to suspend while connected, so WiFi is stopped first and
 # restarted afterwards.
-/etc/init.d/wifi stop
+# service ACTION NAME...: start or stop services, under our system's supervisor (runit's sv) or
+# the test card's (OpenWrt's procd, through its start scripts).
+service() {
+	a=$1; shift
+	if [ -d /etc/sv ]; then sv $a "$@" >/dev/null; else for s; do /etc/init.d/$s $a; done; fi
+}
+if [ -d /etc/sv ]; then WIFI="wpa_supplicant wifi-dhcp"; else WIFI=wifi; fi
+service stop $WIFI
 ifconfig wlan0 down 2>/dev/null
 echo 0 >/sys/class/rtc/rtc0/wakealarm	# clear any old alarm: a new one can't be set over it
 [ "${1:-0}" -gt 0 ] && echo "+$(($1 * 60))" >/sys/class/rtc/rtc0/wakealarm
 echo mem >/sys/power/state
-/etc/init.d/wifi start
+service start $WIFI

@@ -8,6 +8,10 @@
  * framebuffer has two screen-sized pages: each frame is drawn into the hidden one, then shown by
  * panning to it. The font is the kernel's 8x16 console font (extracted from linux/ at build time),
  * drawn at double size: 64 columns by 24 rows on the 1024x768 panel.
+ *
+ * `status --message TITLE [LINE]...` instead shows TITLE (in red) and the lines once, then exits,
+ * leaving them on screen: the boot image's start-up program (initramfs) uses it to report why
+ * the system couldn't start.
  */
 #include <dirent.h>
 #include <fcntl.h>
@@ -419,7 +423,24 @@ static int open_inputs(struct pollfd *fds, int *pad, int *jack)
 	return n;
 }
 
-int main(void)
+/* Show @n lines, the first in red, on the page not on screen, then pan to it. */
+static void show_message(char **lines, int n)
+{
+	int back = !var.yoffset, i;
+
+	page = (uint32_t *)(fb + (size_t)back * var.yres * stride * 4);
+	memset(page, 0, (size_t)var.yres * stride * 4);
+	row = 1;
+	for (i = 0; i < n; i++) {
+		line(i ? WHITE : RED, "%s", lines[i]);
+		if (!i)
+			row++;
+	}
+	var.yoffset = back * var.yres;
+	ioctl(fb_fd, FBIOPAN_DISPLAY, &var);
+}
+
+int main(int argc, char **argv)
 {
 	struct fb_fix_screeninfo fix;
 	struct pollfd fds[MAX_INPUTS];
@@ -440,6 +461,10 @@ int main(void)
 		return 1;
 	}
 	set_backlight(BACKLIGHT);
+	if (argc > 2 && !strcmp(argv[1], "--message")) {
+		show_message(argv + 2, argc - 2);
+		return 0;
+	}
 	nfds = open_inputs(fds, &pad, &jack);
 
 	for (;;) {

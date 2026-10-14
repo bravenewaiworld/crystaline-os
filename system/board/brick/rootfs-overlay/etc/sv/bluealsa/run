@@ -1,0 +1,6 @@
+#!/bin/sh
+# Makes paired Bluetooth headphones and speakers ALSA outputs ("bluealsa:DEV=<address>"); playback
+# only (a2dp-source).
+exec 2>&1
+sv check dbus >/dev/null || exit 1
+exec bluealsa -p a2dp-source

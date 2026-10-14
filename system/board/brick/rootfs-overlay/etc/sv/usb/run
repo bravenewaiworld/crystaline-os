@@ -1,0 +1,32 @@
+#!/bin/sh
+# A USB network link to a PC on the bottom USB-C port (NCM, the USB network-adapter protocol Linux
+# PCs support without drivers). The Brick takes 192.168.7.2 and hands the PC an address in
+# 192.168.7.10-20 by DHCP, with no gateway or DNS, so the PC's internet routing is untouched.
+# Then: ssh root@192.168.7.2.
+# configfs builds the USB device the PC sees (the "gadget"); writing the USB controller's name to
+# UDC connects it. The port switches between this and powering USB devices by itself.
+exec 2>&1
+G=/sys/kernel/config/usb_gadget/brick
+if [ ! -d $G ]; then
+	mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
+	mkdir -p $G/strings/0x409 $G/configs/c.1/strings/0x409 $G/functions/ncm.usb0
+	echo 0x1d6b >$G/idVendor	# Linux Foundation
+	echo 0x0104 >$G/idProduct	# its "multifunction composite gadget" ID
+	echo Brick >$G/strings/0x409/manufacturer
+	echo Brick >$G/strings/0x409/product
+	sed -n 's/.*androidboot.serialno=\([^ ]*\).*/\1/p' /proc/cmdline >$G/strings/0x409/serialnumber
+	echo 0xc0 >$G/configs/c.1/bmAttributes	# self-powered
+	echo 500 >$G/configs/c.1/MaxPower	# mA
+	ln -s $G/functions/ncm.usb0 $G/configs/c.1/
+	ls /sys/class/udc >$G/UDC	# the A133 has one USB device controller
+fi
+ifconfig usb0 192.168.7.2 netmask 255.255.255.0 up || exit 1
+cat >/run/udhcpd-usb0.conf <<END
+interface usb0
+start 192.168.7.10
+end 192.168.7.20
+max_leases 10
+lease_file /run/udhcpd-usb0.leases
+END
+touch /run/udhcpd-usb0.leases
+exec udhcpd -f /run/udhcpd-usb0.conf

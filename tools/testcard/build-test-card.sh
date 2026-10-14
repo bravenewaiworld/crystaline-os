@@ -7,7 +7,7 @@
 # With our kernel the card also: mounts a user-data partition (sdcard) and starts Specular
 # (specular/; see frontend) instead of TrimUI's UI, saves the early kernel log (sdinit), offers
 # adb and SSH over USB (sdusb), WiFi (wifi), file transfer (webdav) and Bluetooth (bluetooth),
-# applies dt-tweaks.sh, and adds the device tools (tools/device/, including status, the
+# applies system/board/brick/dt-tweaks.sh, and adds the device tools (tools/device/, including status, the
 # placeholder frontend Specular falls back to) and, if they've been built, the GPU modules
 # (tools/build-gpu.sh).
 # Usage: build-test-card.sh <unpacked-firmware-dir> <out.img> [kernel-build-dir [kernel-args]]
@@ -22,22 +22,8 @@ ROOT=$HERE/../..
 TOOLS=$ROOT/tools/sdboot
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
-# Boot logo: overwrite bootlogo.bmp's bytes inside the FAT image. This script runs without root
-# (no loop mount) or mtools, so the new logo must be the same size as the stock one and the
-# stock one's clusters must be contiguous in the image.
-python3 -I - "$FW/boot-resource.fex" "$HERE/sd-logo.bmp" "$TMP/bootres.fat" <<'PY'
-import sys, subprocess
-fat = bytearray(open(sys.argv[1], 'rb').read())
-new = open(sys.argv[2], 'rb').read()
-old = subprocess.run(['7z', 'e', '-so', sys.argv[1], 'bootlogo.bmp'], capture_output=True).stdout
-# 7z exits non-zero on this image (it is shorter than the FAT claims) but still extracts.
-assert old, '7z could not extract bootlogo.bmp'
-assert len(old) == len(new), 'logo size differs from stock bootlogo.bmp'
-at = fat.find(old)
-assert at > 0, 'stock bootlogo.bmp not stored contiguously'
-fat[at:at + len(new)] = new
-open(sys.argv[3], 'wb').write(fat)
-PY
+# Boot logo: the "SD CARD BOOT" marker in place of TrimUI's.
+python3 -I "$TOOLS/replace-bootlogo.py" "$FW/boot-resource.fex" "$HERE/sd-logo.bmp" "$TMP/bootres.fat"
 
 # dbg: run debugfs commands from stdin against the root filesystem copy. debugfs exits 0 even
 # when a command fails, so treat anything on stderr besides its version banner as failure.
@@ -149,15 +135,9 @@ if [ -n "$KBUILD" ]; then
 		done
 	} | dbg
 
-	# Device-tree changes for our kernel (see dt-tweaks.sh). The kernel receives the device tree
-	# inside the boot package (boot_package.fex: Allwinner's container for U-Boot, firmware and
-	# the device tree; see tools/sdboot/toc1.py), so patch it there and use the patched copy.
-	# fdtput drops the spare space U-Boot needs for its boot-time additions; dtc -p puts it back.
-	python3 -I "$TOOLS/toc1.py" "$PKG" 0 "$TMP/pkg" >/dev/null   # 0 = byte offset in the file
-	"$HERE/dt-tweaks.sh" "$TMP/pkg/dtb.bin"
-	dtc -q -I dtb -O dtb -p 16384 -o "$TMP/dtb.padded" "$TMP/pkg/dtb.bin"
+	# Device-tree changes for our kernel, in the boot package.
 	PKG=$TMP/boot_package.fex
-	python3 -I "$TOOLS/toc1.py" repack "$FW/boot_package.fex" "$PKG" dtb="$TMP/dtb.padded"
+	"$TOOLS/patch-boot-package.sh" "$FW/boot_package.fex" "$PKG"
 
 	# Appended to U-Boot's boot arguments (for these, the last occurrence wins; checked in
 	# /proc/sys/kernel/printk and /proc/cmdline):

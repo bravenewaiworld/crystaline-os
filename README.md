@@ -30,6 +30,7 @@ life and functionality out of this hardware.
 |---|---|
 | `linux/` | Our kernel: Allwinner's 4.9 vendor kernel with our changes (its own git repository, branch `brick`) |
 | `userspace/` | System services (e.g. `padbridge`, which turns the buttons into a standard gamepad) |
+| `system/` | Our system image: Buildroot configuration (`configs/`), start-up, services and the boot logo (`board/brick/`), patches to Buildroot's packages (`patches/`); `make system`, `make sd-card` |
 | `specular/` | Specular, our frontend (launcher and emulation), kept device-independent so it can run on other handhelds; for now its design spec and mockup (`design/`) and its own `ROADMAP.md` |
 | `tools/` | Development scripts: kernel and GPU builds, the development SD card (`testcard/`), tools that run on the device (`device/`, including the placeholder status screen `status`) |
 | `Makefile` | Builds everything; `make help` lists the targets |
@@ -38,6 +39,7 @@ life and functionality out of this hardware.
 
 ## Installation
 
-Not available yet. For now, `make test-card` builds a development SD card (our kernel and
-services on top of TrimUI's stock system), and `make update-card` updates one in a running
-device over adb; see `ROADMAP.md`.
+Not available yet. `make sd-card` builds an SD card that runs our own system (Buildroot), and
+`make update-device` updates one in a running device over SSH; `make help` lists the rest. The
+older development card (`make test-card`: our kernel and services on TrimUI's stock system) is
+being replaced by it.

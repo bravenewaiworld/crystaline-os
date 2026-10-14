@@ -1,0 +1,40 @@
+#!/bin/sh
+# brick-activate VERSION: make VERSION (in /system/images/) the one that runs from the next boot.
+# Checks its files against its manifest, then writes its boot.img to the "boot" partition of the
+# disk the system runs from (the SD card or the internal storage, whichever holds /system): the
+# boot image decides which version starts (see the initramfs). Then removes the versions other
+# than VERSION and the one running now (kept to go back to), with their developer layers. A
+# developer layer (/system/overlay/<version>, see the initramfs) on the running version gets an
+# empty one for VERSION, so developer mode carries over (its files don't).
+# A power cut while boot.img is written leaves the disk unbootable until an SD card repairs it.
+set -eu
+V=${1:?usage: brick-activate VERSION}
+I=/system/images
+running=$(cat /etc/brick-version)
+fail() { echo "brick-activate: $*" >&2; exit 1; }
+
+[ -f $I/$V/manifest.json ] || fail "no version $V in $I"
+for f in boot.img rootfs.squashfs; do
+	want=$(sed -n "s/.*\"$f\": { \"size\": [0-9]*, \"sha256\": \"\([0-9a-f]*\)\".*/\1/p" $I/$V/manifest.json)
+	[ "$(sha256sum $I/$V/$f | cut -d' ' -f1)" = "$want" ] || fail "$f doesn't match the manifest"
+done
+
+# The "boot" partition on the disk holding /system (the other disk has one too).
+dev=$(awk '$2 == "/system" { print $1 }' /proc/mounts)
+disk=${dev#/dev/}; disk=${disk%p*}
+boot=
+for u in /sys/block/$disk/${disk}p*/uevent; do
+	grep -q '^PARTNAME=boot$' $u && { u=${u%/uevent}; boot=/dev/${u##*/}; }
+done
+[ -n "$boot" ] || fail "no boot partition on $disk"
+[ $(stat -c%s $I/$V/boot.img) -le $(( $(cat /sys/class/block/${boot#/dev/}/size) * 512 )) ] ||
+	fail "boot.img is bigger than $boot"
+
+[ -d /system/overlay/$running ] && mkdir -p /system/overlay/$V
+dd if=$I/$V/boot.img of=$boot bs=1M conv=fsync 2>/dev/null || fail "writing $boot failed"
+for old in $I/*/; do
+	old=$(basename $old)
+	[ "$old" = "$V" ] || [ "$old" = "$running" ] || rm -rf $I/$old /system/overlay/$old
+done
+sync
+echo "brick-activate: $V starts from the next boot (running now: $running)"

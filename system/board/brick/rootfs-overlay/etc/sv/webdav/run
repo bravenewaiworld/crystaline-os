@@ -1,0 +1,8 @@
+#!/bin/sh
+# File transfer over WiFi: dufs (github.com/sigoden/dufs) serves the data card on port 80, both as
+# WebDAV (mountable in PC file managers) and as a browser page for uploading and downloading.
+# No password: anyone on the network can read and write the card. -A: allow uploads, deletes and
+# search; files are written as root.
+exec 2>&1
+mountpoint -q /mnt/SDCARD || { sv down webdav; exit 0; }
+exec /usr/bin/dufs -A -p 80 /mnt/SDCARD

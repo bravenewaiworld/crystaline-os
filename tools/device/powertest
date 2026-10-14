@@ -75,12 +75,15 @@ tuned() {
 	usb_host unbind
 }
 
+# frontend start|stop: under our system's supervisor (runit's sv) or the test card's (procd).
+frontend() { if [ -d /etc/sv ]; then sv $1 frontend >/dev/null; else /etc/init.d/frontend $1; fi; }
+
 finish() {	# $1: reason
 	PHASE="end ($1)"
 	kill $LOAD_PIDS 2>/dev/null
 	base
 	dispctl on
-	/etc/init.d/frontend start	# does nothing if it is running
+	frontend start	# does nothing if it is running
 	sample
 	snapshot end
 	sleepnow 0
@@ -133,7 +136,7 @@ tuned
 phase idle-tuned $IDLE_MIN 60
 
 if [ $OFF_MIN -gt 0 ]; then
-	/etc/init.d/frontend stop
+	frontend stop
 	dispctl off
 	phase off-tuned $OFF_MIN 60
 	dispctl on

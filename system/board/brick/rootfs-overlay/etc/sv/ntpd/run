@@ -1,0 +1,4 @@
+#!/bin/sh
+# Sets the clock from the network whenever there is one.
+exec 2>&1
+exec ntpd -n -p pool.ntp.org

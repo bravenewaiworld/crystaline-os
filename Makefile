@@ -16,24 +16,32 @@ CFLAGS := -O2 -Wall -Wextra
 # glibc also needs the unwinder (-lgcc_eh).
 STATIC := -static -s -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 
-.PHONY: help all kernel gpu userspace specular cores device-tools test-card update-card live-image \
-	install-image clean
+.PHONY: help all kernel gpu userspace specular cores device-tools buildroot system sd-card \
+	update-device deploy-specular run-specular test-card update-card install-image clean
 
 help:
-	@echo 'Images:'
-	@echo '  live-image     SD card that runs our system (not available yet)'
-	@echo '  install-image  SD card that installs our system to internal storage (not available yet)'
+	@echo 'Our system:'
+	@echo '  system           one version of the system: build/system/<version>/ (boot.img,'
+	@echo '                   rootfs.squashfs, manifest.json), also build/system/latest'
+	@echo '  sd-card          build/sd-card.img: an SD card that runs the latest version'
+	@echo '  update-device    build system, copy it to a Brick running our system, switch, reboot'
+	@echo '                   (SSH; BRICK=<address>, default 192.168.7.2 over USB)'
+	@echo '  deploy-specular  build Specular, replace it on the Brick and restart it (kept across'
+	@echo '                   restarts until the next update-device)'
+	@echo '  run-specular     build Specular and run it once in the foreground on the Brick'
+	@echo 'Test card (TrimUI'"'"'s system with our kernel; being replaced by the above):'
 	@echo '  test-card      development SD card: our kernel and services on TrimUI'"'"'s stock system'
 	@echo '  update-card    build test-card, then write its kernel and boot files to the card in a'
 	@echo '                 running Brick (adb)'
 	@echo 'Parts:'
 	@echo '  kernel  gpu  userspace  specular  cores  device-tools'
+	@echo '  buildroot      the base system (C library, BusyBox, daemons) with Buildroot'
 	@echo '  clean          remove build/ (keeps the test card'"'"'s SSH keys)'
 
 all: test-card
 
-live-image install-image:
-	@echo '$@: not available yet; it needs our own system image (see ROADMAP.md)'; exit 1
+install-image:
+	@echo '$@: not available yet (see ROADMAP.md)'; exit 1
 
 # --- Kernel and GPU driver ------------------------------------------------------------------
 # Always run: the kernel's own build decides what is out of date.
@@ -43,6 +51,32 @@ kernel:
 
 gpu: kernel
 	tools/build-gpu.sh
+
+# --- Base system (Buildroot) ------------------------------------------------------------------
+# Buildroot, pinned to a long-term release and checked against the checksum it publishes. Our
+# configuration and additions are in system/ (BR2_EXTERNAL); its output in $(B)/buildroot and
+# downloads in $(B)/downloads/buildroot, both kept across `make clean` of Buildroot's own tree.
+# Always run: Buildroot decides what is out of date.
+BUILDROOT_VERSION := 2026.02.3
+BUILDROOT_SHA256 := 5a59e7501b0b4ec52c41f4bfa79412320e0b37eae5f719605a258e8d0c6fc7fb
+BUILDROOT_SRC := $(B)/buildroot-$(BUILDROOT_VERSION)
+BR := $(MAKE) -C $(BUILDROOT_SRC) O=$(B)/buildroot BR2_EXTERNAL=$(ROOT)/system \
+	BR2_DL_DIR=$(B)/downloads/buildroot
+
+$(BUILDROOT_SRC)/.done:
+	@mkdir -p $(B)/downloads
+	curl -sSfL -o $(B)/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz \
+		https://buildroot.org/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz
+	echo '$(BUILDROOT_SHA256)  $(B)/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz' | sha256sum -c --quiet
+	tar xf $(B)/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz -C $(B)
+	@touch $@
+
+# The configuration is regenerated from system/configs/brick_defconfig every time, so that file is
+# the only place to change it. Buildroot doesn't rebuild a package whose options changed; that
+# needs `make -C $(BUILDROOT_SRC) O=$(B)/buildroot <package>-dirclean` first.
+buildroot: $(BUILDROOT_SRC)/.done
+	$(BR) -s brick_defconfig
+	$(BR)
 
 # --- Userspace services -------------------------------------------------------------------
 userspace: $(B)/userspace/padbridge
@@ -103,6 +137,23 @@ $(B)/stock-root/.done: $(B)/stock-fw/rootfs.fex
 	@mkdir -p $(B)/stock-root/usr
 	debugfs -R 'rdump /usr/lib $(B)/stock-root/usr' $< 2>/dev/null
 	@touch $@
+
+# --- Our system -----------------------------------------------------------------------------
+# Always run: each build is a new version (named by time and git commit).
+system: buildroot kernel gpu userspace device-tools specular cores $(B)/stock-root/.done
+	tools/system/build-system.sh $(B)/system
+
+sd-card: system
+	tools/system/build-sd-card.sh $(B)/system/latest $(B)/sd-card.img
+
+update-device: system
+	tools/system/update-device.sh $(B)/system/latest
+
+deploy-specular: specular
+	tools/system/deploy-specular.sh $(B)/specular/aarch64-unknown-linux-gnu/release/specular
+
+run-specular: specular
+	tools/run-specular.sh $(B)/specular/aarch64-unknown-linux-gnu/release/specular
 
 # --- Development test card ------------------------------------------------------------------
 test-card: kernel gpu userspace device-tools specular cores $(B)/stock-fw/rootfs.fex

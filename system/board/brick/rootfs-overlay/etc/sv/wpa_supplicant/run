@@ -1,0 +1,14 @@
+#!/bin/sh
+# WiFi: loads the XR829 driver and connects with wpa_supplicant.conf on the data card, in
+# wpa_supplicant's standard format, e.g.
+#   network={
+#       ssid="MyNetwork"
+#       psk="password"
+#   }
+# Without the file the service stays down; after adding or changing it: sv restart wpa_supplicant.
+# The XR829 is 2.4 GHz only. Started before the driver has made wlan0, it exits and is retried.
+exec 2>&1
+CONF=/mnt/SDCARD/wpa_supplicant.conf
+[ -f $CONF ] || { sv down wpa_supplicant wifi-dhcp; exit 0; }
+modprobe xr829_wlan
+exec wpa_supplicant -i wlan0 -D nl80211 -c $CONF

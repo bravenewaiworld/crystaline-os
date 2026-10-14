@@ -6,10 +6,14 @@
 # Usage: build_sd_image.sh OUT.img BOOT0 BOOT_PACKAGE BASE_ENV BOOT_IMG BOOTLOADER_FAT [ROOTFS_IMG]
 #   BOOT0          vendor boot0_sdcard.fex (Allwinner "eGON" first-stage loader, unmodified)
 #   BOOT_PACKAGE   vendor boot_package.fex (see toc1.py); must be in normal-boot mode
-#   BASE_ENV       vendor env.fex; rewritten here (root= by PARTUUID, see below)
+#   BASE_ENV       vendor env.fex; rewritten here (root=, see below)
 #   BOOT_IMG       Android v0 boot image, loaded by `sunxi_flash read 45000000 boot; bootm`
 #   BOOTLOADER_FAT vendor boot-resource.fex (boot logo / battery images U-Boot reads by name)
 #   ROOTFS_IMG     optional filesystem image for the "rootfs" partition
+# Environment (both optional, for our system image, whose initramfs finds its partition itself):
+#   ROOT_NAME      the last partition's GPT name instead of "rootfs"
+#   ROOT_REF       what U-Boot's settings pass the kernel as root= (default: PARTUUID=<that
+#                  partition's random GPT UUID>)
 #
 # Layout, in 512-byte sectors:
 #   0, 1, 2-5   protective MBR, GPT header, GPT entries (only 16 entries, so they end before boot0)
@@ -37,6 +41,8 @@ python3 -I "$TOOLS/toc1.py" "$PKG" >/dev/null || { echo "refusing: unsafe boot p
 
 rm -f "$OUT"; truncate -s $((ROOT_AT + ROOT_MiB + 1))M "$OUT"   # +1 MiB for the backup GPT
 ROOT_UUID=$(python3 -I -c 'import uuid; print(uuid.uuid4())')
+ROOT_NAME=${ROOT_NAME:-rootfs}
+ROOT_REF=${ROOT_REF:-PARTUUID=$ROOT_UUID}
 sfdisk --quiet --no-reread --no-tell-kernel "$OUT" <<GPT
 label: gpt
 table-length: 16
@@ -45,7 +51,7 @@ start=$((BL_AT*MiB)),   size=$((BL_MiB*MiB)),   name=bootloader
 start=$((ENV_AT*MiB)),  size=$((ENV_MiB*MiB)),  name=env
 start=$((ENV2_AT*MiB)), size=$((ENV_MiB*MiB)),  name=env-redund
 start=$((BOOT_AT*MiB)), size=$((BOOT_MiB*MiB)), name=boot
-start=$((ROOT_AT*MiB)), size=$((ROOT_MiB*MiB)), name=rootfs, uuid=$ROOT_UUID
+start=$((ROOT_AT*MiB)), size=$((ROOT_MiB*MiB)), name=$ROOT_NAME, uuid=$ROOT_UUID
 GPT
 
 # put FILE SECTOR MAX_SECTORS: write FILE at SECTOR, failing if it would spill past MAX_SECTORS.
@@ -58,15 +64,15 @@ put "$BOOT0" 16 240
 put "$BOOT0" 256 32544
 put "$PKG" 32800 8160
 put "$BLFAT" $((BL_AT*MiB)) $((BL_MiB*MiB))
-# root= by PARTUUID: U-Boot otherwise derives "root=/dev/mmcblk0pN", which assumes a device
+# root= set explicitly (ROOT_REF): U-Boot otherwise derives "root=/dev/mmcblk0pN", which assumes a device
 # numbering our kernel may not share and could point at an eMMC partition. blkoops_partition
 # names the eMMC crash-log partition, which doesn't exist on the card.
 ENV=$(mktemp); trap 'rm -f "$ENV"' EXIT
 python3 -I "$TOOLS/mkenv.py" "$BASE_ENV" "$ENV" $ENV_SIZE -root_partition -blkoops_partition \
-	"mmc_root=PARTUUID=$ROOT_UUID" >/dev/null
+	"mmc_root=$ROOT_REF" >/dev/null
 # U-Boot keeps two copies and falls back to the second if the first fails its CRC.
 put "$ENV" $((ENV_AT*MiB)) $((ENV_MiB*MiB))
 put "$ENV" $((ENV2_AT*MiB)) $((ENV_MiB*MiB))
 put "$BOOTIMG" $((BOOT_AT*MiB)) $((BOOT_MiB*MiB))
 [ -n "$ROOTFS" ] && put "$ROOTFS" $((ROOT_AT*MiB)) $((ROOT_MiB*MiB))
-echo "built $OUT (rootfs PARTUUID=$ROOT_UUID)"
+echo "built $OUT ($ROOT_NAME: root=$ROOT_REF)"

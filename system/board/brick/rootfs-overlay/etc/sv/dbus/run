@@ -1,0 +1,5 @@
+#!/bin/sh
+# The system message bus, which BlueZ and bluealsa talk over.
+exec 2>&1
+mkdir -p /run/dbus
+exec dbus-daemon --system --nofork --nopidfile

@@ -1,0 +1,19 @@
+# Applets added to Buildroot's default BusyBox configuration.
+# Service supervision (runsvdir starts and restarts everything in /etc/service; sv controls them).
+CONFIG_RUNSV=y
+CONFIG_RUNSVDIR=y
+CONFIG_SV=y
+CONFIG_SV_DEFAULT_SERVICE_DIR="/etc/service"
+CONFIG_SVC=y
+CONFIG_CHPST=y
+# The system log in memory (syslogd -C), read with logread.
+CONFIG_FEATURE_IPC_SYSLOG=y
+CONFIG_LOGREAD=y
+CONFIG_FEATURE_LOGREAD_REDUCED_LOCKING=y
+# DHCP server for the PC on the USB network link; clock from the network.
+CONFIG_UDHCPD=y
+CONFIG_NTPD=y
+# The initramfs finds the system partition by filesystem UUID; brick-activate checks file sizes.
+CONFIG_FINDFS=y
+CONFIG_STAT=y
+CONFIG_FEATURE_STAT_FORMAT=y

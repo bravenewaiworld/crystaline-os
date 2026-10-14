@@ -1,0 +1,5 @@
+#!/bin/sh
+# An address for WiFi by DHCP, once wpa_supplicant runs.
+exec 2>&1
+sv check wpa_supplicant >/dev/null || exit 1
+exec udhcpc -f -i wlan0

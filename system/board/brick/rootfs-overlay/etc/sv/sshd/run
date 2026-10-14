@@ -1,0 +1,4 @@
+#!/bin/sh
+# SSH (keys only), over WiFi or the USB network link (see usb).
+exec 2>&1
+exec /usr/sbin/sshd -D -e

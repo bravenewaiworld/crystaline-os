@@ -1,0 +1,63 @@
+#!/bin/sh
+# Mounts the SD card's data partition (games, saves, settings) at /mnt/SDCARD, at start-up.
+# The card is the disk on the SD card controller (sdc0). Its data partition is the one named
+# "sdcard" (our cards). A card the system runs from that has none yet (a freshly written card,
+# whose image covers only the system's partitions) gets one over the rest of the card, formatted
+# FAT32. Any other card (with the system installed on the internal storage) is used through its
+# first FAT partition, other than our boot pictures' ("bootloader"). exFAT isn't supported
+# (ROADMAP.md).
+# Without a card, nothing is mounted and Specular says so.
+log() { logger -s -t mount-card "$*"; }
+
+set -- /sys/bus/platform/devices/sdc0/mmc_host/mmc*/mmc*:*/block/mmcblk*
+[ -e "$1" ] || { log "no SD card"; exit 0; }
+card=${1##*/}
+
+# named NAME: the card's partition with GPT name NAME, e.g. mmcblk1p6.
+named() {
+	for u in /sys/block/$card/${card}p*/uevent; do
+		grep -q "^PARTNAME=$1\$" "$u" && { u=${u%/uevent}; echo ${u##*/}; return; }
+	done
+	return 1
+}
+
+# first_fat: the card's lowest-numbered FAT partition, other than one named "bootloader".
+first_fat() {
+	for n in $(ls /sys/block/$card | sed -n "s/^${card}p//p" | sort -n); do
+		grep -q '^PARTNAME=bootloader$' /sys/block/$card/${card}p$n/uevent && continue
+		[ "$(blkid -o value -s TYPE /dev/${card}p$n)" = vfat ] && { echo ${card}p$n; return; }
+	done
+	return 1
+}
+
+# add_data_partition: adds the "sdcard" partition over the card's free space and formats it. Only
+# on the card the system runs from (the disk holding /system), and only a partition made here is
+# ever formatted.
+add_data_partition() {
+	grep -q "^/dev/${card}p[0-9]* /system " /proc/mounts || return 1
+	log "adding the data partition to $card"
+	# The image's backup partition table sits at the image's end, not the card's: move it there.
+	sfdisk --quiet --relocate gpt-bak-std /dev/$card &&
+		# Microsoft basic data, the usual type for FAT; ", +" = from the first free sector to the end.
+		echo ', +, EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, name="sdcard"' |
+		sfdisk --quiet --append --no-reread --no-tell-kernel /dev/$card || return
+	n=$(sfdisk --dump /dev/$card | sed -n "s|^/dev/${card}p\([0-9]*\) .*name=\"sdcard\".*|\1|p")
+	# partx adds just this partition to the kernel's view: re-reading the whole table isn't
+	# allowed while the system's partitions on the card are in use.
+	partx --add --nr $n /dev/$card && mkfs.fat -F 32 -n BRICK /dev/${card}p$n >/dev/null &&
+		echo ${card}p$n
+}
+
+part=$(named sdcard) || part=$(add_data_partition) || part=$(first_fat) ||
+	{ log "no data partition on $card"; exit 0; }
+
+# Not "sync" (TrimUI's choice), which writes everything through at once: about 10x slower uploads
+# and more card wear. "flush" writes a file's data out soon after it is closed; programs that must
+# survive a power cut (e.g. saving a game) write a temporary file and rename it. errors=remount-ro:
+# on filesystem damage, stop writing rather than make it worse. File names are UTF-8 ("utf8") but
+# matched regardless of case, as FAT is on a PC; with iocharset=utf8 instead, Linux matches them
+# case-sensitively, so "roms/" wouldn't find a card's "Roms/" (the kernel's FAT documentation
+# warns against it for this reason).
+mkdir -p /mnt/SDCARD
+mount -t vfat -o rw,noatime,flush,iocharset=iso8859-1,utf8,errors=remount-ro /dev/$part /mnt/SDCARD ||
+	log "can't mount $part"

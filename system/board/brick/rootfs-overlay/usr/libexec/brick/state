@@ -1,0 +1,19 @@
+#!/bin/sh
+# State that must survive reboots and updates (Bluetooth address and pairings) lives on the system
+# partition, in /system/state; the root filesystem links /var/state there, and both the XR829's
+# Bluetooth address file (/etc/bluetooth/xr_bt.conf) and BlueZ's storage (/var/lib/bluetooth) into
+# /var/state/bluetooth. Runs after mount-card.
+mkdir -p /var/state/bluetooth
+[ -s /var/state/machine-id ] || dbus-uuidgen >/var/state/machine-id
+
+# Once: bring over the Bluetooth address and pairings from a test card (tools/testcard), which
+# kept them in an ext4 image on the card's data partition.
+old=/mnt/SDCARD/.system-state.img
+if [ -f $old ] && [ ! -e /var/state/bluetooth/xr_bt.conf ]; then
+	mkdir -p /tmp/old-state
+	if mount -o loop,ro $old /tmp/old-state; then
+		cp -a /tmp/old-state/bluetooth/. /var/state/bluetooth/ &&
+			logger -t state "copied the test card's Bluetooth state"
+		umount /tmp/old-state
+	fi
+fi

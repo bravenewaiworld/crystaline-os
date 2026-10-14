@@ -1,0 +1,6 @@
+#!/bin/sh
+# BlueZ's daemon: pairing and connections. Waits for the message bus (an exit is retried a second
+# later).
+exec 2>&1
+sv check dbus >/dev/null || exit 1
+exec /usr/libexec/bluetooth/bluetoothd -n
