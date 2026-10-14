@@ -86,3 +86,17 @@ Roughly by impact on the goal.
 15. **exFAT data cards:** most cards over 32 GB come formatted exFAT, which our 4.9 kernel can't
     read; for now the data partition must be FAT32 (an installed system uses the card's first
     FAT32 partition). Options: a backported exFAT driver, or reformatting from the device.
+16. **Bluetooth audio latency:** headsets add about 150–250 ms with SBC, most of it the headset's
+    own buffer. The codec barely matters: aptX Low Latency and aptX Adaptive are closed
+    (libopenaptx has neither), FastStream is supported by bluealsa but by almost no headphones,
+    and LE Audio (LC3) probably needs a newer Bluetooth controller than the XR829 (check its
+    datasheet). What we can do:
+    - Shrink our part: Specular's sound queue and bluealsa's buffer, as small as they go without
+      dropouts.
+    - Measure first: log the headset's reported delay (BlueZ's `MediaTransport1.Delay`, for
+      headsets that report it) in the wireless trace.
+    - Point users to their headset's own low-latency ("game") mode where it has one.
+17. **USB audio output:** gaming headsets' 2.4 GHz USB dongles and USB-C DACs on either USB-C
+    port (about 20–40 ms, unlike Bluetooth's 150–250 ms). Needs the kernel's USB audio driver
+    (`snd-usb-audio`) and a third kind of sound output in Specular, beside the device's own and
+    Bluetooth.

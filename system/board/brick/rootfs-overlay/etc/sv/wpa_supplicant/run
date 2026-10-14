@@ -1,14 +1,11 @@
 #!/bin/sh
-# WiFi: loads the XR829 driver and connects with wpa_supplicant.conf on the data card, in
-# wpa_supplicant's standard format, e.g.
-#   network={
-#       ssid="MyNetwork"
-#       psk="password"
-#   }
-# Without the file the service stays down; after adding or changing it: sv restart wpa_supplicant.
+# WiFi: loads the XR829 driver and runs wpa_supplicant with the saved networks in
+# /var/state/wifi/wpa_supplicant.conf (made at start-up by /usr/libexec/brick/state; networks
+# joined in Specular are saved there by wpa_supplicant itself). Down at start-up (the `down`
+# file): Specular brings WiFi up and down as its setting says, unloading the driver when off. By
+# hand: sv up wpa_supplicant wifi-dhcp.
 # The XR829 is 2.4 GHz only. Started before the driver has made wlan0, it exits and is retried.
 exec 2>&1
-CONF=/mnt/SDCARD/wpa_supplicant.conf
-[ -f $CONF ] || { sv down wpa_supplicant wifi-dhcp; exit 0; }
+umask 077	# the saved networks' passwords, when it saves them
 modprobe xr829_wlan
-exec wpa_supplicant -i wlan0 -D nl80211 -c $CONF
+exec wpa_supplicant -i wlan0 -D nl80211 -c /var/state/wifi/wpa_supplicant.conf

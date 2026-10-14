@@ -55,6 +55,7 @@ done
 put "$DUFS" /usr/bin/dufs 755
 put "$B/specular/aarch64-unknown-linux-gnu/release/specular" /usr/lib/specular/specular 755
 for core in "$B"/cores/aarch64/*.so; do put "$core" "/usr/lib/specular/cores/${core##*/}" 644; done
+put "$ROOT/specular/assets/fonts/NotoEmoji.ttf" /usr/lib/specular/fonts/NotoEmoji.ttf 644	# see specular_ui::use_fallback_fonts
 put "$ROOT/tools/testcard/frontend-run" /usr/bin/frontend-run 755
 
 # TrimUI's GPU libraries (with their NULL window system, loaded by name) and firmware, and the

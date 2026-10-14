@@ -13,4 +13,7 @@ if ! on_brick 'grep -q "^overlay / overlay" /proc/mounts'; then
 	until on_brick true 2>/dev/null; do sleep 2; done
 fi
 to_brick "$1" root@$BRICK:/usr/lib/specular/specular.new
+# Its fallback fonts (see specular_ui::use_fallback_fonts), sent only when missing.
+FONT=$(dirname "$0")/../../specular/assets/fonts/NotoEmoji.ttf
+on_brick '[ -f /usr/lib/specular/fonts/NotoEmoji.ttf ]' || { on_brick 'mkdir -p /usr/lib/specular/fonts'; to_brick "$FONT" root@$BRICK:/usr/lib/specular/fonts/; }
 on_brick 'mv /usr/lib/specular/specular.new /usr/lib/specular/specular && sv restart frontend'

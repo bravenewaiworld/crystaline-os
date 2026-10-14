@@ -1,5 +1,7 @@
 #!/bin/sh
-# An address for WiFi by DHCP, once wpa_supplicant runs.
+# An address for WiFi by DHCP, once wpa_supplicant runs. Down at start-up, like wpa_supplicant.
+# Specular restarts it each time WiFi joins a network, so the address comes at once rather than
+# at udhcpc's next retry, and none from the previous network lingers.
 exec 2>&1
 sv check wpa_supplicant >/dev/null || exit 1
 exec udhcpc -f -i wlan0

@@ -123,6 +123,8 @@ if [ -n "$KBUILD" ]; then
 		echo "mkdir /usr/lib/specular/cores"
 		put "$ROOT/build/specular/aarch64-unknown-linux-gnu/release/specular" /usr/lib/specular/specular 755
 		for core in "$ROOT"/build/cores/aarch64/*.so; do put "$core" "/usr/lib/specular/cores/${core##*/}" 644; done
+		echo "mkdir /usr/lib/specular/fonts"
+		put "$ROOT/specular/assets/fonts/NotoEmoji.ttf" /usr/lib/specular/fonts/NotoEmoji.ttf 644
 		put "$HERE/frontend-run" /usr/bin/frontend-run 755
 		service frontend
 		put "$HERE/sdinit" /sbin/sdinit 755     # run via init= below

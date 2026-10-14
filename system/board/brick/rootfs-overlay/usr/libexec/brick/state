@@ -1,9 +1,9 @@
 #!/bin/sh
-# State that must survive reboots and updates (Bluetooth address and pairings) lives on the system
-# partition, in /system/state; the root filesystem links /var/state there, and both the XR829's
-# Bluetooth address file (/etc/bluetooth/xr_bt.conf) and BlueZ's storage (/var/lib/bluetooth) into
-# /var/state/bluetooth. Runs after mount-card.
-mkdir -p /var/state/bluetooth
+# State that must survive reboots and updates (Bluetooth address and pairings, saved WiFi
+# networks) lives on the system partition, in /system/state; the root filesystem links /var/state
+# there, and both the XR829's Bluetooth address file (/etc/bluetooth/xr_bt.conf) and BlueZ's
+# storage (/var/lib/bluetooth) into /var/state/bluetooth. Runs after mount-card.
+mkdir -p /var/state/bluetooth /var/state/wifi
 [ -s /var/state/machine-id ] || dbus-uuidgen >/var/state/machine-id
 
 # Once: bring over the Bluetooth address and pairings from a test card (tools/testcard), which
@@ -16,4 +16,21 @@ if [ -f $old ] && [ ! -e /var/state/bluetooth/xr_bt.conf ]; then
 			logger -t state "copied the test card's Bluetooth state"
 		umount /tmp/old-state
 	fi
+fi
+
+# WiFi's saved networks, in wpa_supplicant's format. The first time, those of a
+# wpa_supplicant.conf on the card are brought over. wpa_supplicant needs the two settings below:
+# where Specular finds its control socket, and leave to save networks joined there.
+wifi=/var/state/wifi/wpa_supplicant.conf
+if [ ! -e $wifi ]; then
+	umask 077	# it holds the networks' passwords
+	{
+		echo ctrl_interface=/run/wpa_supplicant
+		echo update_config=1
+		card=/mnt/SDCARD/wpa_supplicant.conf
+		if [ -f $card ]; then
+			grep -v -E '^[[:space:]]*(ctrl_interface|update_config)[[:space:]]*=' $card
+			logger -t state "WiFi: brought over the networks in $card"
+		fi
+	} >$wifi.new && mv $wifi.new $wifi
 fi
