@@ -84,6 +84,11 @@ key fn     7 19 1 5	# SW_TABLET_MODE (EV_SW): the FN slider, as TrimUI's pad rep
 LEDC=/soc@03000000/ledc@0x05018000
 fdtput -t u "$DTB" $LEDC led_count 14
 fdtput -t u "$DTB" $LEDC swap-rg-leds 0 1 2 3 4 5 6 7 8 9
+# Reset time: the idle gap after each data frame that tells the LEDs to apply what they received
+# (the driver accepts up to 327000 ns). The vendor tree's 84 ns is far too short for these LEDs
+# (~300 µs). The driver sends a frame on every brightness write, so back-to-back writes merged
+# into one long frame and colours shifted onto later LEDs (random colours, LEDs stuck on).
+fdtput -t u "$DTB" $LEDC reset_ns 300000
 # Their 5 V supply, switched on by PD11, as a fixed regulator that the LED driver enables and
 # switches off during sleep. GPIO cells as for the buttons: mux 1 = output, data 0 = active high.
 LED5V=/led-5v
