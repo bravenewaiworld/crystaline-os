@@ -124,3 +124,16 @@ fdtput -t u "$DTB" $RUMBLE enable-gpios "$PIO" 7 3 1 0 0xffffffff 0
 USB_PSY=/soc@03000000/s_twi@0x07081400/pmu@34/usb_power_supply
 fdtput -t u "$DTB" $USB_PSY pmu_bc12_en 1
 fdtput -t u "$DTB" /soc@03000000/usbc0@0 extcon "$(fdtget "$DTB" $USB_PSY phandle)"
+
+# Internal storage (eMMC, controller sdc2), which U-Boot leaves disabled when booting from the card.
+# Enabled with the limits U-Boot itself sets when it boots TrimUI's system from the eMMC, the
+# settings stock has always used: 50 MHz and no HS200/HS400, so the eMMC runs in DDR52 mode.
+# sdinit keeps it detached while the system starts, and the emmc tool attaches it only on request
+# (see both). For an eMMC boot U-Boot also fills in sample delays tuned for each unit
+# (sdc_tm4_sm<speed mode>_freq<frequency band>, one byte per band); 0xff bytes mean "not set", so
+# the driver uses its defaults, which read the eMMC without errors (emmc survey, 2026-10-14).
+SDC2=/soc@03000000/sdmmc@04022000
+fdtput -t s "$DTB" $SDC2 status okay
+fdtput -t u "$DTB" $SDC2 max-frequency 50000000
+fdtput -d "$DTB" $SDC2 mmc-hs200-1_8v mmc-hs400-1_8v
+for sm in 0 1 2 3 4; do for f in 0 1; do fdtput -t x "$DTB" $SDC2 sdc_tm4_sm${sm}_freq$f ffffffff; done; done

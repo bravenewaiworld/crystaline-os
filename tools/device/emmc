@@ -1,0 +1,109 @@
+#!/bin/sh
+# Inspect the internal storage (eMMC) from a test card, without writing to it. sdinit keeps it
+# detached while the system starts (see there for why); this attaches it on request, read-only.
+# Usage:
+#   emmc attach          attach it, mark the disk, its partitions and its boot areas read-only,
+#                        print the disk's name (e.g. mmcblk0)
+#   emmc detach          detach it again
+#   emmc survey [DIR]    attach, save what's on it to DIR (default: emmc-survey/<time> on the
+#                        card), detach. Saves: the chip's identity and wear, its register dump
+#                        (ext_csd), the partition table, raw copies of the small partitions and
+#                        the boot areas, file lists of rootfs_data and UDISK, and two checksums
+#                        of the whole disk with their read times (a reliability check: they
+#                        must match).
+set -eu
+DEV=/sys/bus/platform/devices/sdc2
+
+# The eMMC's disk name (e.g. mmcblk1), once attached.
+disk() {
+	set -- $DEV/mmc_host/mmc*/mmc*:*/block/mmcblk*
+	[ -e "$1" ] && basename "$1"
+}
+
+attach() {
+	echo >$DEV/driver_override	# an empty line clears it
+	[ -e $DEV/driver ] || echo sdc2 >/sys/bus/platform/drivers/sunxi-mmc/bind
+	for _ in 1 2 3 4 5; do d=$(disk) && break; sleep 1; done
+	[ -n "$d" ] || { echo "emmc: no disk appeared (see dmesg)" >&2; exit 1; }
+	# The read-only flag is per block device: the disk's doesn't cover its partitions or its two
+	# hardware boot areas, so each gets its own. If any can't be made read-only, detach again
+	# rather than leave it writable.
+	set -- /dev/$d
+	for b in /dev/${d}p* /dev/${d}boot*; do [ -e "$b" ] && set -- "$@" "$b"; done
+	blkro "$@" >&2 || { detach; echo "emmc: couldn't make it read-only; detached" >&2; exit 1; }
+	echo "$d"
+}
+
+detach() {
+	[ -e $DEV/driver ] && echo sdc2 >/sys/bus/platform/drivers/sunxi-mmc/unbind
+	echo none >$DEV/driver_override
+}
+
+# part D NAME: the device name of D's partition with GPT name NAME (none if absent).
+part() {
+	for p in /sys/block/$1/$1p*; do
+		grep -q "^PARTNAME=$2\$" $p/uevent && { echo ${p##*/}; return; }
+	done
+}
+
+# Lists the files on partition $2 (of disk $1) into $3, mounted read-only without replaying the
+# filesystem's journal (noload), which would write.
+list_files() {
+	p=$(part "$1" "$2") || { echo "no $2 partition" >"$3"; return; }
+	mkdir -p /tmp/emmc-mnt
+	if mount -t ext4 -o ro,noload /dev/$p /tmp/emmc-mnt 2>"$3"; then
+		{ df -h /tmp/emmc-mnt; echo; ls -laR /tmp/emmc-mnt; } >>"$3" 2>&1
+		umount /tmp/emmc-mnt
+	fi
+}
+
+survey() {
+	out=${1:-/mnt/SDCARD/emmc-survey/$(date +%Y%m%d-%H%M%S)}
+	mkdir -p "$out"
+	log_lines=$(dmesg | wc -l)
+	d=$(attach)
+	trap detach EXIT	# also if a step fails
+	echo "surveying /dev/$d into $out"
+	sys=/sys/block/$d
+	for f in cid csd name date manfid oemid serial fwrev hwrev rev life_time pre_eol_info; do
+		echo "$f: $(cat $sys/device/$f 2>/dev/null)"
+	done >"$out/identity.txt"
+	echo "sectors: $(cat $sys/size)" >>"$out/identity.txt"
+	# The chip's registers are in debugfs; mount it unless it already is.
+	[ -d /sys/kernel/debug/mmc0 ] || mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null || true
+	cat /sys/kernel/debug/mmc*/mmc*:*/ext_csd >"$out/ext_csd.txt" 2>/dev/null || true
+	for p in $sys/${d}p*; do
+		echo "$(basename $p) start=$(cat $p/start) sectors=$(cat $p/size) $(grep PARTNAME $p/uevent)"
+	done >"$out/partitions.txt"
+	/usr/trimui/bin/sgdisk -p /dev/$d >>"$out/partitions.txt" 2>&1 || true
+	/usr/trimui/bin/sgdisk --backup="$out/gpt.bin" /dev/$d >/dev/null 2>&1 || true
+
+	echo "copying the boot areas and small partitions"
+	# First 20 MiB, everything before the partitions: partition table, first-stage loader (boot0)
+	# and Allwinner's boot package (U-Boot, its firmware and the device tree).
+	dd if=/dev/$d of="$out/head-20MiB.img" bs=1M count=20 2>/dev/null
+	for b in /dev/${d}boot*; do [ -e "$b" ] && dd if=$b of="$out/$(basename $b).img" bs=1M 2>/dev/null; done
+	for n in bootloader env env-redund boot private recovery pstore; do
+		p=$(part $d $n) && dd if=/dev/$p of="$out/$n.img" bs=1M 2>/dev/null
+	done
+	echo "listing rootfs_data and UDISK"
+	list_files $d rootfs_data "$out/files-rootfs_data.txt"
+	list_files $d UDISK "$out/files-UDISK.txt"
+
+	echo "reading the whole disk twice (a few minutes each)"
+	for i in 1 2; do
+		t=$(date +%s)
+		sum=$(sha256sum </dev/$d | cut -d' ' -f1)
+		echo "pass $i: $sum $(( $(date +%s) - t )) s"
+	done | tee "$out/read-check.txt"
+	dmesg | tail -n +$((log_lines + 1)) >"$out/dmesg.txt"	# the kernel's messages since attaching
+	sync
+	echo "done: $out"
+}
+
+case ${1:-} in
+attach) attach ;;
+detach) detach ;;
+survey) survey "${2:-}" ;;
+*) sed -n '/^set/q;2,$p' "$0"; exit 1 ;;
+esac

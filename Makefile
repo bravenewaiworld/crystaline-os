@@ -68,7 +68,7 @@ cores:
 	tools/build-cores.sh
 
 # --- Development tools that run on the device -----------------------------------------------
-DEVICE_TOOLS := dispctl glspin rumble i2creg memreg status
+DEVICE_TOOLS := dispctl glspin rumble i2creg memreg status blkro
 device-tools: $(addprefix $(B)/tools/,$(DEVICE_TOOLS))
 
 # status: a stand-in frontend used on the test card until Specular is ready. It draws text with the

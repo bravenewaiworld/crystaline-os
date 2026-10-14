@@ -98,10 +98,11 @@ if [ -n "$KBUILD" ]; then
 		put "$ROOT/build/userspace/padbridge" /usr/bin/padbridge 755
 		service padbridge "$ROOT/userspace/padbridge/padbridge.init"
 		# Device tools: every binary built into build/tools/ (including status, the placeholder
-		# frontend that `service frontend` below falls back to), plus the powertest and sleepnow
-		# scripts.
+		# frontend that `service frontend` below falls back to), plus the powertest, sleepnow and
+		# emmc scripts.
 		# status calls sleepnow to put the device to sleep.
-		for f in "$ROOT"/build/tools/* "$ROOT/tools/device/powertest" "$ROOT/tools/device/sleepnow"
+		for f in "$ROOT"/build/tools/* "$ROOT/tools/device/powertest" "$ROOT/tools/device/sleepnow" \
+			"$ROOT/tools/device/emmc"
 		do
 			put "$f" "/usr/bin/${f##*/}" 755
 		done
