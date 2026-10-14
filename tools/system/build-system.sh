@@ -7,9 +7,10 @@
 # and points $OUT/latest at it. Prints the version.
 #
 # Our parts are built by the top-level Makefile, never by Buildroot, so changing them needs no
-# Buildroot rebuild: the kernel and its modules, the GPU driver, Specular and its cores, padbridge
-# and the device tools. TrimUI's binaries come from its firmware: the GPU libraries and firmware,
-# the XR829's WiFi/Bluetooth firmware and its Bluetooth start-up program (hciattach).
+# Buildroot rebuild: the kernel and its modules, the GPU driver, Specular and its cores, padbridge,
+# the device tools and the installer. TrimUI's binaries come from its firmware: the GPU libraries
+# and firmware, the XR829's WiFi/Bluetooth firmware and its Bluetooth start-up program
+# (hciattach).
 # Development SSH keys (build/ssh-host-keys, made by dev-keys.sh) are included: root logs in
 # with dev_key.
 #
@@ -49,6 +50,7 @@ rm -f "$R/lib/modules/$RELEASE/build" "$R/lib/modules/$RELEASE/source"
 "$HOST/depmod" -b "$R" "$RELEASE"
 
 put "$B/userspace/padbridge" /usr/bin/padbridge 755
+put "$B/installer/aarch64-unknown-linux-gnu/release/brick-install" /usr/sbin/brick-install 755
 for f in "$B"/tools/* "$ROOT/tools/device/powertest" "$ROOT/tools/device/sleepnow" \
 	"$ROOT/tools/device/emmc"; do
 	put "$f" "/usr/bin/${f##*/}" 755

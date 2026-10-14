@@ -52,6 +52,8 @@ BR2_PACKAGE_OPENSSH_SERVER=y
 # Storage: checking and making filesystems, partitioning (the data card, the installer).
 BR2_PACKAGE_E2FSPROGS=y
 BR2_PACKAGE_E2FSPROGS_FSCK=y
+# The installer reads back the system partition it made, without mounting it.
+BR2_PACKAGE_E2FSPROGS_DEBUGFS=y
 BR2_PACKAGE_DOSFSTOOLS=y
 BR2_PACKAGE_DOSFSTOOLS_FSCK_FAT=y
 BR2_PACKAGE_DOSFSTOOLS_MKFS_FAT=y

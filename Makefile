@@ -16,8 +16,9 @@ CFLAGS := -O2 -Wall -Wextra
 # glibc also needs the unwinder (-lgcc_eh).
 STATIC := -static -s -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 
-.PHONY: help all kernel gpu userspace specular cores device-tools buildroot system sd-card \
-	update-device deploy-specular run-specular test-card update-card install-image clean
+.PHONY: help all kernel gpu userspace specular installer cores device-tools buildroot system \
+	sd-card update-device deploy-specular run-specular test-installer test-card update-card \
+	install-image clean
 
 help:
 	@echo 'Our system:'
@@ -29,12 +30,13 @@ help:
 	@echo '  deploy-specular  build Specular, replace it on the Brick and restart it (kept across'
 	@echo '                   restarts until the next update-device)'
 	@echo '  run-specular     build Specular and run it once in the foreground on the Brick'
+	@echo '  test-installer   test the installer on the PC against image files (after sd-card)'
 	@echo 'Test card (TrimUI'"'"'s system with our kernel; being replaced by the above):'
 	@echo '  test-card      development SD card: our kernel and services on TrimUI'"'"'s stock system'
 	@echo '  update-card    build test-card, then write its kernel and boot files to the card in a'
 	@echo '                 running Brick (adb)'
 	@echo 'Parts:'
-	@echo '  kernel  gpu  userspace  specular  cores  device-tools'
+	@echo '  kernel  gpu  userspace  specular  installer  cores  device-tools'
 	@echo '  buildroot      the base system (C library, BusyBox, daemons) with Buildroot'
 	@echo '  clean          remove build/ (keeps the development SSH keys)'
 
@@ -97,6 +99,11 @@ specular:
 		cargo build --release --target aarch64-unknown-linux-gnu \
 		--manifest-path specular/Cargo.toml -p specular-brick -p specular-runtime --bins --examples
 
+# The installer (userspace/brick-install), built as Specular is, into $(B)/installer.
+installer:
+	CARGO_TARGET_DIR=$(B)/installer CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(CC) CC_aarch64_unknown_linux_gnu=$(CC) \
+		cargo build --release --target aarch64-unknown-linux-gnu --manifest-path userspace/brick-install/Cargo.toml
+
 # The libretro cores Specular runs games with (mGBA), into $(B)/cores/aarch64. Always
 # run: the cores' own builds decide what is out of date.
 cores:
@@ -141,7 +148,7 @@ $(B)/stock-root/.done: $(B)/stock-fw/rootfs.fex
 
 # --- Our system -----------------------------------------------------------------------------
 # Always run: each build is a new version (named by time and git commit).
-system: buildroot kernel gpu userspace device-tools specular cores $(B)/stock-root/.done
+system: buildroot kernel gpu userspace device-tools specular installer cores $(B)/stock-root/.done
 	tools/system/build-system.sh $(B)/system
 
 sd-card: system
@@ -155,6 +162,9 @@ deploy-specular: specular
 
 run-specular: specular
 	tools/run-specular.sh $(SPECULAR_BIN)
+
+test-installer:
+	tools/system/test-installer.sh
 
 # --- Development test card ------------------------------------------------------------------
 test-card: kernel gpu userspace device-tools specular cores $(B)/stock-fw/rootfs.fex
