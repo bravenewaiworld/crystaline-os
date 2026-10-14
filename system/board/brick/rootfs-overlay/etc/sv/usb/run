@@ -4,7 +4,8 @@
 # 192.168.7.10-20 by DHCP, with no gateway or DNS, so the PC's internet routing is untouched.
 # Then: ssh root@192.168.7.2.
 # configfs builds the USB device the PC sees (the "gadget"); writing the USB controller's name to
-# UDC connects it. The port switches between this and powering USB devices by itself.
+# UDC connects it. The port's role (a device for a PC, or a host powering USB devices) switches
+# by itself, from the power chip's cable detection (dt-tweaks.sh).
 exec 2>&1
 G=/sys/kernel/config/usb_gadget/brick
 if [ ! -d $G ]; then

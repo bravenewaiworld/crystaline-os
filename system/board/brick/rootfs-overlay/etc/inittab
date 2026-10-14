@@ -1,5 +1,6 @@
 # BusyBox init. rcS prepares the system (mounts, devices, the data card), then runsvdir starts and
-# supervises the services in /etc/service (restarting any that exit; `sv stop NAME` stops one).
+# supervises the services in /etc/service, a link to rcS's copy of /etc/sv (restarting any that
+# exit; `sv stop NAME` stops one).
 ::sysinit:/etc/init.d/rcS
 ::respawn:/usr/bin/runsvdir -P /etc/service
 # Development: a root shell on the serial console (UART pads on the board).

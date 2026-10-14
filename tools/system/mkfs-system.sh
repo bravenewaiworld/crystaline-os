@@ -1,8 +1,8 @@
 #!/bin/sh
 # Make the system partition's ext4 filesystem (in a file or on a device), optionally filled from a
 # directory. Shared by the SD card build and, later, the installer, so both make the same
-# filesystem. Features our 4.9 kernel lacks are switched off: orphan_file (Linux 5.15), on by
-# default in e2fsprogs 1.47. Files copied from DIR keep their owner IDs; the device runs as root,
+# filesystem. Features our 4.9 kernel lacks are switched off: orphan_file (needs Linux 5.15 or
+# later), on by default in e2fsprogs 1.47. Files copied from DIR keep their owner IDs; the device runs as root,
 # so that doesn't matter.
 # Usage: mkfs-system.sh <file|device> <uuid> [dir [size]]
 set -eu

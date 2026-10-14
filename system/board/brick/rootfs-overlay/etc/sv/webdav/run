@@ -4,5 +4,6 @@
 # No password: anyone on the network can read and write the card. -A: allow uploads, deletes and
 # search; files are written as root.
 exec 2>&1
+# No data card: stay down (until the next start-up) rather than retry every second.
 mountpoint -q /mnt/SDCARD || { sv down webdav; exit 0; }
 exec /usr/bin/dufs -A -p 80 /mnt/SDCARD

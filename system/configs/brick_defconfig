@@ -66,7 +66,7 @@ BR2_PACKAGE_ZSTD=y
 BR2_TARGET_ROOTFS_TAR=y
 # BR2_TARGET_ROOTFS_EXT2 is not set
 BR2_PACKAGE_HOST_SQUASHFS=y
-# depmod, for our kernel modules' dependency lists (also added by build-system.sh).
+# depmod: build-system.sh runs it after adding our kernel modules (the PC may not have one).
 BR2_PACKAGE_HOST_KMOD=y
 
 # Our patches to Buildroot's packages, in system/patches/<package>/.

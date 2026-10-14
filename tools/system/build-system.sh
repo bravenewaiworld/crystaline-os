@@ -10,7 +10,8 @@
 # Buildroot rebuild: the kernel and its modules, the GPU driver, Specular and its cores, padbridge
 # and the device tools. TrimUI's binaries come from its firmware: the GPU libraries and firmware,
 # the XR829's WiFi/Bluetooth firmware and its Bluetooth start-up program (hciattach).
-# Development SSH keys (build/ssh-host-keys) are included: root logs in with dev_key.
+# Development SSH keys (build/ssh-host-keys, made by dev-keys.sh) are included: root logs in
+# with dev_key.
 #
 # Runs without root rights: the base is unpacked as the current user, then packed from a tar
 # stream that restores Buildroot's owners (tar-with-owners.py; our files are root's).
@@ -71,7 +72,8 @@ mkdir -p "$R/lib/firmware"
 cp "$TMP"/stock/firmware/*xr829* "$TMP"/stock/firmware/rgx.* "$R/lib/firmware/"
 put "$TMP/stock/hciattach" /usr/bin/hciattach 755
 
-# Development SSH access (see build-test-card.sh, which makes the keys).
+# Development SSH access.
+"$ROOT/tools/system/dev-keys.sh"
 KEYS=$B/ssh-host-keys
 for t in rsa ecdsa ed25519; do
 	put "$KEYS/ssh_host_${t}_key" /etc/ssh/ssh_host_${t}_key 600
@@ -100,6 +102,7 @@ list=$TMP/initramfs.list
 	# filesystem links both to lib, as here).
 	echo "slink /lib64 lib 777 0 0"
 	echo "slink /usr/lib64 lib 777 0 0"
+	echo "slink /etc/mtab /proc/mounts 777 0 0"	# e2fsck checks for mounts through /etc/mtab
 	echo "nod /dev/console 600 0 0 c 5 1"
 	echo "file /init $BOARD/initramfs/init 755 0 0"
 	echo "file /etc/brick-version $R/etc/brick-version 644 0 0"
@@ -119,7 +122,7 @@ need() {
 	return 0
 }
 need /bin/busybox
-need "$(cd "$R" && ls sbin/e2fsck usr/sbin/e2fsck 2>/dev/null | sed 's|^|/|;q')"
+need /sbin/e2fsck
 need /usr/bin/status
 for a in sh mount umount mkdir cat sed sleep findfs watchdog reboot switch_root cp echo ln devmem \
 	grep dmesg ps sync kill; do
@@ -129,7 +132,7 @@ done
 
 # --- Boot image -------------------------------------------------------------------------------
 # Appended to U-Boot's boot arguments (for these, the last occurrence wins):
-# - rdinit=/init: U-Boot's arguments name /rdinit;
+# - rdinit=/init: TrimUI's U-Boot settings pass rdinit=/rdinit; this runs our initramfs's /init;
 # - a 1 MiB kernel log buffer (TrimUI's config has 16 KiB, which loses early messages);
 # - only warnings and worse on the serial console: at 115200 baud each line holds a CPU and the
 #   console lock for about 5 ms, which the GPU's display module needs on every flip.

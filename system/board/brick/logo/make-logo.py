@@ -1,5 +1,5 @@
 """Draws our boot logo: TrimUI's (three hexagons and the name) redrawn in Specular's look, so
-our system's start is easy to tell from TrimUI's. Flat hexagons in Specular's default accents
+our system's start is easy to tell from TrimUI's. Hexagons in flat colours, Specular's default accents
 (teal, coral), the name in Geist; on black, like the screen around it. The size must stay 396x66
 (the size of TrimUI's bootlogo.bmp, which it replaces in place: see replace-bootlogo.py).
 
@@ -14,7 +14,7 @@ img = Image.new('RGB', (W * S, H * S), (0, 0, 0))
 d = ImageDraw.Draw(img)
 
 def hexagon(cx, cy, r, fill):
-    """A flat-sided hexagon (points up and down) of circumradius r."""
+    """A hexagon with a point at the top and bottom, of circumradius r."""
     pts = [(cx + r * math.cos(math.radians(90 + 60 * i)), cy + r * math.sin(math.radians(90 + 60 * i))) for i in range(6)]
     d.polygon([(x * S, y * S) for x, y in pts], fill=fill)
 
@@ -27,7 +27,8 @@ NAME, TRACK = 'TRIMUI', 8            # letter-spaced, as Specular's captions
 text_w = sum(font.getlength(c) for c in NAME) / S + TRACK * (len(NAME) - 1)
 
 # The mark: one hexagon on top of two, as TrimUI's, with gaps between them. U-Boot centres the
-# picture on the screen, so mark and name are centred within it.
+# picture on the screen, so mark and name are centred within it. (The mark sits 2 px above
+# centre: it looks centred against the capitals' height that way.)
 r, gap, space = 13.5, 2.5, 18        # hexagon radius, gap between hexagons, mark to name
 w = math.sqrt(3) * r                 # a hexagon's width across its flat sides
 left = (W - (2 * w + gap + space + text_w)) / 2

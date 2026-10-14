@@ -13,14 +13,15 @@ if [ -f $old ] && [ ! -e /var/state/bluetooth/xr_bt.conf ]; then
 	mkdir -p /tmp/old-state
 	if mount -o loop,ro $old /tmp/old-state; then
 		cp -a /tmp/old-state/bluetooth/. /var/state/bluetooth/ &&
-			logger -t state "copied the test card's Bluetooth state"
+			logger -s -t state "copied the test card's Bluetooth state"
 		umount /tmp/old-state
 	fi
 fi
 
 # WiFi's saved networks, in wpa_supplicant's format. The first time, those of a
 # wpa_supplicant.conf on the card are brought over. wpa_supplicant needs the two settings below:
-# where Specular finds its control socket, and leave to save networks joined there.
+# ctrl_interface is where Specular finds its control socket, and update_config=1 lets
+# wpa_supplicant save the networks joined in Specular.
 wifi=/var/state/wifi/wpa_supplicant.conf
 if [ ! -e $wifi ]; then
 	umask 077	# it holds the networks' passwords
@@ -30,7 +31,7 @@ if [ ! -e $wifi ]; then
 		card=/mnt/SDCARD/wpa_supplicant.conf
 		if [ -f $card ]; then
 			grep -v -E '^[[:space:]]*(ctrl_interface|update_config)[[:space:]]*=' $card
-			logger -t state "WiFi: brought over the networks in $card"
+			logger -s -t state "WiFi: brought over the networks in $card"
 		fi
 	} >$wifi.new && mv $wifi.new $wifi
 fi

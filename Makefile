@@ -36,7 +36,7 @@ help:
 	@echo 'Parts:'
 	@echo '  kernel  gpu  userspace  specular  cores  device-tools'
 	@echo '  buildroot      the base system (C library, BusyBox, daemons) with Buildroot'
-	@echo '  clean          remove build/ (keeps the test card'"'"'s SSH keys)'
+	@echo '  clean          remove build/ (keeps the development SSH keys)'
 
 all: test-card
 
@@ -54,8 +54,8 @@ gpu: kernel
 
 # --- Base system (Buildroot) ------------------------------------------------------------------
 # Buildroot, pinned to a long-term release and checked against the checksum it publishes. Our
-# configuration and additions are in system/ (BR2_EXTERNAL); its output in $(B)/buildroot and
-# downloads in $(B)/downloads/buildroot, both kept across `make clean` of Buildroot's own tree.
+# configuration and additions are in system/ (BR2_EXTERNAL); its output goes to $(B)/buildroot
+# and its downloads to $(B)/downloads/buildroot.
 # Always run: Buildroot decides what is out of date.
 BUILDROOT_VERSION := 2026.02.3
 BUILDROOT_SHA256 := 5a59e7501b0b4ec52c41f4bfa79412320e0b37eae5f719605a258e8d0c6fc7fb
@@ -91,6 +91,7 @@ $(B)/userspace/padbridge: userspace/padbridge/padbridge.c
 # Linked dynamically, unlike the tools: it loads TrimUI's GPU libraries and the emulator cores
 # at runtime, which static glibc can't do. CC_aarch64_unknown_linux_gnu: the
 # cross C compiler for crates that build C code (zstd), which would otherwise use the PC's.
+SPECULAR_BIN := $(B)/specular/aarch64-unknown-linux-gnu/release/specular
 specular:
 	CARGO_TARGET_DIR=$(B)/specular CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(CC) CC_aarch64_unknown_linux_gnu=$(CC) \
 		cargo build --release --target aarch64-unknown-linux-gnu \
@@ -150,10 +151,10 @@ update-device: system
 	tools/system/update-device.sh $(B)/system/latest
 
 deploy-specular: specular
-	tools/system/deploy-specular.sh $(B)/specular/aarch64-unknown-linux-gnu/release/specular
+	tools/system/deploy-specular.sh $(SPECULAR_BIN)
 
 run-specular: specular
-	tools/run-specular.sh $(B)/specular/aarch64-unknown-linux-gnu/release/specular
+	tools/run-specular.sh $(SPECULAR_BIN)
 
 # --- Development test card ------------------------------------------------------------------
 test-card: kernel gpu userspace device-tools specular cores $(B)/stock-fw/rootfs.fex

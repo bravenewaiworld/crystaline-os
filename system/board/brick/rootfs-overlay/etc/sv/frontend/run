@@ -1,6 +1,6 @@
 #!/bin/sh
-# Specular, the frontend (frontend-run falls back to the placeholder status if it keeps
-# crashing). Started once the virtual gamepad exists (padbridge), so Specular finds it.
+# Specular, the frontend (frontend-run falls back to the `status` screen, tools/device/status.c,
+# if it keeps crashing). Started once the virtual gamepad exists (padbridge), so Specular finds it.
 exec 2>&1
 sv check padbridge >/dev/null || exit 1
 exec /usr/bin/frontend-run

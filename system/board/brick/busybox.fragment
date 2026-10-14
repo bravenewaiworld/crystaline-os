@@ -4,8 +4,6 @@ CONFIG_RUNSV=y
 CONFIG_RUNSVDIR=y
 CONFIG_SV=y
 CONFIG_SV_DEFAULT_SERVICE_DIR="/etc/service"
-CONFIG_SVC=y
-CONFIG_CHPST=y
 # The system log in memory (syslogd -C), read with logread.
 CONFIG_FEATURE_IPC_SYSLOG=y
 CONFIG_LOGREAD=y

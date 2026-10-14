@@ -100,3 +100,7 @@ Roughly by impact on the goal.
     port (about 20–40 ms, unlike Bluetooth's 150–250 ms). Needs the kernel's USB audio driver
     (`snd-usb-audio`) and a third kind of sound output in Specular, beside the device's own and
     Bluetooth.
+18. **Bluetooth start-up from source:** the XR829's Bluetooth controller is attached by TrimUI's
+    `hciattach` (binary, from its firmware), since BlueZ's own doesn't support the XR829. Replace
+    it with source: the XR829 support in Allwinner's BlueZ (`hciattach_xradio.c`, not in the
+    sources we have), or our own firmware upload and address setting.

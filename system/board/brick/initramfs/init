@@ -11,35 +11,35 @@
 # System partition (ext4):
 #   images/<version>/rootfs.squashfs   the root filesystem, mounted read-only
 #   overlay/<version>/                 developer mode: a writable layer over that version's root
-#   state/  logs/                      kept across versions (see the system's rcS)
+#   state/  logs/                      kept across versions (see /usr/libexec/brick/state and
+#                                      /etc/init.d/rcS in the system)
 #
 # Progress codes: each stage of the start-up (here, then the system's rcS) writes 0xB007XXYY to
-# the clock chip's spare register 7 (0x0700011C), which survives resets and power-off: XX is 00
-# while starting, EE once a stage has failed; YY is the stage. After a start that failed without
-# a message (e.g. a reset loop), boot another card and read it (memreg 0x0700011C): no B007 prefix
-# means this program never ran. Stages: 01 started, 02 watchdog, 03 system partition found,
-# 04 checked, 05 mounted, 06 image mounted, 07 handing over; rcS: 10 started, 11 data card,
-# 12 services starting. While the partition is checked, 3NN counts the seconds it has taken.
+# the clock chip's spare register 7 (0x0700011C), which survives resets and power-off. YY is the
+# stage: 01 started, 02 watchdog, 03 system partition found, 04 checked, 05 mounted, 06 image
+# mounted, 07 handing over; rcS: 10 started, 11 data card, 12 services starting. XX is 00, or 03
+# while the partition is checked with YY then counting the seconds it has taken (to 255), or EE
+# once stage YY has failed. After a start that failed without a message (e.g. a reset loop), boot
+# another card and read it (memreg 0x0700011C): no B007 prefix means this program never ran.
 #
 # Start-up log: from the moment the system partition is found until the hand-over, this program's
 # log, the kernel's log and the running programs are copied every second to brick-log/ on the
 # "bootloader" partition (FAT, readable on a PC) of the disk the system is on, so a start that
 # ends in a reset still leaves them behind.
-progress() { devmem 0x0700011C 32 $((0xB0070000 | $1)) 2>/dev/null; STAGE=$1; }
+progress() { devmem 0x0700011C 32 $((0xB0070000 | $1)) 2>/dev/null; }
+stage() { STAGE=$1; progress $1; }
 
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
-progress 0x01
+stage 0x01
 VERSION=$(cat /etc/brick-version)
 
 # The kernel arms a 16 s hardware watchdog at boot and never resets it itself. This daemon resets
 # it from here on, for good: it keeps running after the hand-over (its program stays in memory),
 # so there is no gap for a slow start-up to fall into.
 watchdog -T 16 -t 4 /dev/watchdog
-progress 0x02
-# e2fsck checks whether the partition is mounted through /etc/mtab.
-ln -s /proc/mounts /etc/mtab
+stage 0x02
 
 LOG=/run-init.log
 log() { echo "brick-init: $*" >/dev/kmsg; echo "$*" >>$LOG; }
@@ -60,20 +60,18 @@ uuid=$(sed -n 's/.* root=UUID=\([^ ]*\).*/\1/p' /proc/cmdline)
 # The storage may still be starting up.
 for _ in 1 2 3 4 5; do dev=$(findfs UUID=$uuid 2>/dev/null) && break; sleep 1; done
 [ -n "$dev" ] || fail "System partition not found" "No partition has the filesystem UUID $uuid"
-progress 0x03
+stage 0x03
 
 # The start-up log on the bootloader partition (see the top).
+save_log() {
+	cp $LOG /bootlog/brick-log/init.log; dmesg >/bootlog/brick-log/dmesg.txt
+	ps >/bootlog/brick-log/ps.txt; sync
+}
 disk=${dev#/dev/}; disk=${disk%p*}
-for u in /sys/block/$disk/${disk}p*/uevent; do
-	grep -q '^PARTNAME=bootloader$' $u && { u=${u%/uevent}; bl=/dev/${u##*/}; }
-done
-mkdir -p /bootlog
+bl=$(grep -l '^PARTNAME=bootloader$' /sys/block/$disk/${disk}p*/uevent | sed 's|.*/\(.*\)/uevent|/dev/\1|')
 if [ -n "$bl" ] && mount -t vfat $bl /bootlog; then
 	mkdir -p /bootlog/brick-log
-	while :; do
-		cp $LOG /bootlog/brick-log/init.log; dmesg >/bootlog/brick-log/dmesg.txt
-		ps >/bootlog/brick-log/ps.txt; sync; sleep 1
-	done &
+	while :; do save_log; sleep 1; done &
 	saver=$!
 fi
 
@@ -82,20 +80,20 @@ fi
 e2fsck -p $dev >>$LOG 2>&1 &
 checker=$!
 n=0
-while kill -0 $checker 2>/dev/null; do progress $((0x300 + n)); n=$((n + 1)); sleep 1; done
+while kill -0 $checker 2>/dev/null; do progress $((0x300 + (n < 255 ? n : 255))); n=$((n + 1)); sleep 1; done
 wait $checker
 rc=$?
 log "e2fsck $dev: $rc"
 [ $rc -eq 2 ] && reboot -f
 [ $rc -lt 4 ] || fail "System partition damaged" "e2fsck $dev exit status $rc"
-progress 0x04
+stage 0x04
 mount -t ext4 -o noatime $dev /system || fail "Can't mount the system partition" "$dev"
-progress 0x05
+stage 0x05
 
 img=/system/images/$VERSION/rootfs.squashfs
 [ -f $img ] || fail "System image missing" "$img"
 mount -t squashfs -o loop,ro $img /lower || fail "Can't mount the system image" "$img"
-progress 0x06
+stage 0x06
 up=/system/overlay/$VERSION
 if [ -d $up ]; then
 	log "developer mode: writable layer $up"
@@ -109,10 +107,10 @@ fi
 
 mkdir -p /system/logs
 cp $LOG /system/logs/init.log
-progress 0x07	# while /dev/mem is still here
+stage 0x07	# while /dev/mem is still here
 if [ -n "$saver" ]; then
 	kill $saver; wait $saver 2>/dev/null
-	cp $LOG /bootlog/brick-log/init.log; dmesg >/bootlog/brick-log/dmesg.txt
+	save_log
 	umount /bootlog
 fi
 mount --move /system /newroot/system

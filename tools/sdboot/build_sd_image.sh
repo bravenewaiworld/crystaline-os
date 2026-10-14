@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build a TrimUI Brick (TG3040, A133P) SD-card image that boots the vendor boot0 + vendor
-# U-Boot 2018.05 from the card. Booting from the card never touches the internal eMMC: U-Boot
-# leaves the eMMC disabled in the device tree it hands the kernel.
+# U-Boot 2018.05 from the card. U-Boot doesn't touch the internal eMMC when booting from the card;
+# whether the kernel sees it is up to the device tree (system/board/brick/dt-tweaks.sh enables it).
 #
 # Usage: build_sd_image.sh OUT.img BOOT0 BOOT_PACKAGE BASE_ENV BOOT_IMG BOOTLOADER_FAT [ROOTFS_IMG]
 #   BOOT0          vendor boot0_sdcard.fex (Allwinner "eGON" first-stage loader, unmodified)
@@ -10,7 +10,8 @@
 #   BOOT_IMG       Android v0 boot image, loaded by `sunxi_flash read 45000000 boot; bootm`
 #   BOOTLOADER_FAT vendor boot-resource.fex (boot logo / battery images U-Boot reads by name)
 #   ROOTFS_IMG     optional filesystem image for the "rootfs" partition
-# Environment (both optional, for our system image, whose initramfs finds its partition itself):
+# Environment (both optional; for our system image, whose initramfs looks up root=UUID=... itself
+# instead of the kernel mounting root=):
 #   ROOT_NAME      the last partition's GPT name instead of "rootfs"
 #   ROOT_REF       what U-Boot's settings pass the kernel as root= (default: PARTUUID=<that
 #                  partition's random GPT UUID>)

@@ -15,10 +15,7 @@ card=${1##*/}
 
 # named NAME: the card's partition with GPT name NAME, e.g. mmcblk1p6.
 named() {
-	for u in /sys/block/$card/${card}p*/uevent; do
-		grep -q "^PARTNAME=$1\$" "$u" && { u=${u%/uevent}; echo ${u##*/}; return; }
-	done
-	return 1
+	grep -l "^PARTNAME=$1\$" /sys/block/$card/${card}p*/uevent | sed 's|.*/\(.*\)/uevent|\1|' | grep .
 }
 
 # first_fat: the card's lowest-numbered FAT partition, other than one named "bootloader".
@@ -37,9 +34,11 @@ add_data_partition() {
 	grep -q "^/dev/${card}p[0-9]* /system " /proc/mounts || return 1
 	log "adding the data partition to $card"
 	# The image's backup partition table sits at the image's end, not the card's: move it there.
-	sfdisk --quiet --relocate gpt-bak-std /dev/$card &&
-		# Microsoft basic data, the usual type for FAT; ", +" = from the first free sector to the end.
-		echo ', +, EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, name="sdcard"' |
+	# (--no-reread --no-tell-kernel: the kernel can't re-read the table of a card in use; partx
+	# below tells it about the one new partition.)
+	sfdisk --quiet --relocate gpt-bak-std --no-reread --no-tell-kernel /dev/$card &&
+		# From the first free sector to the end; Microsoft basic data, the usual type for FAT.
+		echo 'size=+, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, name=sdcard' |
 		sfdisk --quiet --append --no-reread --no-tell-kernel /dev/$card || return
 	n=$(sfdisk --dump /dev/$card | sed -n "s|^/dev/${card}p\([0-9]*\) .*name=\"sdcard\".*|\1|p")
 	# partx adds just this partition to the kernel's view: re-reading the whole table isn't

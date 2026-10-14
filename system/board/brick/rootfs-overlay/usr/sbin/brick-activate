@@ -14,6 +14,7 @@ running=$(cat /etc/brick-version)
 fail() { echo "brick-activate: $*" >&2; exit 1; }
 
 [ -f $I/$V/manifest.json ] || fail "no version $V in $I"
+# (sed reads the manifest as build-system.sh writes it: the device has no JSON parser.)
 for f in boot.img rootfs.squashfs; do
 	want=$(sed -n "s/.*\"$f\": { \"size\": [0-9]*, \"sha256\": \"\([0-9a-f]*\)\".*/\1/p" $I/$V/manifest.json)
 	[ "$(sha256sum $I/$V/$f | cut -d' ' -f1)" = "$want" ] || fail "$f doesn't match the manifest"
@@ -22,10 +23,7 @@ done
 # The "boot" partition on the disk holding /system (the other disk has one too).
 dev=$(awk '$2 == "/system" { print $1 }' /proc/mounts)
 disk=${dev#/dev/}; disk=${disk%p*}
-boot=
-for u in /sys/block/$disk/${disk}p*/uevent; do
-	grep -q '^PARTNAME=boot$' $u && { u=${u%/uevent}; boot=/dev/${u##*/}; }
-done
+boot=$(grep -l '^PARTNAME=boot$' /sys/block/$disk/${disk}p*/uevent | sed 's|.*/\(.*\)/uevent|/dev/\1|')
 [ -n "$boot" ] || fail "no boot partition on $disk"
 [ $(stat -c%s $I/$V/boot.img) -le $(( $(cat /sys/class/block/${boot#/dev/}/size) * 512 )) ] ||
 	fail "boot.img is bigger than $boot"

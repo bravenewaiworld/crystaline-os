@@ -23,9 +23,7 @@ assert t[:8] == b'ANDROID!', 'template is not an Android boot image'
 ksz, kaddr, rsz, raddr, ssz, _, _, page = struct.unpack_from('<8I', t, 8)
 assert ssz == 0, 'template has a second-stage image; not supported'
 align = lambda n: -(-n // page) * page
-ramdisk = t[page + align(ksz):page + align(ksz) + rsz]
-if ramdisk_path:
-    ramdisk = open(ramdisk_path, 'rb').read()
+ramdisk = open(ramdisk_path, 'rb').read() if ramdisk_path else t[page + align(ksz):page + align(ksz) + rsz]
 kernel = open(kernel_path, 'rb').read()
 
 # An arm64 Image header records the kernel's full in-memory size (including zeroed data) at

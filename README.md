@@ -32,7 +32,7 @@ life and functionality out of this hardware.
 | `userspace/` | System services (e.g. `padbridge`, which turns the buttons into a standard gamepad) |
 | `system/` | Our system image: Buildroot configuration (`configs/`), start-up, services and the boot logo (`board/brick/`), patches to Buildroot's packages (`patches/`); `make system`, `make sd-card` |
 | `specular/` | Specular, our frontend (launcher and emulation), kept device-independent so it can run on other handhelds; for now its design spec and mockup (`design/`) and its own `ROADMAP.md` |
-| `tools/` | Development scripts: kernel and GPU builds, the development SD card (`testcard/`), tools that run on the device (`device/`, including the placeholder status screen `status`) |
+| `tools/` | Development scripts: kernel and GPU builds, our system's image, card and update tools (`system/`), boot images and the card layout (`sdboot/`), the older development SD card (`testcard/`), tools that run on the device (`device/`, including the placeholder status screen `status`) |
 | `Makefile` | Builds everything; `make help` lists the targets |
 | `ROADMAP.md` | What works, what's missing, and what's next |
 | `.scratch/` | Earlier work, research notes (`JOURNAL.md`), vendor firmware and third-party sources, to be sorted out later |
@@ -40,6 +40,6 @@ life and functionality out of this hardware.
 ## Installation
 
 Not available yet. `make sd-card` builds an SD card that runs our own system (Buildroot), and
-`make update-device` updates one in a running device over SSH; `make help` lists the rest. The
+`make update-device` updates a Brick running it, over SSH; `make help` lists the rest. The
 older development card (`make test-card`: our kernel and services on TrimUI's stock system) is
 being replaced by it.

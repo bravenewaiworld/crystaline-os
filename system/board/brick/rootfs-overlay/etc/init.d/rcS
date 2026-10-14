@@ -2,6 +2,9 @@
 # System start-up, run once by init before the services (see /etc/inittab). The initramfs has
 # already mounted the system partition at /system (images, state, logs) and moved /dev, /proc
 # and /sys here.
+# All output of this start-up goes to /system/logs/rcS.log (replaced each boot). The system log
+# isn't running yet, so scripts run from here report on stderr (logger -s).
+exec >/system/logs/rcS.log 2>&1
 # Progress codes (see the initramfs's init).
 progress() { devmem 0x0700011C 32 $((0xB0070000 | $1)) 2>/dev/null; }
 progress 0x10
@@ -22,12 +25,10 @@ modprobe dc_sunxi
 
 /usr/libexec/brick/mount-card
 progress 0x11
-# State that survives reboots and updates, on the system partition (see there).
+# State that survives reboots and updates, on the system partition (see usr/libexec/brick/state).
 /usr/libexec/brick/state
 
-# Services: copied to RAM, since runsv writes its control files (supervise/) into each service's
-# directory and the root filesystem is read-only.
+# Services: copied to RAM (/etc/service links there), since runsv writes its control files
+# (supervise/) into each service's directory and the root filesystem is read-only.
 cp -a /etc/sv /run/sv
-mkdir -p /run/service
-for s in /run/sv/*; do ln -s "$s" /run/service/; done
 progress 0x12

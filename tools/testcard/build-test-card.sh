@@ -57,17 +57,10 @@ if [ -n "$KBUILD" ]; then
 	# DEPMOD=true skips depmod: OpenWrt's module loader reads dependencies from each .ko.
 	"$ROOT/tools/kmake.sh" "$KBUILD" modules_install INSTALL_MOD_PATH="$TMP/mods" \
 		INSTALL_MOD_STRIP=1 DEPMOD=true >/dev/null
-	# SSH host keys: the SSH service creates them on first start, which fails on this read-only
-	# root filesystem. Kept across rebuilds so the PC doesn't warn about a changed host key.
+	# SSH keys (the SSH service would make host keys on first start, which fails on this read-only
+	# root filesystem).
+	"$ROOT/tools/system/dev-keys.sh"
 	KEYS=$ROOT/build/ssh-host-keys
-	mkdir -p "$KEYS"
-	for t in rsa ecdsa ed25519; do
-		[ -f "$KEYS/ssh_host_${t}_key" ] || ssh-keygen -q -N '' -t $t -f "$KEYS/ssh_host_${t}_key"
-	done
-	# Development login key: the card authorizes it for root, so tools can log in over WiFi or
-	# USB without a password (ssh -i build/ssh-host-keys/dev_key root@<address>). Kept with the
-	# host keys in build/ssh-host-keys/, which `make clean` preserves.
-	[ -f "$KEYS/dev_key" ] || ssh-keygen -q -N '' -t ed25519 -C brick-dev -f "$KEYS/dev_key"
 	{
 		# Modules go straight into /lib/modules/<release>/ (no subdirectories), where OpenWrt's
 		# module loader looks. Nothing lists them in /etc/modules.d, so none auto-load: a driver

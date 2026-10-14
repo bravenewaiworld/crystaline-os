@@ -21,10 +21,10 @@ with tarfile.open(fileobj=sys.stdout.buffer, mode='w|', format=tarfile.GNU_FORMA
             arc = os.path.normpath(os.path.relpath(path, top))
             info = out.gettarinfo(path, arcname=arc)
             known = owners.get(arc)
-            info.uid, info.gid, info.uname, info.gname = (
-                (known.uid, known.gid, known.uname, known.gname) if known else (0, 0, 'root', 'root'))
             if known:
-                info.mode = known.mode
+                info.uid, info.gid, info.uname, info.gname, info.mode = known.uid, known.gid, known.uname, known.gname, known.mode
+            else:
+                info.uid, info.gid, info.uname, info.gname = 0, 0, 'root', 'root'
             if info.isfile():
                 with open(path, 'rb') as f:
                     out.addfile(info, f)
