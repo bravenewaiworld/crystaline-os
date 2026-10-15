@@ -4,7 +4,9 @@
 # and random data in its partitions), a copy of the SD card image (make sd-card) and the system
 # version it holds. Runs offer, a dry run (which must change nothing), an install with a backup,
 # checks what was written, then restores the backup and checks the fake internal storage is back
-# exactly as it was. Needs no root rights. Prints PASS or the first failure.
+# exactly as it was. Then cuts tasks short (as a power cut would) and checks what is left is
+# recognised and cleared up, and that only one task runs at a time and can be followed. Needs no
+# root rights. Prints PASS or the first failure.
 # Usage: test-installer.sh   (after make sd-card)
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -49,11 +51,26 @@ cp --sparse=always "$B/sd-card.img" "$T/card.img"
 mkdir -p "$T/system/images/$V" "$T/system/state/wifi" "$T/data"
 cp "$B/system/$V"/{boot.img,rootfs.squashfs,manifest.json} "$T/system/images/$V/"
 echo 'network={ ssid="Test" }' >"$T/system/state/wifi/wpa_supplicant.conf"
-ARGS=(--target "$EMMC" --source "$T/card.img" --system "$T/system" --data "$T/data" --version "$V")
+ARGS=(--target "$EMMC" --source "$T/card.img" --system "$T/system" --data "$T/data" --version "$V" --status "$T/status")
+# What the internal storage holds, from the offer (install::holds).
+holds() { "$BIN" offer "${ARGS[@]}" | sed -n 's/.*"internal":"\([a-z-]*\)".*/\1/p'; }
+# start <name> <args...>: runs brick-install in the background, its output in $T/<name>.out.
+start() { local name=$1; shift; "$BIN" "$@" "${ARGS[@]}" >"$T/$name.out" & PID=$!; }
+# wait_for <name> <awk condition>: waits until the task's output meets the condition.
+wait_for() { until awk "$2" "$T/$1.out"; do sleep 0.05; done; }
+# cut_short <name> <step>: once the task's output shows step <step> (e.g. 'STEP 2/') has made progress
+# (so has written something), kills it, with no chance to clean up, as with a power cut.
+cut_short() {
+    wait_for "$1" "index(\$0, \"$2\") == 1 { on = 1 } on && /^PROGRESS/ { found = 1 } END { exit !found }"
+    kill -9 $PID; wait $PID 2>/dev/null || true
+}
+# The card's boot0 (sectors 16 to 32799; install.rs's CARD_BOOT0), as written.
+CARD_BOOT0=$(sectors "$T/card.img" 16 32784 | sha256sum)
 
 echo "== offer"
 "$BIN" offer "${ARGS[@]}" | tee "$T/offer.json"
 check grep -q '"bytes":2147483648' "$T/offer.json"
+check grep -q '"internal":"trimui"' "$T/offer.json"
 
 echo "== dry run"
 "$BIN" install --backup --dry-run "${ARGS[@]}" | tee "$T/dry.out"
@@ -91,4 +108,44 @@ check grep -q '"backups":\[{' "$T/offer2.json"
 "$BIN" restore "$T"/data/backups/internal-* "${ARGS[@]}" | grep -v '^PROGRESS' | tee "$T/restore.out"
 check grep -q '^DONE Restored' "$T/restore.out"
 check [ "$(sum "$EMMC")" = "$ORIGINAL" ]
+check [ "$(holds)" = trimui ]
+rm -r "$T"/data/backups/*
+cp --sparse=always "$B/sd-card.img" "$T/card.img"  # bootable again
+
+echo "== a backup cut short: nothing written to the internal storage, its leftovers cleared next time"
+start cut-backup install --backup
+cut_short cut-backup 'STEP 2/'
+check ls -d "$T"/data/backups/*.partial
+check [ "$(holds)" = trimui ]
+check [ "$(sum "$EMMC")" = "$ORIGINAL" ]
+
+echo "== an install cut short: recognised, the card still starts the device, and it can run again"
+start cut-install install
+cut_short cut-install 'STEP 2/'  # writing the start-up files
+check [ "$(holds)" = unfinished-install ]
+check [ "$(sectors "$T/card.img" 16 32784 | sha256sum)" = "$CARD_BOOT0" ]
+
+echo "== one task at a time"
+flock "$T/status" sleep 3 & sleep 0.5  # holds the lock as a running task would
+"$BIN" install "${ARGS[@]}" >"$T/locked.out" || true
+check grep -q '^FAIL an install or a restore is already running' "$T/locked.out"
+wait
+
+echo "== run again, with a backup (of the unfinished install), followed from its start"
+start again install --backup
+wait_for again '/^STEP/ { found = 1 } END { exit !found }'
+"$BIN" follow "${ARGS[@]}" >"$T/follow.out"
+wait $PID
+check grep -q '^DONE Installed' "$T/again.out"
+check cmp <(grep -v '^PROGRESS' "$T/again.out") <(grep -v '^PROGRESS' "$T/follow.out")
+check [ "$(holds)" = this-system ]
+check [ -z "$(ls -d "$T"/data/backups/*.partial 2>/dev/null)" ]
+check grep -q '"holds": "unfinished-install"' "$T"/data/backups/internal-*/manifest.json
+"$BIN" follow "${ARGS[@]}" >"$T/follow-none.out"  # nothing runs: prints nothing
+check [ ! -s "$T/follow-none.out" ]
+
+echo "== a restore cut short: recognised"
+start cut-restore restore "$(ls -d "$T"/data/backups/internal-*)"
+cut_short cut-restore 'STEP 2/'
+check [ "$(holds)" = unfinished-restore ]
 echo PASS

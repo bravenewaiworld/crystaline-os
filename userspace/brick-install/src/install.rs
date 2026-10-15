@@ -6,6 +6,12 @@
 //! (images/<version>/) and the state (saved WiFi networks, Bluetooth pairings). Then everything
 //! written is read back and checked, and the card's first-stage loader is erased (unless asked
 //! not to), so the device starts from the internal storage: the boot ROM tries the card first.
+//!
+//! An install (or a restore, backup.rs) cut short, e.g. by a power cut, must be told apart from a
+//! finished one: while it writes, the sector of the partition table's header holds a marker
+//! (`INSTALLING`, `RESTORING`) instead, and the partition table is written last (everything else
+//! is written at known places, without it). `holds` tells these states apart. Until the very end the card
+//! still starts the device, so a cut-short install can simply be run again.
 
 use std::path::{Path, PathBuf};
 
@@ -34,6 +40,10 @@ const BOOT_AREA: (u64, u64) = (16, 40960);
 /// The part of the boot area erased on the card so it no longer starts, in sectors (first, end
 /// exclusive): both copies of boot0, up to the boot package.
 const CARD_BOOT0: (u64, u64) = (16, 32800);
+/// Markers for the partition table's header sector (see the top of this file).
+pub const INSTALLING: &[u8] = b"BRICK-INSTALLING";
+pub const RESTORING: &[u8] = b"BRICK-RESTORING";
+
 /// The smallest internal storage the system fits on (the boot partitions, then 1 GiB).
 const MIN_SIZE: u64 = 142336 * SECTOR + (1 << 30);
 
@@ -62,7 +72,7 @@ pub fn install(p: &Paths, o: &Options, report: &mut Report) -> Result<String> {
     let target = Disk::open(&p.target, !o.dry_run)?;
     let card = disk::partitions(&p.source, report)?;
     let (card_boot, card_env) = (disk::named(&card, "bootloader", &p.source)?, disk::named(&card, "env", &p.source)?);
-    report.log(&format!("installing version {} from {} onto {} ({} bytes)", p.version, p.source.display(), p.target.display(), target.size));
+    report.log(&format!("installing version {} from {} onto {} ({} bytes, holding {})", p.version, p.source.display(), p.target.display(), target.size, holds(&target)));
     if p.source == p.target { return fail("the internal storage is the disk the system runs from", "Start the device from an SD card to install."); }
     if target.size < MIN_SIZE { return fail(format!("the internal storage holds only {}", gb(target.size)), format!("The system needs at least {}.", gb(MIN_SIZE))); }
     battery_ok()?;
@@ -75,12 +85,8 @@ pub fn install(p: &Paths, o: &Options, report: &mut Report) -> Result<String> {
         if o.dry_run { report.log("dry run: no backup made"); } else { backup::make(&target, &p.data, report)?; }
     }
 
-    report.step("Partitioning the internal storage");
-    let script = layout_script(target.size);
-    report.log(&format!("partition table:\n{script}"));
-    if !o.dry_run { sfdisk(&p.target, &script, report)?; }
-
     report.step("Writing the start-up files");
+    if !o.dry_run { mark(&target, INSTALLING)?; }
     let uuid = std::fs::read_to_string("/proc/sys/kernel/random/uuid").ctx("making a filesystem UUID")?.trim().to_string();
     let settings = env::set(&source.read_at(card_env.start, env::SIZE)?, "mmc_root", &format!("UUID={uuid}"))?;
     let boot_img = std::fs::read(images.join("boot.img")).ctx("reading boot.img")?;
@@ -111,6 +117,19 @@ pub fn install(p: &Paths, o: &Options, report: &mut Report) -> Result<String> {
         check_system(&p.target, system.0, &p.version, &manifest, report)?;
     }
 
+    report.step("Finishing");
+    let script = layout_script(target.size);
+    report.log(&format!("partition table:\n{script}"));
+    if !o.dry_run {
+        sfdisk(&p.target, &script, report)?;
+        let parts = disk::partitions(&p.target, report)?;
+        for (name, ..) in LAYOUT {
+            let (start, size) = part(name);
+            if !disk::named(&parts, name, &p.target).is_ok_and(|q| q.start == start && (size == 0 || q.size == size)) {
+                return fail(format!("the internal storage's partition {name} doesn't read back as written"), "Try installing again; if it fails again, the internal storage may be failing.");
+            }
+        }
+    }
     if o.keep_card_bootable {
         report.log("the card stays bootable, as asked: the device keeps starting from it while it is in");
     } else if !o.dry_run {
@@ -145,6 +164,26 @@ fn layout_script(size: u64) -> String {
         s += &format!("start={start}, size={len}, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name={name}\n");
     }
     s
+}
+
+/// What the internal storage holds, for the user and the log: "trimui" (TrimUI's system),
+/// "this-system" (installed by us), "unfinished-install", "unfinished-restore" (see the top of
+/// this file), or "unknown". Read from its partition table: its header's sector, and the names.
+pub fn holds(disk: &Disk) -> &'static str {
+    let Ok(header) = disk.read_at(SECTOR, SECTOR as usize) else { return "unknown" };
+    if header.starts_with(INSTALLING) { return "unfinished-install"; }
+    if header.starts_with(RESTORING) { return "unfinished-restore"; }
+    // TrimUI's layout has a partition named UDISK; ours has one named system.
+    let names = disk.gpt_names().unwrap_or_default();
+    if names.iter().any(|n| n == "system") { "this-system" } else if names.iter().any(|n| n == "UDISK") { "trimui" } else { "unknown" }
+}
+
+/// Writes `marker` over the partition table's header (see the top of this file).
+pub fn mark(disk: &Disk, marker: &[u8]) -> Result<()> {
+    let mut sector = vec![0; SECTOR as usize];
+    sector[..marker.len()].copy_from_slice(marker);
+    disk.write_at(SECTOR, &sector)?;
+    disk.sync()
 }
 
 /// Writes a partition table with sfdisk from `script`.

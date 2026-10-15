@@ -50,6 +50,22 @@ impl Disk {
         self.each_chunk(from, len, |off, c| { to.write_at(at + off, c)?; report.progress(off + c.len() as u64, len); Ok(()) })
     }
 
+    /// The names of the partitions in its GPT, if it has one (its header in sector 1; the backup
+    /// header at the end isn't looked at).
+    pub fn gpt_names(&self) -> Option<Vec<String>> {
+        let h = self.read_at(SECTOR, SECTOR as usize).ok()?;
+        if !h.starts_with(b"EFI PART") { return None; }
+        let le32 = |b: &[u8], at: usize| u32::from_le_bytes(b[at..at + 4].try_into().unwrap());
+        let (at, count, size) = (u64::from_le_bytes(h[72..80].try_into().unwrap()), le32(&h, 80) as usize, le32(&h, 84) as usize);
+        if !(128..=4096).contains(&size) || count > 1024 { return None; }
+        let entries = self.read_at(at * SECTOR, count * size).ok()?;
+        Some(entries.chunks(size).filter(|e| e[..16].iter().any(|&b| b != 0)).map(|e| {
+            // The name: up to 36 UTF-16 units from byte 56, ending at the first 0.
+            let units: Vec<u16> = e[56..128].chunks(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&u| u != 0).collect();
+            String::from_utf16_lossy(&units)
+        }).collect())
+    }
+
     pub fn zero(&self, offset: u64, len: u64) -> Result<()> { self.write_at(offset, &vec![0; len as usize]) }
 
     /// Makes everything written so far reach the storage.

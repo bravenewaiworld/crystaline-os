@@ -8,9 +8,11 @@
 //!   brick-install offer                  what can be done now, as JSON (see `offer`)
 //!   brick-install install [--backup] [--keep-card-bootable] [--dry-run]
 //!   brick-install restore <backup folder>
+//!   brick-install follow                 the running install or restore's messages, from its
+//!                                        start until it ends; nothing if none runs (status.rs)
 //! On the device everything is found by itself; any of these can be given instead:
 //!   --target <disk or file>  --source <disk or file>  --system <folder>  --data <folder>
-//!   --version <version>
+//!   --version <version>  --status <file> (see status.rs)
 //! The log goes to logs/ on the card's data partition.
 
 mod backup;
@@ -18,6 +20,7 @@ mod disk;
 mod env;
 mod install;
 mod report;
+mod status;
 
 use std::path::{Path, PathBuf};
 
@@ -30,20 +33,30 @@ fn main() {
     let o = Options { backup: flag("--backup"), keep_card_bootable: flag("--keep-card-bootable"), dry_run: flag("--dry-run") };
     let mut value = |name: &str| args.iter().position(|a| a == name).filter(|&i| i + 1 < args.len())
         .map(|i| { args.remove(i); args.remove(i) });
+    let status = PathBuf::from(value("--status").unwrap_or_else(|| status::STATUS.into()));
     let paths = Paths::find(|name| value(name));
-    let data = paths.as_ref().ok().map(|p| p.data.join("logs"));
+    let logs = paths.as_ref().ok().map(|p| p.data.join("logs"));
+    let task = |name, f: &dyn Fn(&Paths, &mut Report) -> Result<String>| {
+        // A dry run changes nothing, so it may run beside a task.
+        match (!o.dry_run).then(|| status::take(&status)).transpose() {
+            Ok(lock) => run(logs.as_deref(), name, lock, |r| f(paths.as_ref().map_err(Clone::clone)?, r)),
+            Err(e) => run(logs.as_deref(), name, None, |_| Err(e)),
+        }
+    };
     let code = match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["offer"] => { println!("{}", offer(&paths)); 0 }
-        ["install"] => run(data.as_deref(), "install", |r| install::install(paths.as_ref().map_err(Clone::clone)?, &o, r)),
-        ["restore", dir] => run(data.as_deref(), "restore", |r| restore(paths.as_ref().map_err(Clone::clone)?, Path::new(dir), r)),
-        _ => { eprintln!("usage: brick-install offer | install [--backup] [--keep-card-bootable] [--dry-run] | restore <backup folder>"); 2 }
+        ["install"] => task("install", &|p, r| install::install(p, &o, r)),
+        ["restore", dir] => task("restore", &|p, r| restore(p, Path::new(dir), r)),
+        ["follow"] => match status::follow(&status) { Ok(()) => 0, Err(e) => { eprintln!("{}", e.message); 1 } },
+        _ => { eprintln!("usage: brick-install offer | install [--backup] [--keep-card-bootable] [--dry-run] | restore <backup folder> | follow"); 2 }
     };
     std::process::exit(code);
 }
 
-/// Runs an action, reporting its end; the exit status is 0 if it succeeded.
-fn run(logs: Option<&Path>, name: &str, f: impl FnOnce(&mut Report) -> Result<String>) -> i32 {
-    let mut report = Report::new(logs, name);
+/// Runs task `name`, reporting its end; the exit status is 0 if it succeeded. `lock`: the status
+/// file, locked for this task until the process ends (None for a dry run).
+fn run(logs: Option<&Path>, name: &str, lock: Option<std::fs::File>, f: impl FnOnce(&mut Report) -> Result<String>) -> i32 {
+    let mut report = Report::new(logs, name, lock);
     match f(&mut report) {
         Ok(message) => { report.done(&message); 0 }
         Err(e) => { report.failed(&e); 1 }
@@ -62,7 +75,10 @@ fn restore(p: &Paths, dir: &Path, report: &mut Report) -> Result<String> {
 ///   { "install": null, or { "bytes": the internal storage's size,
 ///                           "backup": { "possible", "free" (bytes on the data partition) } },
 ///     "why_not": why installing isn't possible (with "install": null),
-///     "backups": [{ "dir", "created", "bytes" }] (complete ones on the card, newest first) }
+///     "internal": what the internal storage holds (install::holds; with "install"),
+///     "backups": [{ "dir", "created", "bytes", "holds" (if known) }] (complete ones on the card,
+///                 newest first) }
+/// "free" counts the room backups cut short take (the next backup deletes them).
 /// Installing (and restoring) is possible only while the system runs from an SD card, on a
 /// device with internal storage. A backup needs as much free space as the internal storage holds.
 fn offer(paths: &Result<Paths>) -> serde_json::Value {
@@ -71,11 +87,12 @@ fn offer(paths: &Result<Paths>) -> serde_json::Value {
         Err(e) => return serde_json::json!({ "install": null, "why_not": e.message, "backups": [] }),
     };
     let backups: Vec<_> = backup::list(&p.data).iter()
-        .map(|b| serde_json::json!({ "dir": b.dir, "created": b.created, "bytes": b.bytes })).collect();
+        .map(|b| serde_json::json!({ "dir": b.dir, "created": b.created, "bytes": b.bytes, "holds": b.holds })).collect();
     match disk::Disk::open(&p.target, false) {
         Ok(t) => {
-            let free = install::free_bytes(&p.data);
-            serde_json::json!({ "install": { "bytes": t.size, "backup": { "possible": free >= t.size, "free": free } }, "backups": backups })
+            let free = install::free_bytes(&p.data) + backup::leftovers(&p.data).1;
+            serde_json::json!({ "install": { "bytes": t.size, "backup": { "possible": free >= t.size, "free": free } },
+                                "internal": install::holds(&t), "backups": backups })
         }
         Err(e) => serde_json::json!({ "install": null, "why_not": e.message, "backups": backups }),
     }

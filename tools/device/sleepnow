@@ -3,6 +3,13 @@
 # real-time clock's alarm after that long. Returns once the device is awake again.
 # The WiFi driver (XR829) refuses to suspend while connected, so WiFi is stopped first and, if
 # it was running, restarted afterwards.
+# Not while an install or a restore runs (it holds a lock on its status file, see
+# userspace/brick-install/src/status.rs): sleeping would stop it partway.
+STATUS=/run/brick-install.status
+if [ -e $STATUS ] && ! flock -n -s $STATUS true; then
+	echo "sleepnow: an install or a restore is running; not sleeping" >&2
+	exit 1
+fi
 # service ACTION NAME...: start or stop services, under our system's supervisor (runit's sv) or
 # the test card's (OpenWrt's procd, through its start scripts).
 service() {
