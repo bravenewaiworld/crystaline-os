@@ -1,45 +1,77 @@
-# Brick OS (working title)
+# Crystaline OS
 
-A retro-game emulation OS for the TrimUI Brick Hammer (TG3040: Allwinner A133P, PowerVR GE8300,
-1024×768 panel).
+A simple, polished, handheld gaming experience.
 
-## Goal
+## Ethos
 
-A sleek, highly polished retro-emulation OS that gets the best possible performance, battery
-life and functionality out of this hardware.
+1. No Compromises.
+   All hardware features must be supported and function to the best of the hardware's ability. No known issues to be left in a release, no matter how small.
+   
+2. Performance and Efficiency
+   An extension/callout of "No Compromises" above - specifically to always aim to extract the maximum performance when needed, but maintain the lowest required power draw.
+   
+3. First-class Debugging and Development.
+   Developing for hardware is hard enough. Development tools, flags, and features are to be weighted as importantly as all other user-facing features. In-place updates, fast builds, no SD Card Swapping.
 
-**Hardware**
-- Support every hardware feature, for both performance and power efficiency.
-- Bluetooth audio output (headphones).
-- WiFi, mainly for moving files and debugging to start with.
 
-**Software**
-- A minimal but functional and joyful user experience.
-- Isolated from the kernel and from TrimUI's libraries and quirks: standard Linux interfaces
-  wherever possible, and an adapter in the frontend for TrimUI's GPU libraries, which are the
-  one closed part we can't avoid.
-- Emulation through libretro cores, with well-chosen defaults. Only expose settings that people
-  genuinely disagree on.
-- Seamless management of games, saves and cores, including moving them to and from a PC.
-- Runs from an SD card, or installed to the internal storage so the card holds only games,
-  saves and settings.
+## Installing on your device
 
-## Layout
+### Supported Devices
 
-| Path | Contents |
-|---|---|
-| `linux/` | Our kernel: Allwinner's 4.9 vendor kernel with our changes (its own git repository, branch `brick`) |
-| `userspace/` | System services (e.g. `padbridge`, which turns the buttons into a standard gamepad) |
-| `system/` | Our system image: Buildroot configuration (`configs/`), start-up, services and the boot logo (`board/brick/`), patches to Buildroot's packages (`patches/`); `make system`, `make sd-card` |
-| `specular/` | Specular, our frontend (launcher and emulation), kept device-independent so it can run on other handhelds; for now its design spec and mockup (`design/`) and its own `ROADMAP.md` |
-| `tools/` | Development scripts: kernel and GPU builds, our system's image, card and update tools (`system/`), boot images and the card layout (`sdboot/`), the older development SD card (`testcard/`), tools that run on the device (`device/`, including the placeholder status screen `status`) |
-| `Makefile` | Builds everything; `make help` lists the targets |
-| `ROADMAP.md` | What works, what's missing, and what's next |
-| `.scratch/` | Earlier work, research notes (`JOURNAL.md`), vendor firmware and third-party sources, to be sorted out later |
+- TrimUI Brick (TG3040), including the Brick Hammer edition
 
-## Installation
+### Installation
 
-Not available yet. `make sd-card` builds an SD card that runs our own system (Buildroot), and
-`make update-device` updates a Brick running it, over SSH; `make help` lists the rest. The
-older development card (`make test-card`: our kernel and services on TrimUI's stock system) is
-being replaced by it.
+> No release has been published yet. Until then, build the SD card image yourself (see [Developer setup](#developer-setup)).
+
+Crystaline OS runs from a microSD card. TrimUI's own system stays on the device untouched until you choose to install to internal storage.
+
+You need:
+- A microSD card. **Everything on it will be erased.**
+- A card reader for your computer.
+- [balenaEtcher](https://etcher.balena.io/), which runs on Windows, macOS and Linux.
+
+1. Download the latest `crystaline-os-sd-card.img` from the Releases page.
+2. Open balenaEtcher. Choose **Flash from file** and pick the image. Choose your SD card as the target, then **Flash**.
+   If your computer then asks to format the card, click **Cancel**. Some of the card's partitions are ones your computer can't read.
+3. Put the card in the Brick and turn it on. The first start takes a little longer while it prepares the card's storage space.
+4. Turn the Brick off and put the card back in your computer. It shows up as a drive named `BRICK`.
+5. Make a folder named `roms` on it and copy your games into it. Any sub-folders are fine. BIOS files go in a folder named `bios`.
+
+**Going back to TrimUI's system:** take the card out and restart.
+
+**Installing onto the device itself.** This frees the card for games and saves only.
+1. Open **Settings → Internal storage**.
+2. Choose to back up TrimUI's system to the card first. The backup is your way back to TrimUI's system.
+3. Once installed, any card you use must be formatted FAT32. Most cards over 32 GB come formatted exFAT, which doesn't work yet.
+
+**Going back to TrimUI's system after installing.** Restoring only works when the Brick has started from a Crystaline OS SD card.
+1. Copy the card's `backups` folder to your computer.
+2. Flash the card again as above (this erases it). Start the Brick from it once, then turn it off.
+3. Copy the `backups` folder back onto the card.
+4. Turn the Brick on with the card in, open **Settings → Internal storage**, and restore the backup.
+
+**While Crystaline OS is in development:** anyone on your WiFi network can read and change the card's files while WiFi is on.
+
+## Developer setup
+
+Building needs a Linux PC (on Windows, use WSL 2).
+
+You need:
+- **Host tools:** make, gcc/g++, git, curl, rsync, cmake, python3, dtc (`fdtget`/`fdtput`), e2fsprogs (a `mke2fs` that supports `-d` and `orphan_file`, plus `debugfs`), sfdisk (util-linux), and OpenSSH (`ssh`, `scp`, `ssh-keygen`). Also everything [Buildroot requires](https://buildroot.org/downloads/manual/manual.html#requirement-mandatory).
+- **Rust**, through [rustup]. The pinned toolchain and the `aarch64-unknown-linux-gnu` target are installed on first build.
+- **Third-party inputs** that are not downloaded automatically yet. `tools/env.sh` lists where each is expected, and each location can be overridden by an environment variable:
+  - The cross compiler from Creality's Sonic Pad SDK ([CrealityTech/sonic_pad_os]; GCC 6.4, glibc 2.23).
+  - The PowerVR GPU kernel driver source ([pocketforge-os/gpu-km-tsp]).
+  - TrimUI's stock firmware v1.1.1 (`trimui_tg3040.awimg`). It supplies the first-stage loader, U-Boot, the GPU libraries and the WiFi/Bluetooth firmware.
+  - dufs v0.46.0 (static aarch64 binary), the WebDAV server.
+  - The mGBA libretro core source.
+- **Submodules:** clone with `--recurse-submodules`. The kernel and the Specular frontend are separate repositories.
+
+Buildroot is downloaded and checked automatically.
+
+`make sd-card` builds an SD card image. `make help` lists everything else. See [DEVELOPMENT.md](DEVELOPMENT.md) for working with a device.
+
+[rustup]: https://rustup.rs
+[pocketforge-os/gpu-km-tsp]: https://github.com/pocketforge-os/gpu-km-tsp
+[CrealityTech/sonic_pad_os]: https://github.com/CrealityTech/sonic_pad_os
