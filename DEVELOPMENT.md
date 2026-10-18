@@ -4,7 +4,7 @@
 
 ## Getting onto the device
 
-- **SSH** (root, key only), over the USB network link or WiFi. The build creates the host keys and a development login key once per checkout; every image built from that checkout accepts it, so a reflash never changes the device's identity. Anyone holding that key has root on any image you build. Files move with `scp` or SFTP.
+- **SSH** (root, key only), over the USB network link or WiFi. The build creates the host keys and a development login key once per checkout; every image built from that checkout accepts it, so a reflash never changes the device's identity. Anyone holding that key has root on any image you build. Log in with `ssh -o IdentitiesOnly=yes -i build/ssh-host-keys/dev_key root@192.168.7.2` (without `IdentitiesOnly`, keys from an SSH agent such as 1Password's are offered first, and the device hangs up after a few). Files move with `scp` or SFTP.
 - **USB network link.** Plug the bottom USB-C port into a PC. The device appears as a network adapter (USB NCM) and gives the PC an address by DHCP. The Linux driver is built in. On Windows and macOS it is untested.
 - **WiFi.** Turn it on from Specular, or over SSH. Networks saved in Specular stay saved, and a `wpa_supplicant.conf` at the root of the SD card is imported once. Specular's default WiFi mode (Auto) turns WiFi off when Specular doesn't need it. Its developer setting "Keep Wi-Fi on" keeps it on for SSH.
 - **Serial console.** 115200 baud on the board's UART pads; root login with no password. Kernel messages are limited to warnings, because every console line stalls display updates by about 5 ms.

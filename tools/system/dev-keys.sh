@@ -1,8 +1,8 @@
 #!/bin/sh
 # Make the development SSH keys in build/ssh-host-keys, if they don't exist yet: the host keys
 # every development system uses (kept across rebuilds, and across `make clean`, so the PC doesn't
-# warn about a changed host key) and the login key root accepts (ssh -i build/ssh-host-keys/dev_key
-# root@<address>). Used by build-system.sh and the test card's build.
+# warn about a changed host key) and the login key root accepts (ssh -o IdentitiesOnly=yes
+# -i build/ssh-host-keys/dev_key root@<address>). Used by build-system.sh and the test card's build.
 set -eu
 KEYS=$(cd "$(dirname "$0")/../.." && pwd)/build/ssh-host-keys
 mkdir -p "$KEYS"
