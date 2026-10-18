@@ -51,8 +51,7 @@ rm -f "$R/lib/modules/$RELEASE/build" "$R/lib/modules/$RELEASE/source"
 
 put "$B/userspace/padbridge" /usr/bin/padbridge 755
 put "$B/installer/aarch64-unknown-linux-gnu/release/brick-install" /usr/sbin/brick-install 755
-for f in "$B"/tools/* "$ROOT/tools/device/powertest" "$ROOT/tools/device/sleepnow" \
-	"$ROOT/tools/device/emmc"; do
+for f in "$B"/tools/* "$ROOT/tools/device/powertest" "$ROOT/tools/device/sleepnow"; do
 	put "$f" "/usr/bin/${f##*/}" 755
 done
 put "$DUFS" /usr/bin/dufs 755

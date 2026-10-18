@@ -71,6 +71,10 @@ Buildroot is downloaded and checked automatically.
 
 `make sd-card` builds an SD card image. `make help` lists everything else. See [DEVELOPMENT.md](DEVELOPMENT.md) for working with a device.
 
+## License
+
+GPL-3.0-only (see [LICENSE](LICENSE)), except files whose header says otherwise: some on-device tools are GPL-2.0, as is the kernel in its own repository.
+
 [rustup]: https://rustup.rs
 [Crystaline Linux]: https://github.com/bravenewaiworld/crystaline-linux
 [Specular]: https://github.com/bravenewaiworld/specular
