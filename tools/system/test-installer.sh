@@ -40,8 +40,8 @@ size=32768, name=recovery
 size=1024, name=pstore
 name=UDISK
 EOF
-# The boot area (sectors 16 to 40959) copied off this Brick's eMMC, when there (it isn't in git).
-SURVEY=$ROOT/.scratch/research/device/20261014-emmc-survey/head-20MiB.img
+# The boot area (sectors 16 to 40959) copied off a Brick's eMMC (TrimUI's; not in git), when there.
+SURVEY=$ROOT/third-party/emmc-head-20MiB.img
 [ -f "$SURVEY" ] && dd if="$SURVEY" of="$EMMC" bs=512 skip=16 seek=16 count=40944 conv=notrunc status=none
 for mib in 30 200 900 1500; do head -c 4M /dev/urandom | dd of="$EMMC" bs=1M seek=$mib conv=notrunc status=none; done
 ORIGINAL=$(sum "$EMMC")

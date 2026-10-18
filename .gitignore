@@ -1,4 +1,4 @@
 # Build output
 /build/
-# Earlier work, vendor firmware and third-party sources (not part of the project)
-/.scratch/
+# Third-party inputs not fetched by the build yet (see tools/env.sh)
+/third-party/

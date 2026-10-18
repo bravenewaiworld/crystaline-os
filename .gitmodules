@@ -1,3 +1,6 @@
 [submodule "linux"]
 	path = linux
-	url = ../linux.git
+	url = https://github.com/bravenewaiworld/crystaline-linux
+[submodule "specular"]
+	path = specular
+	url = https://github.com/bravenewaiworld/specular

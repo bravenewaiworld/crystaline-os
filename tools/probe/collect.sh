@@ -2,7 +2,7 @@
 # Run the read-only probe (probe.sh) on a TrimUI Brick over SSH and unpack the
 # results locally. The Brick must run stock firmware with SSH enabled.
 # Usage: collect.sh [user@]host        e.g. collect.sh root@192.168.2.253
-# Results land in .scratch/research/device/<timestamp>/.
+# Results land in build/probe/<timestamp>/.
 set -e
 HOST=${1:?usage: collect.sh [user@]host}
 case $HOST in *@*) ;; *) HOST=root@$HOST ;; esac
@@ -19,7 +19,7 @@ if [ ! "$BUILD/memdump" -nt "$SRC" ]; then
 		-Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 fi
 
-DEST=$ROOT/.scratch/research/device/$(date +%Y%m%d-%H%M%S)
+DEST=$ROOT/build/probe/$(date +%Y%m%d-%H%M%S)
 mkdir -p "$DEST"
 # One connection: ship the script and helper in, stream the result tarball out.
 tar cf - -C "$ROOT/tools/probe" probe.sh -C "$BUILD" memdump |

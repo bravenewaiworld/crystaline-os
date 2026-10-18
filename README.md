@@ -60,18 +60,20 @@ Building needs a Linux PC (on Windows, use WSL 2).
 You need:
 - **Host tools:** make, gcc/g++, git, curl, rsync, cmake, python3, dtc (`fdtget`/`fdtput`), e2fsprogs (a `mke2fs` that supports `-d` and `orphan_file`, plus `debugfs`), sfdisk (util-linux), and OpenSSH (`ssh`, `scp`, `ssh-keygen`). Also everything [Buildroot requires](https://buildroot.org/downloads/manual/manual.html#requirement-mandatory).
 - **Rust**, through [rustup]. The pinned toolchain and the `aarch64-unknown-linux-gnu` target are installed on first build.
-- **Third-party inputs** that are not downloaded automatically yet. `tools/env.sh` lists where each is expected, and each location can be overridden by an environment variable:
+- **Third-party inputs** that are not downloaded automatically yet. `tools/env.sh` lists where each is expected in `third-party/`, and each location can be overridden by an environment variable:
   - The cross compiler from Creality's Sonic Pad SDK ([CrealityTech/sonic_pad_os]; GCC 6.4, glibc 2.23).
   - The PowerVR GPU kernel driver source ([pocketforge-os/gpu-km-tsp]).
   - TrimUI's stock firmware v1.1.1 (`trimui_tg3040.awimg`). It supplies the first-stage loader, U-Boot, the GPU libraries and the WiFi/Bluetooth firmware.
   - dufs v0.46.0 (static aarch64 binary), the WebDAV server.
   - The mGBA libretro core source.
-- **Submodules:** clone with `--recurse-submodules`. The kernel and the Specular frontend are separate repositories.
+- **Submodules:** clone with `--recurse-submodules`. The kernel ([Crystaline Linux], a fork of PocketForge's kernel-tsp) and the [Specular] frontend are separate repositories.
 
 Buildroot is downloaded and checked automatically.
 
 `make sd-card` builds an SD card image. `make help` lists everything else. See [DEVELOPMENT.md](DEVELOPMENT.md) for working with a device.
 
 [rustup]: https://rustup.rs
+[Crystaline Linux]: https://github.com/bravenewaiworld/crystaline-linux
+[Specular]: https://github.com/bravenewaiworld/specular
 [pocketforge-os/gpu-km-tsp]: https://github.com/pocketforge-os/gpu-km-tsp
 [CrealityTech/sonic_pad_os]: https://github.com/CrealityTech/sonic_pad_os
