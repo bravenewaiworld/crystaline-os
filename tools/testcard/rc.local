@@ -1,3 +1,0 @@
-# Commands run once the system has started (OpenWrt). Test cards replace TrimUI's version, which
-# forces the speaker and headphone outputs on; our kernel switches between them by headphone jack.
-exit 0

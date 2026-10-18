@@ -9,9 +9,7 @@
 - **WiFi.** Turn it on from Specular, or over SSH. Networks saved in Specular stay saved, and a `wpa_supplicant.conf` at the root of the SD card is imported once. Specular's default WiFi mode (Auto) turns WiFi off when Specular doesn't need it. Its developer setting "Keep Wi-Fi on" keeps it on for SSH.
 - **Serial console.** 115200 baud on the board's UART pads; root login with no password. Kernel messages are limited to warnings, because every console line stalls display updates by about 5 ms.
 - **WebDAV and a browser page** serve the SD card's data partition on port 80, over WiFi or the USB link. There is no login.
-- **ADB is not available.** Our system has no ADB server (`adbd`). The development card (`make test-card`: TrimUI's stock system with our kernel, which predates our own system image) has TrimUI's, with two limitations:
-  - It kills a session's processes when the session ends, so long-running or detached jobs must go over SSH.
-  - It sometimes comes up without the network link and has to reconnect.
+- **ADB is not available.** Our system has no ADB server (`adbd`); use SSH.
 
 ## Changing what runs on the device
 

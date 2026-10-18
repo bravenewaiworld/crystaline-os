@@ -1,6 +1,6 @@
 # Top-level build for the TrimUI Brick firmware. `make help` lists the targets.
 # Everything is built into build/. Third-party inputs (cross compiler, GPU driver source, TrimUI's
-# stock firmware) are set in tools/env.sh.
+# stock firmware, dufs) are set in tools/env.sh.
 
 ROOT := $(CURDIR)
 B := $(ROOT)/build
@@ -16,9 +16,8 @@ CFLAGS := -O2 -Wall -Wextra
 # glibc also needs the unwinder (-lgcc_eh).
 STATIC := -static -s -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 
-.PHONY: help all kernel gpu userspace specular installer cores device-tools buildroot system \
-	sd-card update-device deploy-specular run-specular test-installer test-card update-card \
-	install-image clean
+.PHONY: help all kernel gpu userspace specular installer device-tools buildroot system \
+	sd-card update-device deploy-specular run-specular test-installer install-image clean
 
 help:
 	@echo 'Our system:'
@@ -31,16 +30,13 @@ help:
 	@echo '                   restarts until the next update-device)'
 	@echo '  run-specular     build Specular and run it once in the foreground on the Brick'
 	@echo '  test-installer   test the installer on the PC against image files (after sd-card)'
-	@echo 'Test card (TrimUI'"'"'s system with our kernel; being replaced by the above):'
-	@echo '  test-card      development SD card: our kernel and services on TrimUI'"'"'s stock system'
-	@echo '  update-card    build test-card, then write its kernel and boot files to the card in a'
-	@echo '                 running Brick (adb)'
 	@echo 'Parts:'
-	@echo '  kernel  gpu  userspace  specular  installer  cores  device-tools'
+	@echo '  kernel  gpu  userspace  installer  device-tools'
+	@echo '  specular       Specular and its emulator cores (the specular/ submodule'"'"'s own build)'
 	@echo '  buildroot      the base system (C library, BusyBox, daemons) with Buildroot'
 	@echo '  clean          remove build/ (keeps the development SSH keys)'
 
-all: test-card
+all: sd-card
 
 install-image:
 	@echo '$@: not available yet (see ROADMAP.md)'; exit 1
@@ -88,33 +84,31 @@ $(B)/userspace/padbridge: userspace/padbridge/padbridge.c
 	$(CC) $(CFLAGS) -o $@ $< $(STATIC)
 
 # --- Specular (the frontend) -----------------------------------------------------------------
-# Always run: cargo decides what is out of date. Builds Specular for the Brick (the specular
-# binary), the spike examples and the runtime's headless player (play) into $(B)/specular.
-# Linked dynamically, unlike the tools: it loads TrimUI's GPU libraries and the emulator cores
-# at runtime, which static glibc can't do. CC_aarch64_unknown_linux_gnu: the
-# cross C compiler for crates that build C code (zstd), which would otherwise use the PC's.
-SPECULAR_BIN := $(B)/specular/aarch64-unknown-linux-gnu/release/specular
+# Specular's own Makefile (specular/) builds it and its emulator cores for the Brick into
+# $(B)/specular, and installs them into $(SPECULAR_STAGE): the files build-system.sh copies into the
+# system and deploy-specular sends to a device. SPECULAR_PREFIX is where frontend-run starts it.
+SPECULAR := $(MAKE) -C specular OUT=$(B)/specular DEVICE=brick TARGET=aarch64-unknown-linux-gnu \
+	CROSS_COMPILE=$(CROSS_COMPILE) CORE_CFLAGS=-mcpu=cortex-a53
+SPECULAR_STAGE := $(B)/specular-install
+SPECULAR_PREFIX := /usr/lib/specular
 specular:
-	CARGO_TARGET_DIR=$(B)/specular CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(CC) CC_aarch64_unknown_linux_gnu=$(CC) \
-		cargo build --release --target aarch64-unknown-linux-gnu \
-		--manifest-path specular/Cargo.toml -p specular-brick -p specular-runtime --bins --examples
+	rm -rf $(SPECULAR_STAGE)
+	$(SPECULAR) install DESTDIR=$(SPECULAR_STAGE) PREFIX=$(SPECULAR_PREFIX)
 
-# The installer (userspace/brick-install), built as Specular is, into $(B)/installer.
+# The installer (userspace/brick-install), into $(B)/installer. Always run: cargo decides what is
+# out of date. CC_aarch64_unknown_linux_gnu: the cross C compiler for crates that build C code,
+# which would otherwise use the PC's.
 installer:
 	CARGO_TARGET_DIR=$(B)/installer CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(CC) CC_aarch64_unknown_linux_gnu=$(CC) \
 		cargo build --release --target aarch64-unknown-linux-gnu --manifest-path userspace/brick-install/Cargo.toml
-
-# The libretro cores Specular runs games with (mGBA), into $(B)/cores/aarch64. Always
-# run: the cores' own builds decide what is out of date.
-cores:
-	tools/build-cores.sh
 
 # --- Development tools that run on the device -----------------------------------------------
 DEVICE_TOOLS := dispctl glspin rumble i2creg memreg status blkro
 device-tools: $(addprefix $(B)/tools/,$(DEVICE_TOOLS))
 
-# status: a stand-in frontend used on the test card until Specular is ready. It draws text with the
-# kernel's 8x16 console font, extracted from the kernel source (linux/) into a header.
+# status: a plain screen of the device's state, which frontend-run falls back to when Specular keeps
+# crashing; the initramfs also shows its errors with it. It draws text with the kernel's 8x16
+# console font, extracted from the kernel source (linux/) into a header.
 $(B)/include/font8x16.h: linux/lib/fonts/font_8x16.c
 	@mkdir -p $(@D)
 	sed -n '/^static const unsigned char fontdata_8x16/,/^};/p' $< | \
@@ -148,7 +142,7 @@ $(B)/stock-root/.done: $(B)/stock-fw/rootfs.fex
 
 # --- Our system -----------------------------------------------------------------------------
 # Always run: each build is a new version (named by time and git commit).
-system: buildroot kernel gpu userspace device-tools specular installer cores $(B)/stock-root/.done
+system: buildroot kernel gpu userspace device-tools specular installer $(B)/stock-root/.done
 	tools/system/build-system.sh $(B)/system
 
 sd-card: system
@@ -158,20 +152,13 @@ update-device: system
 	tools/system/update-device.sh $(B)/system/latest
 
 deploy-specular: specular
-	tools/system/deploy-specular.sh $(SPECULAR_BIN)
+	tools/system/deploy-specular.sh $(SPECULAR_STAGE) $(SPECULAR_PREFIX)
 
 run-specular: specular
-	tools/run-specular.sh $(SPECULAR_BIN)
+	tools/run-specular.sh $(SPECULAR_STAGE)$(SPECULAR_PREFIX)/specular
 
 test-installer:
 	tools/system/test-installer.sh
-
-# --- Development test card ------------------------------------------------------------------
-test-card: kernel gpu userspace device-tools specular cores $(B)/stock-fw/rootfs.fex
-	tools/testcard/build-test-card.sh $(B)/stock-fw $(B)/test-card.img $(B)/kernel
-
-update-card: test-card
-	tools/testcard/update-card.sh $(B)/test-card.img
 
 clean:
 	@[ ! -d $(B) ] || find $(B) -mindepth 1 -maxdepth 1 ! -name ssh-host-keys -exec rm -rf {} +

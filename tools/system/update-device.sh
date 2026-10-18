@@ -9,7 +9,7 @@ V=$(readlink -f "$1")
 VERSION=$(basename "$V")
 on_brick true || { echo "can't reach $BRICK over SSH (asleep? USB cable? set BRICK=<address>)" >&2; exit 1; }
 on_brick 'test -f /etc/brick-version' ||
-	{ echo "$BRICK doesn't run our system (a test card? write an SD card with make sd-card)" >&2; exit 1; }
+	{ echo "$BRICK doesn't run our system (TrimUI's system? write an SD card with make sd-card)" >&2; exit 1; }
 on_brick "rm -rf /system/images/$VERSION.part && mkdir -p /system/images/$VERSION.part"
 to_brick "$V/boot.img" "$V/rootfs.squashfs" "$V/manifest.json" "root@$BRICK:/system/images/$VERSION.part/"
 on_brick "mv /system/images/$VERSION.part /system/images/$VERSION && brick-activate $VERSION && reboot"

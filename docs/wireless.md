@@ -46,7 +46,7 @@ The state area. `/var/state` links to `/system/state`. The start-up script `/usr
                                          (wpa_supplicant saves the networks joined in Specular)
 ```
 
-The first time, the state script copies two things over: the networks in a `wpa_supplicant.conf` at the SD card's root, and the Bluetooth address and pairings from a development card's `.system-state.img`.
+The first time, the state script copies over the networks in a `wpa_supplicant.conf` at the SD card's root.
 
 What Specular uses:
 

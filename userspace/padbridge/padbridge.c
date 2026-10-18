@@ -29,9 +29,8 @@
  *   input_no_dpad               don't report the D-pad
  *   input_dpad_to_joystick      report the D-pad as the left stick (ABS_X/ABS_Y) instead
  *
- * Runs in the foreground under procd, OpenWrt's service supervisor, which restarts it if it exits
- * (but gives up after 5 quick exits, e.g. if the buttons' device is missing). Exits on errors such
- * as the buttons' device disappearing.
+ * Runs in the foreground as a runit service (/etc/sv/padbridge), which restarts it whenever it
+ * exits. Exits on errors such as the buttons' device disappearing.
  */
 #include <dirent.h>
 #include <errno.h>

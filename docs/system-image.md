@@ -6,7 +6,7 @@ The system that runs on the Brick: how it is built, what it contains, how it sta
 
 ## Decisions
 
-- **Our own system image, built with Buildroot, not TrimUI's system** (2026-10-11; first booted 2026-10-14). We want to own as much of the code as possible: TrimUI doesn't make the best use of its own hardware and doesn't fix bugs (no stock update in over a year as of 2026-10). TrimUI's system is closed binaries built around its own launcher (which won't run without the anti-clone chip), drives hardware through `/dev/mem`, and its start-up scripts pick partitions by name in ways that can reach the eMMC. Rejected: TrimUI's system with our kernel (the development "test card", which remains for comparison).
+- **Our own system image, built with Buildroot, not TrimUI's system** (2026-10-11; first booted 2026-10-14). We want to own as much of the code as possible: TrimUI doesn't make the best use of its own hardware and doesn't fix bugs (no stock update in over a year as of 2026-10). TrimUI's system is closed binaries built around its own launcher (which won't run without the anti-clone chip), drives hardware through `/dev/mem`, and its start-up scripts pick partitions by name in ways that can reach the eMMC. Rejected: TrimUI's system with our kernel (our first development setup, the "test card").
 - **Buildroot builds only the base** (C library, BusyBox, daemons); our kernel, GPU driver, Specular, cores, tools and TrimUI's binaries are added when a version is assembled (`build-system.sh`), so changing them never rebuilds Buildroot (2026-10-14). Buildroot is pinned to a long-term release (2026.02.3) and its download checked against the published checksum.
 - **glibc, with 4.9 kernel headers** (2026-10-14). TrimUI's GPU libraries need glibc 2.17 or newer; headers must not be newer than the kernel.
 - **BusyBox init with BusyBox's runit applets supervising every service** (2026-10-14). `runsvdir` restarts any service that exits; `sv` stops, starts and checks them. Packages' own start scripts are deleted. Services that need another check it with `sv check` and exit, to be retried a second later.
@@ -77,7 +77,7 @@ Shutdown (`rcK`): stop every service, waiting up to 10 s (Specular saves the run
 bootloader partition (FAT): brick-log/ init.log, dmesg.txt, ps.txt from the last start (boot.md)
 ```
 
-One-time imports at start-up: a `wpa_supplicant.conf` at the card's root (its `ctrl_interface` and `update_config` lines replaced with ours), and the Bluetooth address and pairings from a test card's `.system-state.img`.
+One-time import at start-up: a `wpa_supplicant.conf` at the card's root (its `ctrl_interface` and `update_config` lines replaced with ours).
 
 ### File transfer
 

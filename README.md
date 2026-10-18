@@ -65,7 +65,6 @@ You need:
   - The PowerVR GPU kernel driver source ([pocketforge-os/gpu-km-tsp]).
   - TrimUI's stock firmware v1.1.1 (`trimui_tg3040.awimg`). It supplies the first-stage loader, U-Boot, the GPU libraries and the WiFi/Bluetooth firmware.
   - dufs v0.46.0 (static aarch64 binary), the WebDAV server.
-  - The mGBA libretro core source.
 - **Submodules:** clone with `--recurse-submodules`. The kernel ([Crystaline Linux], a fork of PocketForge's kernel-tsp) and the [Specular] frontend are separate repositories.
 
 Buildroot is downloaded and checked automatically.

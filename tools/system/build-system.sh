@@ -56,10 +56,8 @@ for f in "$B"/tools/* "$ROOT/tools/device/powertest" "$ROOT/tools/device/sleepno
 	put "$f" "/usr/bin/${f##*/}" 755
 done
 put "$DUFS" /usr/bin/dufs 755
-put "$B/specular/aarch64-unknown-linux-gnu/release/specular" /usr/lib/specular/specular 755
-for core in "$B"/cores/aarch64/*.so; do put "$core" "/usr/lib/specular/cores/${core##*/}" 644; done
-put "$ROOT/specular/assets/fonts/NotoEmoji.ttf" /usr/lib/specular/fonts/NotoEmoji.ttf 644	# see specular_ui::use_fallback_fonts
-put "$ROOT/tools/testcard/frontend-run" /usr/bin/frontend-run 755
+# Specular, its cores and fonts, as its own Makefile installed them (SPECULAR_STAGE in the Makefile).
+cp -R "$B/specular-install/." "$R/"
 
 # TrimUI's GPU libraries (with their NULL window system, loaded by name) and firmware, and the
 # XR829's firmware and Bluetooth start-up program. Only these come from TrimUI's system.

@@ -13,7 +13,7 @@
 # Phases (minutes); "base" = the settings the system boots with (see base()), "tuned" = the power
 # settings under evaluation (see tuned()):
 #   sleep       deep sleep, woken by the real-time clock's alarm
-#   idle-base   screen on (status frontend), base settings
+#   idle-base   screen on (frontend running), base settings
 #   idle-tuned  screen on, tuned
 #   off-tuned   panel switched off and frontend stopped, tuned
 #   load-tuned  all four CPUs busy and the GPU drawing, tuned; also shows whether the regulators'
@@ -75,8 +75,7 @@ tuned() {
 	usb_host unbind
 }
 
-# frontend start|stop: under our system's supervisor (runit's sv) or the test card's (procd).
-frontend() { if [ -d /etc/sv ]; then sv $1 frontend >/dev/null; else /etc/init.d/frontend $1; fi; }
+frontend() { sv $1 frontend >/dev/null; }	# $1: start or stop
 
 finish() {	# $1: reason
 	PHASE="end ($1)"

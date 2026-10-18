@@ -6,18 +6,6 @@
 mkdir -p /var/state/bluetooth /var/state/wifi
 [ -s /var/state/machine-id ] || dbus-uuidgen >/var/state/machine-id
 
-# Once: bring over the Bluetooth address and pairings from a test card (tools/testcard), which
-# kept them in an ext4 image on the card's data partition.
-old=/mnt/SDCARD/.system-state.img
-if [ -f $old ] && [ ! -e /var/state/bluetooth/xr_bt.conf ]; then
-	mkdir -p /tmp/old-state
-	if mount -o loop,ro $old /tmp/old-state; then
-		cp -a /tmp/old-state/bluetooth/. /var/state/bluetooth/ &&
-			logger -s -t state "copied the test card's Bluetooth state"
-		umount /tmp/old-state
-	fi
-fi
-
 # WiFi's saved networks, in wpa_supplicant's format. The first time, those of a
 # wpa_supplicant.conf on the card are brought over. wpa_supplicant needs the two settings below:
 # ctrl_interface is where Specular finds its control socket, and update_config=1 lets

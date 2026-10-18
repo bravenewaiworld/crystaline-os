@@ -1,7 +1,7 @@
 /*
  * blkro: mark block devices read-only in the kernel (the BLKROSET ioctl, as `blockdev --setro`,
- * which TrimUI's BusyBox lacks), so nothing can write to them until the device goes away (e.g.
- * `emmc detach`) or the flag is cleared. Used by the emmc tool on the internal storage.
+ * which TrimUI's BusyBox lacks), so nothing can write to them until the device goes away or the
+ * flag is cleared.
  * Usage: blkro <device>...
  */
 #include <fcntl.h>

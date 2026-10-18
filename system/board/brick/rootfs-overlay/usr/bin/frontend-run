@@ -1,0 +1,20 @@
+#!/bin/sh
+# Runs Specular, with the SD card's data partition as its data folder. Started by the frontend
+# service (/etc/sv/frontend/run); runit starts it again whenever Specular exits. If Specular has
+# already been started 3 times in the last minute (it keeps failing), runs the status screen
+# instead, until the next boot, so the device still shows its battery and sleeps, and can be fixed
+# over SSH. The script replaces itself with Specular (exec), so `sv stop frontend` signals Specular
+# itself, which then saves and quits.
+STARTS=/tmp/frontend-starts
+FALLBACK=/tmp/frontend-fallback
+[ -e $FALLBACK ] && exec /usr/bin/status
+now=$(date +%s)
+echo "$now" >>$STARTS
+recent=$(awk -v since=$((now - 60)) '$1 >= since { n++ } END { print n + 0 }' $STARTS)
+if [ "$recent" -gt 3 ]; then
+	echo "frontend: Specular started $((recent - 1)) times within a minute; running status" >&2
+	touch $FALLBACK
+	exec /usr/bin/status
+fi
+# Where the Makefile installs Specular (SPECULAR_PREFIX).
+exec /usr/lib/specular/specular /mnt/SDCARD
