@@ -19,6 +19,9 @@ Completed:
 - Colour (gamma): stock leaves the gamma table off and the colour matrix at identity at its default settings, as we do; nothing to change
 - Spare display and video hardware (display layers and scaler, G2D blitter, video decoder): not worth using for now (little latency gain, and shaders, sharp scaling and rotation would be lost)
 
+Built, to test on the device:
+- Brightness no longer runs backwards after deep sleep (the backlight PWM's polarity is rewritten on resume)
+
 TODO:
 - Stop the display's 60-per-second interrupt while nothing is drawn (designed: masked after 3 idle frames, unmasked on any display change or vsync wait, a 110 µs wake-latency limit while on, a kill switch): first the device experiment in the design, then build. Only saves power once Specular stops presenting still screens
 - Run the panel at the game's own refresh rate (designed: `DISP_LCD_SET_FPS`/`GET_FPS` on `/dev/disp`, 40–60.2 Hz by changing the vertical total): first the device experiments for the JD9168's limits and the TCON start delay, then build
