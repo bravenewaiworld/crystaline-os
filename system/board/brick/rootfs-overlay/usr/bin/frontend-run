@@ -6,6 +6,9 @@
 # over SSH. The script replaces itself with Specular (exec), so `sv stop frontend` signals Specular
 # itself, which then saves and quits.
 STARTS=/tmp/frontend-starts
+# File transfer runs only while Specular's screen for it is open; a Specular that crashed with it
+# open can't stop it, so it is stopped before every start (also before the status screen).
+sv down webdav 2>/dev/null
 FALLBACK=/tmp/frontend-fallback
 [ -e $FALLBACK ] && exec /usr/bin/status
 now=$(date +%s)
