@@ -179,30 +179,41 @@ static void read_state(int in_fd)
 	fn_switch = BIT_SET(sw, SW_TABLET_MODE);
 }
 
-/* Open the input device with this name; -1 if there is none. */
+/*
+ * Open the input device with this name; -1 if there is none. Names are read from sysfs rather
+ * than by opening each device: the motor is first looked for while a game's rumble upload to our
+ * virtual pad waits for our answer, and that upload holds the pad's lock, so opening the pad then
+ * would block forever.
+ */
 static int open_input(const char *name)
 {
 	DIR *d = opendir("/dev/input");
 	struct dirent *e;
 	int fd = -1;
 
-	while (d && (e = readdir(d))) {
+	if (!d)
+		return -1;
+	while ((e = readdir(d))) {
 		char path[300], found[64] = "";
+		FILE *f;
 
 		if (strncmp(e->d_name, "event", 5))
+			continue;
+		snprintf(path, sizeof(path), "/sys/class/input/%s/device/name", e->d_name);
+		if (!(f = fopen(path, "r")))
+			continue;
+		if (!fgets(found, sizeof(found), f))
+			found[0] = 0;
+		fclose(f);
+		found[strcspn(found, "\n")] = 0;
+		if (strcmp(found, name))
 			continue;
 		snprintf(path, sizeof(path), "/dev/input/%s", e->d_name);
 		/* non-blocking: the main loop reads the buttons until EAGAIN */
 		fd = open(path, O_RDWR | O_NONBLOCK);
-		if (fd < 0)
-			continue;
-		if (ioctl(fd, EVIOCGNAME(sizeof(found)), found) >= 0 && !strcmp(found, name))
-			break;
-		close(fd);
-		fd = -1;
+		break;	/* found, even if it failed to open */
 	}
-	if (d)
-		closedir(d);
+	closedir(d);
 	return fd;
 }
 

@@ -65,6 +65,7 @@ Completed:
 
 Built, to test on the device:
 - Rumble always offered; the motor is opened when first used and reopened if it goes away
+- Fixed: a game's first rumble froze the buttons until a restart (while looking for the motor, padbridge opened its own virtual pad, which the game's rumble request was holding)
 
 ### Storage
 
