@@ -112,8 +112,10 @@ $(B)/userspace/padbridge $(B)/userspace/xr829-attach:
 # Specular's own Makefile (specular/) builds it and its emulator cores for the Brick into
 # $(B)/specular, and installs them into $(SPECULAR_STAGE): the files build-system.sh copies into the
 # system and deploy-specular sends to a device. SPECULAR_PREFIX is where frontend-run starts it.
+# It is built with Buildroot's toolchain, which matches the C and C++ libraries on the device
+# (the kernel's GCC 6.4 lacks the C++17 that SwanStation needs).
 SPECULAR := $(MAKE) -C specular OUT=$(B)/specular DEVICE=brick TARGET=aarch64-unknown-linux-gnu \
-	CROSS_COMPILE=$(CROSS_COMPILE) CORE_CFLAGS=-mcpu=cortex-a53
+	CROSS_COMPILE=$(B)/buildroot/host/bin/aarch64-buildroot-linux-gnu- CORE_CFLAGS=-mcpu=cortex-a53
 SPECULAR_STAGE := $(B)/specular-install
 SPECULAR_PREFIX := /usr/lib/specular
 specular:
