@@ -85,12 +85,12 @@ Shutdown (`rcK`): stop every service but the system log and `klogd`, waiting up 
                         crash-<UTC time>/ (boot.md)
 
 /mnt/SDCARD  (the data partition, storage.md)
-├── roms/  bios/  saves/  configs/
-├── cache/              downloaded box art and indexes; safe to delete
+├── roms/  bios/  saves/  config/v0/   (Specular's layout: specular/docs/settings.md)
+├── cache/              Specular's box art and indexes; safe to delete
 ├── backups/            eMMC backups (install-and-update.md)
 ├── updates/            update files for Settings and the recovery menu (install-and-update.md)
 ├── logs/               installer logs; card-check.log: the card's repairs and unclean removals
-├── wpa_supplicant.conf optional; its networks are imported once
+├── wpa_supplicant.conf optional; its networks are imported once (wireless.md)
 └── authorized_keys     optional: SSH login keys, for brick-ssh import on release images
 
 /run/card  (memory)     state: how the card stands (storage.md); check.log: the last check's output
@@ -98,7 +98,6 @@ Shutdown (`rcK`): stop every service but the system log and `klogd`, waiting up 
 bootloader partition (FAT): brick-log/ init.log, dmesg.txt, ps.txt from the last start (boot.md)
 ```
 
-One-time import at start-up: a `wpa_supplicant.conf` at the card's root (its `ctrl_interface` and `update_config` lines replaced with ours).
 
 ### SSH on release images
 

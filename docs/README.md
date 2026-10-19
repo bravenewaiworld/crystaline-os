@@ -8,9 +8,9 @@ Why Crystaline OS works the way it does: decisions, designs and research, one do
 | [boot.md](boot.md) | Boot chain, bootloaders and their settings, boot images, start-up, watchdog |
 | [system-image.md](system-image.md) | The Buildroot image, services, user data on the SD card, file transfer, development access |
 | [install-and-update.md](install-and-update.md) | System versions, updates, installing to internal storage, backup and restore |
-| [storage.md](storage.md) | SD card and internal storage hardware, the data partition's filesystem |
+| [storage.md](storage.md) | SD card and internal storage hardware, keeping the card mounted and its state, the data partition's filesystems (FAT32, exFAT), the eMMC's layout |
 | [usb.md](usb.md) | USB ports, role switching, the network link |
-| [display.md](display.md) | Panel and its controller variants, display engine, vsync |
+| [display.md](display.md) | Panel and its controller variants, display engine, vsync, refresh rate and the frame interrupt (planned) |
 | [gpu.md](gpu.md) | PowerVR GPU driver and libraries |
 | [power.md](power.md) | Power chip, battery and charging, CPU speed, thermal limits, sleep, power measurements |
 | [input.md](input.md) | Buttons, FN switch, power key, the virtual gamepad |
