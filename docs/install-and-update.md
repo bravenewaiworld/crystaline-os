@@ -36,7 +36,7 @@ images/<YYYYMMDD-HHMMSS>-<commit>[-dirty]/
 
 ```json
 { "version": "<version>", "commit": "<commit>[-dirty]", "built": "<YYYY-MM-DDTHH:MM:SSZ>",
-  "kernel": "4.9.191", "release": false,
+  "kernel": "4.9.191", "release": false, "dt_edits": true,
   "files": { "boot.img": { "size": <bytes>, "sha256": "<hex>" },
              "rootfs.squashfs": { "size": <bytes>, "sha256": "<hex>" } } }
 ```

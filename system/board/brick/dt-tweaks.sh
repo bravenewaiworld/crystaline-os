@@ -1,7 +1,19 @@
 #!/bin/sh
-# Device-tree changes for our kernel, applied by tools/sdboot/patch-boot-package.sh to the DTB
-# (compiled device tree: the hardware description the kernel reads) inside the boot package, which
-# is the one vendor U-Boot hands the kernel.
+# Device-tree changes for our kernel, made to TrimUI's DTB (compiled device tree: the hardware
+# description the kernel reads). The kernel applies them itself, to the tree U-Boot hands it: at
+# each kernel build, tools/system/dt-edits.sh runs this script on the DTB in TrimUI's boot package
+# and records each fdtput and fdtget call as a built-in edit (see docs/boot.md).
+# - The script runs once, on the PC, against TrimUI's DTB: only the fdtput/fdtget calls it makes are
+#   recorded, so any branching is decided there. Allowed: fdtput -c -d -p -t and fdtget -t, nothing
+#   under /chosen, /memory or /reserved-memory (the kernel reads those before editing). Anything
+#   else fails the kernel build.
+# - Each value read with fdtget becomes a check: if the device's tree holds a different value, the
+#   kernel applies none of the edits.
+# - KEEP_UBOOT_VALUE=1 before an fdtput: if U-Boot (or anything before the kernel) has changed the
+#   property from TrimUI's value, keep its value.
+# - Devices installed before 2026-10-18 keep an older copy of these edits in their boot package. To
+#   undo an edit there, write the undo (TrimUI's value back, or -d for a property TrimUI lacks)
+#   rather than dropping the line. A node added there can't be removed.
 # Usage: dt-tweaks.sh <dtb>
 set -eu
 DTB=$1
@@ -21,7 +33,8 @@ fdtput -t u "$DTB" $REGS/dcdc2 x-powers,dcdc-workmode 0
 # CPU voltage regulator (TCS4838 at I2C 0x41): register-compatible with the Silergy SYR827, so
 # use the standard fan53555 driver. TrimUI's node describes the chip as two child regulators
 # for its own driver; fan53555 instead reads the regulator settings from the chip node itself.
-# Keep "ti,tcs4838" first: vendor U-Boot also reads this node and looks for that name.
+# Keep "ti,tcs4838" first: vendor U-Boot looks for that name in this node, and on devices installed
+# before 2026-10-18 the boot package holds this edited tree.
 # The chip has two voltage registers; on this board VSEL0 is the one in effect. fan53555 writes
 # the register not named as the suspend one, so suspend-voltage-selector = 1 makes it write
 # VSEL0. Getting this wrong would let the CPU speed up without its voltage rising.
@@ -111,8 +124,11 @@ fdtput -t u "$DTB" $LEDC swap-rg-leds 0 1 2 3 4 5 6 7 8 9
 # (~300 µs). The driver sends a frame on every brightness write, so back-to-back writes merged
 # into one long frame and colours shifted onto later LEDs (random colours, LEDs stuck on).
 fdtput -t u "$DTB" $LEDC reset_ns 300000
-# Their 5 V supply, switched on by PD11, as a fixed regulator that the LED driver enables and
-# switches off during sleep. GPIO cells as for the buttons: mux 1 = output, data 0 = active high.
+# Their 5 V supply, switched on by PD11, as a fixed regulator that the LED driver switches on only
+# while some LED is lit, and off during sleep. GPIO cells as for the buttons: mux 1 = output,
+# data 0 = active high. The start-up delay lets the LEDs power up before the first frame; 10 ms is
+# a guess with margin (their datasheets give no figure), paid by the write that lights an LED
+# after all were dark, and on waking with an LED lit.
 LED5V=/led-5v
 fdtput -c "$DTB" $LED5V
 fdtput -t s "$DTB" $LED5V compatible regulator-fixed
@@ -121,6 +137,7 @@ fdtput -t u "$DTB" $LED5V regulator-min-microvolt 5000000
 fdtput -t u "$DTB" $LED5V regulator-max-microvolt 5000000
 fdtput -t u "$DTB" $LED5V gpio "$PIO" 3 11 1 0 0xffffffff 0
 fdtput "$DTB" $LED5V enable-active-high
+fdtput -t u "$DTB" $LED5V startup-delay-us 10000
 fdtput -t s "$DTB" $LEDC led_regulator led-5v
 
 # Headphone jack: its detect signal is the opposite polarity from the vendor tree's setting
@@ -131,8 +148,9 @@ fdtput -t u "$DTB" /soc@03000000/sound@0 hp_detect_case 1
 fdtput -t u "$DTB" /soc@03000000/codec@0x05096000 headphonegain 3
 
 # Rumble: a standard force-feedback input device (regulator-haptic). The motor's supply is BLDO3,
-# whose voltage sets the strength (min-microvolt for the weakest effect, max for the strongest),
-# and PH3 switches it on. BLDO3's always-on flags are removed: the driver powers it only while rumbling.
+# whose voltage sets the strength (min-microvolt for the weakest effect, max for the strongest:
+# 2.0-3.5 V, the range TrimUI's firmware uses; BLDO3 allows 0.5-3.5 V), and PH3 switches it on.
+# BLDO3's always-on flags are removed: the driver powers it only while rumbling.
 BLDO3=$REGS/bldo3
 fdtput -d "$DTB" $BLDO3 regulator-always-on regulator-boot-on
 RUMBLE=/brick-rumble
@@ -140,7 +158,7 @@ fdtput -c "$DTB" $RUMBLE
 fdtput -t s "$DTB" $RUMBLE compatible regulator-haptic
 fdtput -t u "$DTB" $RUMBLE haptic-supply "$(fdtget "$DTB" $BLDO3 phandle)"
 fdtput -t u "$DTB" $RUMBLE min-microvolt 2000000
-fdtput -t u "$DTB" $RUMBLE max-microvolt 3300000
+fdtput -t u "$DTB" $RUMBLE max-microvolt 3500000
 # PH3: port 7 pin 3, output, active high (cells as for the buttons).
 fdtput -t u "$DTB" $RUMBLE enable-gpios "$PIO" 7 3 1 0 0xffffffff 0
 
@@ -159,8 +177,9 @@ fdtput -t u "$DTB" /soc@03000000/usbc0@0 extcon "$(fdtget "$DTB" $USB_PSY phandl
 # U-Boot also fills in sample delays tuned for each unit (sdc_tm4_sm<speed mode>_freq<frequency
 # band>, one byte per band); 0xff bytes mean "not set", so the driver uses its defaults, which read
 # the eMMC without errors (two full reads gave the same checksum, 2026-10-14; see docs/storage.md).
+# Where U-Boot has filled in tuned values (an eMMC boot), they are kept (KEEP_UBOOT_VALUE).
 SDC2=/soc@03000000/sdmmc@04022000
 fdtput -t s "$DTB" $SDC2 status okay
 fdtput -t u "$DTB" $SDC2 max-frequency 50000000
 fdtput -d "$DTB" $SDC2 mmc-hs200-1_8v mmc-hs400-1_8v
-for sm in 0 1 2 3 4; do for f in 0 1; do fdtput -t x "$DTB" $SDC2 sdc_tm4_sm${sm}_freq$f ffffffff; done; done
+for sm in 0 1 2 3 4; do for f in 0 1; do KEEP_UBOOT_VALUE=1 fdtput -t x "$DTB" $SDC2 sdc_tm4_sm${sm}_freq$f ffffffff; done; done

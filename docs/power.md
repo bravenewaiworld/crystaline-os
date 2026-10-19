@@ -26,7 +26,7 @@ Everything that decides how long the TrimUI Brick runs on a charge: the power ch
 - **The system only sets the zone it is given; finding it automatically is Specular's** (2026-10-18). `brick-timezone set` is the one way to change it. Rejected: an automatic lookup in the system (a geo-IP request from udhcpc's hook on each new WiFi network): the lookup tells a third party the network's address, so it needs the user's consent, which only Specular can ask for, and Specular then also owns when to look up.
 - **File times on the SD card in local time: the kernel's own zone offset follows the zone** (2026-10-18). FAT stores local times without a zone, and PCs read them as their local time. The FAT driver converts with the kernel's zone offset (`sys_tz`) at each conversion, so `brick-timezone kernel` sets it (`hwclock -u --systz`) at start-up before the card is mounted, on `set`, and each minute the device is awake (the `timezone-offset` service), which catches daylight saving time changes and wake-ups within a minute. exFAT stores UTC with its offset, so it is right either way; its `sys_tz` mount option only helps reading entries written without an offset. Caveats: files written in the minute after a change get the old offset; files the kernel read in before a change keep the old conversion while cached, and if written back without new times they move by the change. Rejected: `time_offset=` at mount (fixed, so wrong after a daylight saving time change until remounted); UTC on the card (a PC shows every device-written time shifted by the zone's offset); computing the next change and waking for it (more code for at most a minute's gain).
 - **All of tzdata's zones are in the image, without the leap-second variants (`right/`)** (2026-10-18). About 110 KB in the squashfs (200 KB with `right/`). Any zone file's name is accepted (not the `posix/` and `right/` variants); `list` offers those of tzdata's `zone.tab` (one or more per country), since aliases (such as `US/Eastern`) would only duplicate them.
-- **The battery driver reports the gauge's own level, without smoothing of its own** (2026-10-18). The gauge already smooths; the driver's extra smoothing (below, in register 0x0c) once lagged the gauge by 40 %. Not done yet. Rejected: keeping it and finding what else writes register 0x0c.
+- **The battery driver reports the gauge's own level, without smoothing of its own** (2026-10-18). The gauge already smooths. The BSP driver's own smoothing (after a gauge restart, a level climbing from 1 % at 1 % per 30 s on a charger, kept in register 0x0c across reboots) once lagged the gauge by 40 %. The driver leaves register 0x0c alone: TrimUI's U-Boot writes it for TrimUI's kernel and never acts on it, so a flag left there affects nothing. Rejected: keeping the smoothing; clearing 0x0c at boot (nothing of ours reads it).
 
 ## Design
 
@@ -45,14 +45,14 @@ Everything that decides how long the TrimUI Brick runs on a charge: the power ch
 | ALDO4 | 1.8 V | codec analog | on |
 | BLDO1 | 3.3 V | XR829 WiFi/Bluetooth | its driver |
 | BLDO2 | 1.8 V | nothing in the tree; port G (WiFi SDIO/UART)? | on |
-| BLDO3 | 2.0–3.3 V | rumble motor (voltage = strength) | only while rumbling |
+| BLDO3 | 2.0–3.5 V | rumble motor (voltage = strength) | only while rumbling |
 | CLDO1 | 1.8 V | panel I/O, eMMC I/O, codec | always on |
 | CLDO3 | 3.3 V | main 3.3 V (SD card, USB, eMMC) | on |
 | CLDO4 | 3.3 V | panel | with the panel |
 | CPUSLDO | 0.9 V | always-on domain | on |
 | Boost | 5.1 V | bottom USB-C port as host | in host role ([usb.md](usb.md)) |
 | PL8 switch | 5 V | top USB-C port | off in sleep |
-| PD11 switch | 5 V | LEDs | LED driver; off in sleep |
+| PD11 switch | 5 V | LEDs (anything else unknown) | LED driver: on only while an LED is lit |
 | ALDO1, BLDO4, DCDC4, CLDO2 | – | unused | off |
 
 **Device tree changes** (`dt-tweaks.sh`, power part, written as the equivalent source):
@@ -73,7 +73,7 @@ cldo1 { regulator-always-on; };
 usb_power_supply { pmu_bc12_en = <1>; };	/* chip sets the input limit from charger type */
 ```
 
-**Battery reporting** (`/sys/class/power_supply/axp2202-battery`, `axp2202-usb`; standard properties only). The gauge needs a 128-byte battery model (in TrimUI's device tree); the driver uploads it only when the chip's "model loaded" flag is clear, since both survive reboots while the chip stays powered. If at boot the gauge claims over 60 % with the battery under 3.5 V while charging, the driver restarts the gauge and reports a level that climbs slowly from 1 % ("smoothing"), kept in chip register 0x0c (bit 7 active, bits 6:0 level) across reboots; at 3.5 V or more it cancels any smoothing left over.
+**Battery reporting** (`/sys/class/power_supply/axp2202-battery`, `axp2202-usb`; standard properties only). The gauge needs a 128-byte battery model (in TrimUI's device tree); the driver uploads it only when the chip's "model loaded" flag is clear, since both survive reboots while the chip stays powered. The level reported is the gauge's own (its 99 % reads as 100 % once the charger is done). If at boot the gauge claims over 60 % with the battery under 3.5 V while charging, the driver restarts the gauge so that it estimates the level afresh, and logs "resetting gauge".
 
 **Power settings.** `brick-power` (`/usr/sbin`), for Specular, `powertest` and a login. Changes take turns (a lock in `/run/brick-power`) and are logged (tag `brick-power`); exit status 0 done, 1 refused or failed (the reason on stderr and in the log), 2 usage.
 
@@ -141,7 +141,8 @@ For an automatic zone, Specular asks the user once whether it may tell a lookup 
 - (2026-10-11, device) Deep sleep works on our kernel with stock's configuration: secondary CPUs off, RTC alarm and power key wake. Source: tools/device/sleepnow.
 - (2026-10-12, device) Drain (gauge 1 % ≈ 30 mAh, ±1 % per phase): deep sleep 1.0 %/h; idle with the screen on 12.1 %/h base, 10.0 %/h tuned; screen off and frontend stopped 6.0 %/h (so panel, backlight and frontend ≈ 4 %/h ≈ 120 mA); full load 38–41 %/h (≈1.2 A). Load phases aren't comparable with each other (one reached 2 GHz, the other started hotter and held 1.6 GHz). TrimUI quotes "up to 5 hours".
 - (2026-10-12, device) Wakeups at idle with the screen on: display vsync 60/s, timer 40–60/s, WiFi (SDIO ~20/s, driver thread ~33/s), RCU 15/s. The power-chip I2C traffic is only the status screen's and the sampler's reads (0/s with the frontend stopped).
-- (2026-10-12, device) The battery driver once reported 43 % while the gauge read 86 %; after a reboot it reported 86 %. Smoothing (register 0x0c) was active and lagging; our probe sets it only in the case above and logs "resetting gauge", and no log of how it got set survived. Source: linux `axp2202_battery.c`.
+- (2026-10-12, device) The battery driver, which then still smoothed, once reported 43 % while the gauge read 86 %; after a reboot it reported 86 %. Smoothing (register 0x0c) was active and lagging, and no log of how it got set survived. Source: linux `axp2202_battery.c`.
+- (2026-10-18, stock) TrimUI's U-Boot restarts the gauge at boot when it keeps reading 0 %: with a charger present it then writes 0x81 to register 0x0c (smoothing from 1 %, for the BSP driver); on battery it restarts it only above 3.7 V and leaves 0x0c alone. It reads 0x0c back only to print it. This is the likely source of the lagging level above. Source: disassembly of `u-boot.fex` (the code around the strings "adapt reset gauge" and "AXP2202_CURVE_CHECK"); register 0x0c read 0x00 on our unit.
 - (2026-10-13, device) The first read of some SoC temperature sensors after waking (DDR, sometimes GPU) fails with EAGAIN; userspace reading temperatures must tolerate it.
 - (2026-10-13, device) Deep sleep with the regulators in automatic mode: 88 → 81 % in 8 h, → 77 % after 4.4 h more: 0.9 %/h ≈ 27 mA, about 4.5 days from full. Barely different from forced PWM: the regulator modes matter awake, not asleep.
 - (2026-10-13, device) `regulator-off-in-suspend` has no effect here: in this kernel only Exynos and Rockchip platform code applies it, and the arisc firmware decides rails from `standby_param`. The gauge's coulomb counter isn't usable (only its high word is exposed; gauge memory reads 0). Source: linux `regulator_suspend_prepare()` callers; register reads on our unit.

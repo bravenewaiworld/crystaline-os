@@ -7,7 +7,9 @@ How the Brick gets from power-on to our system: Allwinner's boot ROM, TrimUI's f
 ## Decisions
 
 - **TrimUI's boot0, U-Boot 2018.05, TF-A and co-processor firmware are used unchanged** (2026-10-10). They are unsigned, start from the SD card or the eMMC, and set up what the vendor kernel relies on: DRAM, every PLL, the panel's identity (`lcd=`) and the deep-sleep firmware. Rejected: a mainline boot chain (mainline U-Boot has no LPDDR3 timings for the A133, there is no open sleep firmware, and the vendor kernel hangs unless boot0 has enabled every PLL; [platform.md](platform.md)).
-- **Device-tree changes are edits applied to the DTB inside TrimUI's boot package** (2026-10-10). Vendor U-Boot hands the kernel that DTB (after its own fixups) and ignores one in the boot image; it also reads its own settings from it (`/soc/target`, `card0_boot_para`, `lcd0`, the power chip's nodes), so the tree must stay TrimUI's. `dt-tweaks.sh` edits it with `fdtput`, then the package is repacked with a new checksum. Rejected: our own device-tree source (U-Boot would lose the vendor nodes it reads).
+- **Our kernel makes our device-tree changes itself, to the tree U-Boot hands it, before reading it; TrimUI's boot package is used unchanged** (2026-10-18). Vendor U-Boot hands the kernel the DTB in the boot package (after its own fixups) and ignores one in the boot image, and it reads its own settings from it (`/soc/target`, `card0_boot_para`, `lcd0`, the power chip's nodes), so the tree stays TrimUI's. `dt-tweaks.sh` stays the one description of the changes, as `fdtput`/`fdtget` calls; each kernel build runs it on TrimUI's DTB, records the calls and compiles them in as a table (Design: Device-tree edits). The changes then travel with the kernel, in the boot slot: an update or going back to the previous version brings its own, which a boot package written once at install never could. Rejected: editing the DTB inside the boot package (chosen 2026-10-10; updates never reach the boot package, so installed devices kept the changes of the build they were installed from); our own device-tree source (U-Boot would lose the vendor nodes it reads, and the kernel would have to redo U-Boot's fixups: memory size, DRAM parameters, logo reservation, per-unit eMMC tuning); a device-tree overlay built into the kernel (4.9's overlays can't delete properties, run after early readers of the tree, and would be a second copy of the changes to keep equal); U-Boot `fdt` commands in its boot command (a failing command leaves a half-edited tree with no record, and every device's settings would need changing).
+- **If any edit fails, none are applied: the kernel boots TrimUI's tree as U-Boot handed it, and says so** (2026-10-18): a critical kernel message and `/chosen/crystaline,dt-edits = "failed: …"`, which rcS copies into `/system/logs/rcS.log`. A half-edited tree could mix our changes with TrimUI's in ways nobody tested. The device then has no buttons (their input device, `/brick-keys`, is one of the edits), so no recovery menu, but it starts and can be reached over SSH. Rejected: panicking (a reset loop with no record: crash records aren't up yet); keeping the edits made before the failure.
+- **Values U-Boot changed from TrimUI's are replaced by ours and logged, except where marked `KEEP_UBOOT_VALUE=1`** (2026-10-18): only the eMMC's per-unit tuning (`sdc_tm4_*`), which U-Boot measures on an eMMC boot. The table records TrimUI's value for each property it sets, so the kernel can tell a value U-Boot changed from TrimUI's own.
 - **The kernel and an initramfs go in an Android v0 boot image made from TrimUI's as a template** (2026-10-14), since U-Boot loads it with `sunxi_flash read 45000000 boot; bootm`. We append `rdinit=/init` (runs our initramfs; TrimUI's settings say `/rdinit`), `log_buf_len=1M` (TrimUI's 16 KiB buffer loses the first ~1.5 s) and `loglevel=4`.
 - **The boot image decides which system version runs** (2026-10-14): its initramfs carries its version and mounts `images/<that version>/` from the system partition, so the kernel and its modules always match ([install-and-update.md](install-and-update.md)).
 - **The system partition is found by its filesystem UUID**, which U-Boot's settings pass as `root=UUID=…` (2026-10-14). The SD card and the eMMC have partitions with the same names, and `mmcblkN` numbers depend on probe order. Rejected: U-Boot's default `root=/dev/mmcblk0pN`, which can name the eMMC's partition.
@@ -32,9 +34,35 @@ boot ROM ─ SD card first, then eMMC; boot0 at sector 16, copy at 256
     └ boot package at sector 32800 (TOC1): U-Boot 2018.05, TF-A BL31, arisc firmware, DTB
        └ U-Boot: settings from "env"/"env-redund", logo from "bootloader", DTB fixups,
          `sunxi_flash read 45000000 boot; bootm`
-          └ our kernel (4.9.191) + initramfs /init
+          └ our kernel (4.9.191) + initramfs /init; device-tree edits before it reads the tree
              └ /sbin/init (BusyBox) → /etc/init.d/rcS → runsvdir (services)
 ```
+
+### Device-tree edits
+
+```
+build: tools/kmake.sh → tools/system/dt-edits.sh build/stock-fw/boot_package.fex <kernel build>/dt-edits.c
+         runs dt-tweaks.sh on TrimUI's DTB with fdtput/fdtget replaced by dt-edits-record, which runs
+         the real tool and logs each step with the bytes it left in the tree (and TrimUI's value
+         before a set); the log becomes the table (CONFIG_OF_EDITS_TABLE, linux/drivers/of/fdt_edits.h)
+boot:  unflatten_device_tree() → copy U-Boot's tree with 64 KiB to spare → apply the table in order
+         set      already ours: in place · TrimUI's: applied · something else: replaced (logged),
+                  or kept (logged) when marked KEEP_UBOOT_VALUE
+         delete   absent is fine
+         node     made with any missing parents; existing is fine
+         expect   a value dt-tweaks.sh read (the phandles it copies into cells) must be the same
+       → success: /chosen/crystaline,dt-edits = "ok <table id>: <n> applied, <n> in place, <n> kept, <n> replaced"
+         failure: U-Boot's tree unedited but for "failed: edit <n> (<kind> <path> <prop>): <error>; table <id>"
+         either: "; the bootloader's tree already had these edits …" added when it has a node they add
+         table id: "dt-tweaks <sha256:12> on stock <sha256:12>", the first 12 hex digits of the SHA-256
+                   of dt-tweaks.sh and of TrimUI's DTB
+       → the copy becomes the kernel's tree: /sys/firmware/fdt; U-Boot's is /sys/firmware/fdt-bootloader
+```
+
+- **What dt-tweaks.sh may do:** `fdtput` with `-c`, `-d`, `-p`, `-t`, and `fdtget` with `-t`; nothing under `/chosen`, `/memory` or `/reserved-memory`, which the kernel has read before it edits. Anything else fails the kernel build, naming the command.
+- **Log:** `dmesg | grep dt-edits`: the status above (critical on a failure), after a line for each kept or replaced value. A tree that already had the edits comes from a boot package patched by an older build, on devices installed before 2026-10-18.
+- **Old patched boot packages** get the same edits on top, which change nothing already there; a change a later dt-tweaks.sh drops stays on such a device until it is installed again from a new SD card, so dt-tweaks.sh undoes a change by writing the undo (TrimUI's value, or deleting a property TrimUI lacks), not by dropping the line; a node added there stays.
+- **Checking:** `make test-dt-edits` on the PC applies the table with the kernel's own code (`tools/system/dt-edits-apply.c`); `tools/system/dt-check.sh` compares a running device's two trees with this checkout's table.
 
 ### SD card layout (512-byte sectors)
 
@@ -96,4 +124,7 @@ No `B007` prefix after a failed start means the initramfs never ran. Read it fro
 - (2026-10-10, device) RTC general-purpose registers on stock: 0 (0x80000002) and 3 (0x0000b00f) are in use, 2 (FEL flag) and 6 (boot mode) are read by U-Boot; 7 is unused. Source: register dump on stock.
 - (2026-10-10, bsp) The vendor clock driver never sets a PLL's enable bit; it relies on boot0 having enabled and locked them all, so any other first-stage loader must do the same. Source: PocketForge commit 2ea631f.
 - (2026-10-10, bsp) The vendor crash-to-disk writer (`sunxi-mmc-panic.c`) is hard-wired to the eMMC controller, so it can't write crash logs to an SD card. Source: Sonic Pad kernel source.
+- (2026-10-18, device) U-Boot's changes to the tree, besides those above: `/memreserve/` entries (initrd, logo), `/chosen`, the 32 `/dram` properties named `dram_para[NN]` (not valid source names: `dtc` needs `-f`), `boot_disp*`/`boot_fb0`; on an eMMC boot also per-unit eMMC tuning (`sdc_tm4_sm1_freq0 = 0xff16ffff`, `sdc_tm4_sm2_freq0 = 0xff0c13ff` on our device), the only values U-Boot sets that dt-tweaks.sh also sets differently. Source: the device's `/sys/firmware/fdt` against the boot package's DTB.
+- (2026-10-18, device) The installed device's tree came from a boot package patched by an older dt-tweaks.sh: it lacked the GPU's critical trip, the LED supply's start-up delay, battery warning 2 at 1 % and the rumble's 3.5 V maximum. The kernel's edits applied to it: 6 set, 103 in place, 2 kept (the tuning above). Source: `tools/system/dt-check.sh`.
+- (2026-10-18, bsp) Kernel 4.9 on arm64 reads the flat tree before unflattening only for memory, `/chosen` and reserved memory (`setup_machine_fdt`, `arm64_memblock_init`); nothing reads it after `unflatten_device_tree()` except `/sys/firmware/fdt`, which is created only if the tree's CRC still matches the one `early_init_dt_verify()` took. The full libfdt (including `fdt_rw.c`) is in `lib/`. 4.9's overlays (`of_overlay_create`) can't delete properties. Source: `arch/arm64/kernel/setup.c`, `drivers/of/fdt.c`, `drivers/of/overlay.c`.
 - (2026-10-10, upstream) `sunxi-tools` FEL mode supports the A133. On the Smart Pro, FEL can be entered from TrimUI's settings or by shorting pads on the board. Source: sunxi-tools `soc_info.c`, linux-sunxi wiki.

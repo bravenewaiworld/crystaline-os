@@ -20,7 +20,7 @@ STATIC := -static $(if $(DEBUG),,-s) -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--
 
 .PHONY: help all kernel gpu userspace specular installer device-tools buildroot system \
 	sd-card update-device debug-running-release deploy-specular run-specular test-installer test-battery-guard \
-	test-xr829-attach test-timezone install-image clean
+	test-xr829-attach test-timezone test-dt-edits stock-fw install-image clean
 
 help:
 	@echo 'Our system:'
@@ -43,10 +43,12 @@ help:
 	@echo '  test-timezone    test brick-timezone on the PC'
 	@echo '                   (these two with the device'"'"'s BusyBox once buildroot has built it)'
 	@echo '  test-xr829-attach  test the Bluetooth start-up program on the PC against a fake chip'
+	@echo '  test-dt-edits    test the kernel'"'"'s built-in device-tree edits on the PC'
 	@echo 'Parts:'
 	@echo '  kernel  gpu  userspace  installer  device-tools'
 	@echo '  specular       Specular and its emulator cores (the specular/ submodule'"'"'s own build)'
 	@echo '  buildroot      the base system (C library, BusyBox, daemons) with Buildroot'
+	@echo '  stock-fw       TrimUI'"'"'s stock firmware, unpacked into build/stock-fw'
 	@echo '  clean          remove build/ (keeps the development SSH keys)'
 
 all: sd-card
@@ -55,9 +57,12 @@ install-image:
 	@echo '$@: not available yet (see ROADMAP.md)'; exit 1
 
 # --- Kernel and GPU driver ------------------------------------------------------------------
-# Always run: the kernel's own build decides what is out of date.
-kernel:
-	@[ -f $(B)/kernel/.config ] || tools/kmake.sh $(B)/kernel trimui_brick_defconfig
+# Always run: the kernel's own build decides what is out of date. Its device-tree edits are made
+# from the device tree in TrimUI's boot package (tools/kmake.sh).
+# The configuration is regenerated from trimui_brick_defconfig every time, as Buildroot's is, so
+# that file is the only place to change it; unchanged options rebuild nothing.
+kernel: $(B)/stock-fw/rootfs.fex
+	tools/kmake.sh $(B)/kernel trimui_brick_defconfig
 	tools/kmake.sh $(B)/kernel Image modules
 
 gpu: kernel
@@ -145,6 +150,7 @@ $(B)/tools/glspin: tools/device/glspin.c $(B)/stock-root/.done
 		-Wl,--allow-shlib-undefined -Wl,-rpath-link,$(B)/stock-root/usr/lib
 
 # --- TrimUI's stock firmware, unpacked --------------------------------------------------------
+stock-fw: $(B)/stock-fw/rootfs.fex
 $(B)/stock-fw/rootfs.fex: $(STOCK_FW)
 	python3 -I tools/sdboot/awimg_unpack.py $< $(B)/stock-fw
 
@@ -192,6 +198,9 @@ test-timezone:
 
 test-xr829-attach:
 	tools/system/test-xr829-attach.sh
+
+test-dt-edits: $(B)/stock-fw/rootfs.fex
+	tools/system/test-dt-edits.sh
 
 clean:
 	@[ ! -d $(B) ] || find $(B) -mindepth 1 -maxdepth 1 ! -name ssh-host-keys -exec rm -rf {} +

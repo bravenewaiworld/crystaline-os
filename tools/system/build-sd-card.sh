@@ -5,6 +5,7 @@
 #   state/  logs/       empty (see system/board/brick/initramfs/init)
 # U-Boot's settings name it by filesystem UUID (root=UUID=...). The data partition is added over
 # the rest of the card on first start (system/board/brick/rootfs-overlay/usr/libexec/brick/mount-card).
+# TrimUI's boot package goes on unchanged: the kernel makes our device-tree changes itself.
 # Usage: build-sd-card.sh <system-version-dir> <out.img>
 set -eu
 V=$1 OUT=$2
@@ -18,10 +19,9 @@ cp "$V/boot.img" "$V/rootfs.squashfs" "$V/manifest.json" "$TMP/tree/images/$VERS
 UUID=$(python3 -I -c 'import uuid; print(uuid.uuid4())')
 "$ROOT/tools/system/mkfs-system.sh" "$TMP/system.ext4" "$UUID" "$TMP/tree" 1024M
 
-"$ROOT/tools/sdboot/patch-boot-package.sh" "$FW/boot_package.fex" "$TMP/boot_package.fex"
 # Our boot logo (system/board/brick/logo) in place of TrimUI's.
 python3 -I "$ROOT/tools/sdboot/replace-bootlogo.py" "$FW/boot-resource.fex" \
 	"$ROOT/system/board/brick/logo/bootlogo.bmp" "$TMP/bootres.fat"
 ROOT_NAME=system ROOT_REF=UUID=$UUID "$ROOT/tools/sdboot/build_sd_image.sh" "$OUT" \
-	"$FW/boot0_sdcard.fex" "$TMP/boot_package.fex" "$FW/env.fex" "$V/boot.img" \
+	"$FW/boot0_sdcard.fex" "$FW/boot_package.fex" "$FW/env.fex" "$V/boot.img" \
 	"$TMP/bootres.fat" "$TMP/system.ext4"

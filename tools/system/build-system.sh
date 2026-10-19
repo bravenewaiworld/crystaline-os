@@ -4,6 +4,7 @@
 #   $OUT/<version>/boot.img          our kernel + initramfs (system/board/brick/initramfs/init),
 #                                    written to the "boot" partition to run this version
 #   $OUT/<version>/manifest.json     version, git commit, build time, release or development,
+#                                    whether the kernel makes our device-tree changes (dt_edits),
 #                                    sizes and SHA-256 of both
 # and points $OUT/latest at it. Prints the version.
 #
@@ -182,11 +183,14 @@ python3 -I "$ROOT/tools/sdboot/mkbootimg.py" --ramdisk "$TMP/initramfs.cpio.gz" 
 	"$KBUILD/arch/arm64/boot/Image" "$V/boot.img" "rdinit=/init log_buf_len=1M loglevel=4" >/dev/null
 
 # --- Manifest ---------------------------------------------------------------------------------
+# dt_edits: the kernel makes our device-tree changes itself (CONFIG_OF_EDITS), so this version runs
+# with TrimUI's boot package unchanged; brick-install refuses versions without it.
+DT_EDITS=$(grep -q '^CONFIG_OF_EDITS=y' "$KBUILD/.config" && echo true || echo false)
 entry() { printf '"%s": { "size": %s, "sha256": "%s" }' "$1" "$(stat -c%s "$V/$1")" \
 	"$(sha256sum "$V/$1" | cut -d' ' -f1)"; }
 cat >"$V/manifest.json" <<EOF
 { "version": "$VERSION", "commit": "$commit$dirty", "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "kernel": "$KERNEL_RELEASE", "release": $([ "$RELEASE" = 1 ] && echo true || echo false),
+  "kernel": "$KERNEL_RELEASE", "release": $([ "$RELEASE" = 1 ] && echo true || echo false), "dt_edits": $DT_EDITS,
   "files": { $(entry boot.img), $(entry rootfs.squashfs) } }
 EOF
 ln -sfn "$VERSION" "$OUT/latest"

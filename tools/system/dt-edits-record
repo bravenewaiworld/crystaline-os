@@ -1,0 +1,72 @@
+#!/bin/sh
+# Stands in for fdtput and fdtget (by the name it is run as) while tools/system/dt-edits.sh runs
+# dt-tweaks.sh: runs the real tool ($DT_EDITS_FDTPUT, $DT_EDITS_FDTGET), then appends what it did to
+# $DT_EDITS_LOG, one tab-separated line per step:
+#   set PATH NAME VALUE WAS KEEP   VALUE and WAS in hex as read back from the tree (so fdtput's own
+#                                  parsing decides the bytes); WAS is the value before, "-" if absent;
+#                                  KEEP is 1 under KEEP_UBOOT_VALUE=1
+#   delete PATH NAME     node PATH     expect PATH NAME VALUE (a value the script read)
+# What the kernel can't redo is refused, also with an "error" line, which makes dt-edits.sh fail:
+# an fdtget refused inside $(...) only fails that substitution, and dt-tweaks.sh carries on.
+set -eu
+log() { printf '%s\n' "$*" | tr ' ' '\t' >>"$DT_EDITS_LOG"; }
+refuse() { log error "$(echo "$*" | tr ' \t' '__')"; echo "dt-edits-record: $*" >&2; exit 1; }
+has() { "$DT_EDITS_FDTGET" "$DTB" "$1" "$2" >/dev/null 2>&1; }
+hex() { "$DT_EDITS_FDTGET" -t r "$DTB" "$1" "$2" | head -c -1 | od -An -v -tx1 | tr -d ' \n'; }
+# The kernel reads /chosen, /memory and /reserved-memory from U-Boot's tree before it edits, so
+# edits there would have no effect. Node paths must be absolute.
+check_path() {
+	check_name "$1"
+	case $1 in
+	/chosen | /chosen/* | /memory* | /reserved-memory | /reserved-memory/*) refuse "$TOOL $ARGS: edits $1, which the kernel reads before applying the edits" ;;
+	/*) ;;
+	*) refuse "$TOOL $ARGS: $1 is not an absolute node path" ;;
+	esac
+}
+# Names must be single words: the log is split on tabs and spaces.
+check_name() { case $1 in *[[:space:]]*) refuse "$TOOL $ARGS: '$1' has spaces" ;; esac; }
+opt_p() { [ $auto = 0 ] || echo -p; }
+
+TOOL=$(basename "$0") ARGS="$*"
+create=0 delete=0 auto=0 type=
+while getopts cdpt: o; do
+	case $o in
+	c) create=1 ;; d) delete=1 ;; p) auto=1 ;; t) type=$OPTARG ;;
+	*) refuse "$TOOL $ARGS: option not supported" ;;
+	esac
+done
+shift $((OPTIND - 1))
+[ $# -ge 2 ] || refuse "$TOOL $ARGS: no node given"
+DTB=$1; shift
+
+if [ "$TOOL" = fdtget ]; then
+	[ $create$delete$auto = 000 ] || refuse "$TOOL $ARGS: option not supported"
+	"$DT_EDITS_FDTGET" ${type:+-t "$type"} "$DTB" "$@"
+	while [ $# -ge 2 ]; do
+		check_path "$1"; check_name "$2"
+		log expect "$1" "$2" "$(hex "$1" "$2")"
+		shift 2
+	done
+	[ $# = 0 ] || refuse "$TOOL $ARGS: node without a property"
+	exit 0
+fi
+
+if [ $create = 1 ]; then
+	"$DT_EDITS_FDTPUT" -c $(opt_p) "$DTB" "$@"
+	for n; do check_path "$n"; log node "$n"; done
+	exit 0
+fi
+node=$1; shift
+check_path "$node"
+if [ $delete = 1 ]; then
+	"$DT_EDITS_FDTPUT" -d "$DTB" "$node" "$@"
+	for p; do check_name "$p"; log delete "$node" "$p"; done
+	exit 0
+fi
+[ $# -ge 1 ] || refuse "$TOOL $ARGS: no property given"
+prop=$1; check_name "$prop"
+case ${KEEP_UBOOT_VALUE:-0} in 0 | 1) ;; *) refuse "KEEP_UBOOT_VALUE=$KEEP_UBOOT_VALUE: only 1 is meaningful" ;; esac
+was=-; ! has "$node" "$prop" || was=$(hex "$node" "$prop")
+[ $auto = 0 ] || log node "$node"	# -p may create the node: a node step before the set
+"$DT_EDITS_FDTPUT" $(opt_p) ${type:+-t "$type"} "$DTB" "$node" "$@"
+log set "$node" "$prop" "$(hex "$node" "$prop")" "$was" "${KEEP_UBOOT_VALUE:-0}"
