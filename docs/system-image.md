@@ -44,7 +44,7 @@ Owners come from Buildroot's tar (`tar-with-owners.py` → `sqfstar`), so no roo
 
 ### Start-up
 
-`rcS` (output to `/system/logs/rcS.log`, since the system log isn't running yet): mount `/run`, `/tmp`, `/dev/pts`, `/dev/shm`; `mdev` for devices and hotplug; load the GPU modules; give the kernel the time zone's offset (`brick-timezone kernel`, for file times on the card); mount the data card (`mount-card`, [storage.md](storage.md)); prepare the state area; copy `/etc/sv` to `/run/sv`. Then `runsvdir` starts:
+`rcS` (output to `/system/logs/rcS.log`, since the system log isn't running yet): mount `/run`, `/tmp`, `/dev/pts`, `/dev/shm`; `mdev` for devices and hotplug; load the GPU modules; apply the balanced CPU profile (`brick-power`, [power.md](power.md)); give the kernel the time zone's offset (`brick-timezone kernel`, for file times on the card); mount the data card (`mount-card`, [storage.md](storage.md)); prepare the state area; copy `/etc/sv` to `/run/sv`. Then `runsvdir` starts:
 
 | Service | What | Waits for |
 |---|---|---|
@@ -61,6 +61,7 @@ Owners come from Buildroot's tar (`tar-with-owners.py` → `sqfstar`), so no roo
 | `wpa_supplicant`, `wifi-dhcp` | WiFi (down until Specular starts them) | `wpa_supplicant` |
 | `ntpd` | clock from the network | a default route (checks every 30 s) |
 | `timezone-offset` | the kernel's time zone offset for SD card file times, checked each minute ([power.md](power.md)) | |
+| `battery-guard` | powers off cleanly when the battery is empty ([power.md](power.md)) | |
 
 Shutdown (`rcK`): stop every service but the system log and `klogd`, waiting up to 10 s (Specular saves the running game), `sync`, unmount the data card. init then ends the rest and syncs again.
 

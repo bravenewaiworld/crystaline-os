@@ -7,11 +7,14 @@
 #   start-stop-daemon -S -b -x /usr/bin/powertest
 # Results go to /mnt/SDCARD/powertest/<start time>/:
 # - log.csv: time, phase, battery %, battery µV, USB online, CPU kHz, temperatures (°C, in
-#   /sys/class/thermal zone order, listed in zones.txt), load average;
+#   /sys/class/thermal zone order, listed in zones.txt), load average, brick-power profile;
 # - <phase>.start/.end.*: interrupt counts, CPU idle-state statistics, per-process wakeups
-#   (voluntary context switches) and CPU time, to attribute what keeps the CPUs awake.
+#   (voluntary context switches) and CPU time, to attribute what keeps the CPUs awake, and the
+#   power settings in effect (.power: brick-power's report).
 # Phases (minutes); "base" = the settings the system boots with (see base()), "tuned" = the power
-# settings under evaluation (see tuned()):
+# settings under evaluation (see tuned(); chosen from the environment: TUNED_PROFILE, default
+# balanced; TUNED_USB_TOP, default off; TUNED_SAMPLING, the CPU governor's sampling interval in µs,
+# default brick-power's 50 ms):
 #   sleep       deep sleep, woken by the real-time clock's alarm
 #   idle-base   screen on (frontend running), base settings
 #   idle-tuned  screen on, tuned
@@ -20,8 +23,9 @@
 #               automatic mode (a boot default) holds under full load: if the device crashes, the
 #               log stops there
 #   load-base   the same load, base settings
-# The frontend is stopped from off-tuned to the end of the load phases (if off-tuned runs). Stops early below 10 %
-# battery. Ends with the base settings, display and frontend restored, and the device asleep.
+# The frontend is stopped from off-tuned to the end of the load phases (if off-tuned runs). Stops
+# early below 10 % battery. Ends with the base settings, display and frontend restored, and the
+# device asleep.
 set -u
 # Phase lengths in minutes; each can be overridden from the environment (e.g. all 1 for a dry run).
 # A phase of 0 minutes is skipped: e.g. IDLE_MIN=0 OFF_MIN=0 LOAD_MIN=0 SLEEP_MIN=480 measures
@@ -39,9 +43,10 @@ sample() {
 	for z in /sys/class/thermal/thermal_zone*; do
 		v=$(cat $z/temp 2>/dev/null) && t="$t,$((v / 1000))" || t="$t,"
 	done
-	printf '%s,%s,%s,%s,%s,%s%s,%s\n' "$(date +%s)" "$PHASE" "$(cat $BAT/capacity)" \
+	printf '%s,%s,%s,%s,%s,%s%s,%s,%s\n' "$(date +%s)" "$PHASE" "$(cat $BAT/capacity)" \
 		"$(cat $BAT/voltage_now)" "$(cat /sys/class/power_supply/axp2202-usb/online)" \
-		"$(cat $CPU/scaling_cur_freq)" "$t" "$(cut -d' ' -f1 /proc/loadavg)" >>$OUT/log.csv
+		"$(cat $CPU/scaling_cur_freq)" "$t" "$(cut -d' ' -f1 /proc/loadavg)" \
+		"$(cat /run/brick-power/profile 2>/dev/null)" >>$OUT/log.csv
 	sync
 }
 
@@ -55,24 +60,21 @@ snapshot() {	# $1: file name prefix
 			"$(awk '/^voluntary_ctxt_switches/ {print $2}' $p/status 2>/dev/null)" \
 			"$(awk '{print $14, $15}' $p/stat 2>/dev/null)"
 	done >$OUT/$1.processes
+	brick-power >$OUT/$1.power 2>&1
 	sync
 }
 
-# Bind or unbind the top USB port's host controller drivers. Unbinding also turns off the port's
-# 5 V supply: they are its only users.
-usb_host() {	# $1: bind | unbind
-	echo 5200000.ehci1-controller >/sys/bus/platform/drivers/sunxi-ehci/$1 2>/dev/null
-	echo 5200000.ohci1-controller >/sys/bus/platform/drivers/sunxi-ohci/$1 2>/dev/null
-}
-
-# Settings to compare: base() restores the boot defaults, tuned() applies the candidate under test:
-# the top USB port's 5 V off while awake.
+# Settings to compare: base() restores the boot defaults, tuned() applies the candidate under test.
 base() {
-	usb_host bind
+	brick-power profile balanced
+	brick-power usb-top on
 }
 
 tuned() {
-	usb_host unbind
+	brick-power profile ${TUNED_PROFILE:-balanced}
+	brick-power usb-top ${TUNED_USB_TOP:-off}
+	# Written after the profile, which sets brick-power's interval (so base() restores it).
+	[ -z "${TUNED_SAMPLING:-}" ] || echo $TUNED_SAMPLING >/sys/devices/system/cpu/cpufreq/ondemand/sampling_rate
 }
 
 frontend() { sv $1 frontend >/dev/null; }	# $1: start or stop

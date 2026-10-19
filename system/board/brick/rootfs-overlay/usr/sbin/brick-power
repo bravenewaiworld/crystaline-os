@@ -1,0 +1,124 @@
+#!/bin/sh
+# brick-power: applies power settings; Specular decides which ones to use, and when.
+#   brick-power                    prints the settings in effect, read back from the hardware
+#   brick-power profile NAME       the CPU's speed range: performance (1200-2000 MHz), balanced
+#                                  (408-2000) or saver (408-1200)
+#   brick-power usb-top on|off     the top USB-C port: its 5 V output to attached devices and its
+#                                  host controllers; off is refused while a USB device is attached
+# Exit status: 0 done, 1 refused or failed (the reason on stderr and in the system log, tag
+# brick-power), 2 usage. Nothing persists: start-up (rcS) applies balanced, and the top port
+# starts on; Specular applies its own choices when it starts.
+# A thermal limit still applies under any profile: the kernel lowers the CPU's maximum (and the
+# minimum with it), and the status shows the limits in effect.
+set -u
+CPU=/sys/devices/system/cpu/cpufreq
+PLAT=/sys/bus/platform
+EHCI=5200000.ehci1-controller OHCI=5200000.ohci1-controller	# the top port's (USB 2.0, USB 1.1)
+STATE=/run/brick-power	# holds "profile" (the name of the last profile applied) and "lock"
+# How often the ondemand governor re-evaluates the CPU's speed. The kernel's default on this device
+# is 2 s (1000 times the CPU's 2 ms speed-change time), so a game could wait 2 s for full speed.
+# It samples only while a CPU is busy, so a shorter interval costs no wake-ups at idle.
+SAMPLING_US=50000
+
+log() { logger -s -t brick-power "$*"; }
+fail() { log "$*"; exit 1; }
+usage() {
+	echo "usage: brick-power [profile performance|balanced|saver | usb-top on|off]" >&2
+	exit 2
+}
+
+# range PROFILE: its minimum and maximum CPU speed, in kHz.
+range() {
+	case $1 in
+	# performance's minimum, 1200 MHz, is the fastest speed at about the lowest voltage: holding it
+	# costs little and spares games slow speed-ups.
+	performance) echo 1200000 2000000 ;;
+	balanced) echo 408000 2000000 ;;
+	saver) echo 408000 1200000 ;;
+	*) return 1 ;;
+	esac
+}
+
+profile() {	# $1: name
+	r=$(range "$1") || usage
+	set -- "$1" $r
+	rm -f $STATE/profile	# a failure part-way leaves no profile named
+	# The kernel refuses a minimum above the maximum, so the minimum is lowered first.
+	echo 408000 >$CPU/policy0/scaling_min_freq && echo $3 >$CPU/policy0/scaling_max_freq &&
+		echo $2 >$CPU/policy0/scaling_min_freq || fail "profile $1: the CPU refused its speed range"
+	echo $SAMPLING_US >$CPU/ondemand/sampling_rate ||
+		fail "profile $1: can't set the governor's sampling (governor $(cat $CPU/policy0/scaling_governor))"
+	echo $1 >$STATE/profile
+	log "profile $1: $(cpu)"
+}
+
+bound() { [ -e $PLAT/devices/$1/driver ]; }	# bound DEVICE: whether a driver has DEVICE
+
+# driver NAME DEVICE bind|unbind: binds or unbinds DEVICE to the driver NAME, unless it already is.
+driver() {
+	bound $2 && b=bind || b=unbind
+	[ $3 = $b ] || echo $2 >$PLAT/drivers/$1/$3
+}
+
+# top_devices: the number of USB devices attached to the top port.
+top_devices() {
+	n=0
+	for d in $PLAT/devices/$EHCI/usb*/*-* $PLAT/devices/$OHCI/usb*/*-*; do
+		# Names with a colon (e.g. 1-0:1.0) are a device's interfaces, not devices.
+		case ${d##*/} in *:*) ;; *) [ ! -e $d ] || n=$((n + 1)) ;; esac
+	done
+	echo $n
+}
+
+# Unbinding the top port's two host-controller drivers turns its 5 V off (they are the only users
+# of its regulator, usb1-vbus), and their clocks and the clock of the port's PHY (its USB signalling
+# circuit) with it.
+usb_top() {	# $1: on | off
+	case $1 in
+	on) driver sunxi-ehci $EHCI bind && driver sunxi-ohci $OHCI bind || fail "usb-top on failed" ;;
+	off)
+		[ "$(top_devices)" = 0 ] || fail "usb-top off: a USB device is attached to the top port"
+		driver sunxi-ohci $OHCI unbind && driver sunxi-ehci $EHCI unbind || fail "usb-top off failed"
+		;;
+	*) usage ;;
+	esac
+	log "usb-top $1"
+}
+
+cpu() {
+	echo "$(($(cat $CPU/policy0/scaling_min_freq) / 1000))-$(($(cat $CPU/policy0/scaling_max_freq) / 1000)) MHz," \
+		"now $(($(cat $CPU/policy0/scaling_cur_freq) / 1000)) MHz"
+}
+
+status() {
+	echo "profile   $(cat $STATE/profile 2>/dev/null || echo "none applied since start-up")"
+	for c in /sys/class/thermal/cooling_device*; do
+		[ "$(cat $c/type 2>/dev/null)" = thermal-cpufreq-0 ] && cooling="$(cat $c/cur_state)/$(cat $c/max_state)"
+	done
+	echo "cpu       $(cpu), thermal limit step ${cooling:-unknown} (0: not limited)"
+	g=$(cat $CPU/policy0/scaling_governor)
+	s=$(cat $CPU/$g/sampling_rate 2>/dev/null) && g="$g, sampling $((s / 1000)) ms"
+	echo "governor  $g"
+	r=$(cat /sys/kernel/debug/clk/gpu/clk_rate 2>/dev/null) && r="$((r / 1000000)) MHz" || r=unknown
+	echo "gpu       $r"
+	for x in /sys/class/regulator/*; do [ "$(cat $x/name)" = usb1-vbus ] && v=$(cat $x/state); done
+	bound $EHCI && e=on || e=off
+	bound $OHCI && o=on || o=off
+	[ $e = $o ] && t=$e || t="ehci $e, ohci $o"
+	echo "usb-top   $t (5 V ${v:-unknown}, devices attached: $(top_devices))"
+	echo "battery   $(/usr/libexec/brick/battery-guard state)"
+}
+
+case ${1:-} in
+'') status; exit ;;
+profile | usb-top) [ $# = 2 ] || usage ;;
+*) usage ;;
+esac
+# A lock makes changes take turns: Specular, powertest and someone in a shell may all run them.
+mkdir -p $STATE
+exec 9>>$STATE/lock
+flock 9
+case $1 in
+profile) profile "$2" ;;
+usb-top) usb_top "$2" ;;
+esac

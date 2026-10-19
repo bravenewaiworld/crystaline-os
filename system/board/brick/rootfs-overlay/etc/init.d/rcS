@@ -22,6 +22,9 @@ mdev -s
 # The GPU driver. Other modules are loaded by the services that use them (WiFi).
 modprobe pvrsrvkm
 modprobe dc_sunxi
+# The balanced CPU profile (the top USB port starts on by itself); Specular applies its own choices
+# when it starts.
+brick-power profile balanced
 
 # The kernel's time zone offset, before the card is mounted: the FAT driver converts file times
 # with it (see brick-timezone).

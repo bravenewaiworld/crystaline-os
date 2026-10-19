@@ -38,6 +38,28 @@ fdtput -t i "$DTB" $TCS fcs,suspend-voltage-selector 1
 fdtput -t u "$DTB" $TCS regulator-initial-mode 2
 fdtput -t i "$DTB" /cpus/cpu@0 cpu-supply "$(fdtget "$DTB" $TCS phandle)"
 
+# Battery warning levels (the power chip's register 0x1b). Warning 2 stays on in sleep
+# (wakeup_low_warning2) and fires when the gauge drops to its level. That level is 1 %,
+# battery-guard's EMPTY (usr/libexec/brick/battery-guard; keep the two the same), so a device
+# asleep in a bag wakes and sleepnow powers it off cleanly, before the power chip cuts the power at
+# 3.2 V (TrimUI's device tree sets 0 %). Warning 1 (5 %) is not a wake source: there is nothing to
+# do asleep at 5 %.
+BAT=/soc@03000000/s_twi@0x07081400/pmu@34/bat-power-supply
+fdtput -t u "$DTB" $BAT pmu_battery_warning_level2 1
+fdtput -d "$DTB" $BAT wakeup_low_warning1
+
+# The GPU's temperature zone has no trip points (nor in TrimUI's device tree). One critical trip
+# at 95 °C, at which the kernel powers off cleanly (/sbin/poweroff): 15 °C under the A133's
+# highest recommended chip temperature (110 °C), for sensor error and the zone's 1 s polling, and
+# above the CPU zone's 90 °C critical trip: both sensors are on the same chip, so the CPU's
+# normally acts first, and this one covers heat from the GPU alone. No slowing (passive) trip:
+# nothing can slow the GPU (its clock is fixed and it has no cooling device).
+GPUZ=/soc@03000000/thermal-zones/gpu_thermal_zone
+fdtput -p -c "$DTB" $GPUZ/trips/gpu_crit
+fdtput -t s "$DTB" $GPUZ/trips/gpu_crit type critical
+fdtput -t u "$DTB" $GPUZ/trips/gpu_crit temperature 95000
+fdtput -t u "$DTB" $GPUZ/trips/gpu_crit hysteresis 0
+
 # Buttons as a standard gpio-keys input device (the gamepad bridge turns it into a gamepad).
 # All are active-low GPIOs with external pull-ups. This vendor kernel's GPIO specifier has six
 # cells: port (A=0 ... H=7), pin, mux (0 = input), pull (0 = none), drive (0xffffffff = leave

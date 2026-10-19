@@ -19,7 +19,7 @@ CFLAGS := -O2 -Wall -Wextra $(if $(DEBUG),-g)
 STATIC := -static $(if $(DEBUG),,-s) -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 
 .PHONY: help all kernel gpu userspace specular installer device-tools buildroot system \
-	sd-card update-device debug-running-release deploy-specular run-specular test-installer \
+	sd-card update-device debug-running-release deploy-specular run-specular test-installer test-battery-guard \
 	test-xr829-attach test-timezone install-image clean
 
 help:
@@ -39,8 +39,9 @@ help:
 	@echo '                   restarts until the next update-device)'
 	@echo '  run-specular     build Specular and run it once in the foreground on the Brick'
 	@echo '  test-installer   test the installer on the PC against image files (after sd-card)'
+	@echo '  test-battery-guard  test the low-battery guard'"'"'s decisions on the PC'
 	@echo '  test-timezone    test brick-timezone on the PC'
-	@echo '                   (with the device'"'"'s BusyBox once buildroot has built it)'
+	@echo '                   (these two with the device'"'"'s BusyBox once buildroot has built it)'
 	@echo '  test-xr829-attach  test the Bluetooth start-up program on the PC against a fake chip'
 	@echo 'Parts:'
 	@echo '  kernel  gpu  userspace  installer  device-tools'
@@ -183,6 +184,9 @@ test-installer:
 # These run their script under a PC build of the device's BusyBox (build/pc-busybox) once
 # Buildroot has built it, and under the PC's shell and tools before then.
 WITH_PC_BUSYBOX = bb=$$(tools/system/pc-busybox.sh $(B)/pc-busybox) && PATH="$${bb:+$$bb:}$$PATH"
+test-battery-guard:
+	$(WITH_PC_BUSYBOX) tools/system/test-battery-guard.sh
+
 test-timezone:
 	$(WITH_PC_BUSYBOX) tools/system/test-timezone.sh
 

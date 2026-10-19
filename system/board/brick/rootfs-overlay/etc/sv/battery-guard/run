@@ -1,0 +1,4 @@
+#!/bin/sh
+# Powers the device off cleanly when the battery is empty (usr/libexec/brick/battery-guard).
+exec 2>&1
+exec /usr/libexec/brick/battery-guard

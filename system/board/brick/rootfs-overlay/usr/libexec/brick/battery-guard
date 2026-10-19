@@ -1,0 +1,129 @@
+#!/bin/sh
+# battery-guard: when the battery is empty, powers the device off through the normal shutdown
+# (rcK stops Specular, which saves the running game), even if Specular is hung, before the power
+# chip's own cut-off at 3.2 V cuts the power with nothing saved. Specular itself warns, and saves
+# and quits a game, at 3 % (docs/power.md); this is the backstop.
+#   battery-guard          the service (etc/sv/battery-guard): a sample every INTERVAL seconds; two
+#                          "empty" samples in a row power off
+#   battery-guard state    one fresh sample, e.g. "ok 54 % 3.92 V, charge 0 mA, Discharging"; the
+#                          first word: ok, charging, unsure (the gauge says empty, the voltage
+#                          disagrees), empty, absent (no battery) or error
+#   battery-guard replay   the service's decisions, without powering off, for the samples on stdin
+#                          as the service logs them ("sample ..."), e.g. logread | battery-guard replay
+# A sample is "<capacity %> <voltage µV> <charge current µA> <status>", "absent" or "error <message>".
+# The service logs every sample while the battery is low, and the first one after, so a replay of
+# its log makes the same decisions.
+# Asleep, the power chip's low-battery interrupt wakes the device when the gauge drops to EMPTY %
+# (dt-tweaks.sh sets the chip's level to match), and sleepnow powers off.
+# For testing (tools/system/test-battery-guard.sh): PSU, the power-supply directory to read
+# instead of /sys/class/power_supply; DRY_RUN=1, log the power-off instead of doing it; INTERVAL,
+# the seconds between samples.
+set -u
+BAT=${PSU:-/sys/class/power_supply}/axp2202-battery
+INTERVAL=${INTERVAL:-30}
+# Empty: the gauge at or below EMPTY % with the voltage at or below EMPTY_UV, or the voltage at or
+# below FLOOR_UV whatever the gauge says. The voltage check keeps a confused gauge (e.g. 0-1 % at
+# 3.9 V after a gauge restart) from powering off; the floor covers a gauge that reads too high,
+# with a margin over the power chip's 3.2 V cut-off. The voltage is measured under load, which
+# lowers it by up to about 0.2 V for a moment; hence two samples in a row.
+# Never empty while at least CHARGING_UA flows into the battery. This goes by the current, not the
+# charger's status: with a cable that can't keep up with the load, the status says Charging while
+# the battery still drains.
+# The levels are first guesses, to be refined from a logged discharge.
+EMPTY=1 EMPTY_UV=3700000 FLOOR_UV=3300000 CHARGING_UA=50000
+LOG_BELOW=10	# every sample is logged under this capacity (%) or at or below EMPTY_UV
+
+# volts MICROVOLTS, e.g. "3.92 V"
+volts() { printf '%d.%02d V' $(($1 / 1000000)) $(($1 / 10000 % 100)); }
+
+read_sample() {
+	p=$(cat $BAT/present 2>&1) || { echo "error $p"; return; }
+	[ "$p" = 1 ] || { echo absent; return; }
+	set --
+	for f in capacity voltage_now current_now; do
+		v=$(cat $BAT/$f 2>&1) || { echo "error $v"; return; }
+		case $v in '' | *[!0-9]*) echo "error $f reads \"$v\""; return ;; esac
+		set -- "$@" "$v"
+	done
+	s=$(cat $BAT/status 2>&1) || s=unknown
+	echo "$@ $s"
+}
+
+# verdict SAMPLE: ok, charging, unsure, empty (see above), absent or error.
+verdict() {
+	case $1 in absent | error*) echo "${1%% *}"; return ;; esac
+	set -- $1
+	if [ $3 -ge $CHARGING_UA ]; then echo charging
+	elif [ $2 -le $FLOOR_UV ] || { [ $1 -le $EMPTY ] && [ $2 -le $EMPTY_UV ]; }; then echo empty
+	elif [ $1 -le $EMPTY ]; then echo unsure
+	else echo ok
+	fi
+}
+
+# describe SAMPLE: the sample and its verdict, readably (printed by `state`, logged by the service
+# when the verdict changes).
+describe() {
+	case $1 in absent | error*) echo "$1"; return ;; esac
+	v=$(verdict "$1")
+	set -- $1
+	c=$1 uv=$2 ua=$3; shift 3
+	echo "$v $c % $(volts $uv), charge $((ua / 1000)) mA, $*"
+}
+
+# step SAMPLE: the service's decision for one sample. Between samples it keeps the verdict last
+# logged (LAST), the number of empty samples (RUN) and failed reads (ERRORS) in a row, whether the
+# previous sample was logged (LOGGED), and the last four samples (S1-S4) for the power-off's log.
+LAST= RUN=0 ERRORS=0 LOGGED= S1= S2= S3= S4=
+step() {
+	s=$1 v=$(verdict "$1")
+	S1=$S2 S2=$S3 S3=$S4 S4=$s
+	low=
+	case $v in absent | error) ;; *)
+		set -- $s
+		[ $1 -lt $LOG_BELOW ] || [ $2 -le $EMPTY_UV ] && low=1 ;;
+	esac
+	[ -z "$low$LOGGED" ] || echo "sample $s"
+	LOGGED=$low
+	if [ $v = error ]; then
+		ERRORS=$((ERRORS + 1)) RUN=0
+		case $ERRORS in	# the first failure, and once more if it persists
+		1) echo "can't read the battery: ${s#error }" ;;
+		5) echo "error: can't read the battery 5 times in a row: ${s#error }" ;;
+		esac
+		return
+	fi
+	[ $ERRORS -eq 0 ] || echo "battery readable again"
+	ERRORS=0
+	if [ $v != "$LAST" ]; then
+		n=; [ $v != unsure ] || n=": the gauge says empty, but the voltage is above $(volts $EMPTY_UV); not acting"
+		echo "$(describe "$s")$n"
+		LAST=$v
+	fi
+	[ $v = empty ] && RUN=$((RUN + 1)) || RUN=0
+	[ $RUN -ge 2 ] || return 0
+	r=; for x in "$S1" "$S2" "$S3" "$S4"; do [ -z "$x" ] || r="${r:+$r | }$x"; done
+	echo "battery empty: powering off; last samples: $r"
+	if [ "${DRY_RUN:-}" ]; then echo "dry run: not powering off"
+	else poweroff || echo "error: poweroff failed"
+	fi
+}
+
+case ${1:-} in
+'')
+	while :; do
+		step "$(read_sample)"
+		sleep $INTERVAL
+	done
+	;;
+state) describe "$(read_sample)" ;;
+replay)
+	DRY_RUN=1
+	while read -r line; do
+		case $line in *"sample "*) step "${line#*sample }" ;; esac
+	done
+	;;
+*)
+	echo "usage: battery-guard [state | replay]" >&2
+	exit 2
+	;;
+esac

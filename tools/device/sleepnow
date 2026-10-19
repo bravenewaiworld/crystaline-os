@@ -1,6 +1,7 @@
 #!/bin/sh
 # sleepnow [minutes]: deep sleep until the power button is pressed or, if minutes > 0, until the
-# real-time clock's alarm after that long. Returns once the device is awake again.
+# real-time clock's alarm after that long. Returns once the device is awake again, unless the
+# battery is empty (below).
 # The WiFi driver (XR829) refuses to suspend while connected, so WiFi is stopped first and, if
 # it was running, restarted afterwards.
 # Not while an install or a restore runs (it holds a lock on its status file, see
@@ -10,10 +11,25 @@ if [ -e $STATUS ] && ! flock -n -s $STATUS true; then
 	echo "sleepnow: an install or a restore is running; not sleeping" >&2
 	exit 1
 fi
+# With the battery empty (battery-guard's verdict), power off instead of sleeping: the power chip's
+# low-battery interrupt wakes the device only when the gauge drops to battery-guard's level
+# (dt-tweaks.sh), so a device already there would sleep on to the chip's own cut-off. Checked
+# again after waking, which that interrupt causes. One sample is enough here, unlike in the
+# service: the device is idle, so there is no load dip to mistake for an empty battery. No game
+# runs when Specular calls this, so powering off loses nothing. Caveat: at 1 % with the guard
+# distrusting the gauge ("unsure"), the device sleeps and gets no low-battery wake.
+poweroff_if_empty() {
+	b=$(/usr/libexec/brick/battery-guard state)
+	[ "${b%% *}" = empty ] || return 0
+	logger -s -t sleepnow "battery $b: powering off instead of sleeping"
+	exec poweroff
+}
+poweroff_if_empty
 WIFI="wpa_supplicant wifi-dhcp" running=
 if sv status wpa_supplicant | grep -q '^run:'; then running=1; sv stop $WIFI >/dev/null; fi
 ifconfig wlan0 down 2>/dev/null
 echo 0 >/sys/class/rtc/rtc0/wakealarm	# clear any old alarm: a new one can't be set over it
 [ "${1:-0}" -gt 0 ] && echo "+$(($1 * 60))" >/sys/class/rtc/rtc0/wakealarm
 echo mem >/sys/power/state
+poweroff_if_empty
 if [ "$running" ]; then sv start $WIFI >/dev/null; fi

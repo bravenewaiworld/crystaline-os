@@ -11,7 +11,8 @@ The Brick's two USB-C ports: how the bottom port decides between charging from a
 - **5 V for a device on the bottom port comes from the AXP2202's boost plus its VBUS switch** (register 0x19 bit 4 and 0x13 bit 0), as TrimUI's kernel does it (2026-10-11). Mainline's AXP717 boost regulator sets only the first, which gives 0 V here.
 - **Device mode is a USB network link (NCM)** (2026-10-10). Linux PCs support NCM without drivers. Rejected: adb (TrimUI's; our system has no `adbd`, and TrimUI's kills a session's processes when it ends); RNDIS (never weighed: NCM was picked to get SSH from a Linux development PC); MTP and USB mass storage for now (they race with the system's own writes and corrupt the card; [system-image.md](system-image.md)).
 - **The link uses fixed addresses: the Brick is 192.168.7.2 and hands the PC one of 192.168.7.10–20 by DHCP, with no gateway or DNS** (2026-10-11), so the PC's internet routing is untouched and scripts can reach the device without discovery.
-- **The top port is host only, with its 5 V always on while awake and off in sleep** (2026-10-12). It has no ID or CC detection, so there is nothing to switch on. Whether to switch its 5 V off while awake is a power-policy question ([power.md](power.md)).
+- **The top port is host only, with its 5 V on while awake and off in sleep** (2026-10-12). It has no ID or CC detection, so there is nothing to switch on, and a user plugging in a pad or a drive expects it to work.
+- **Specular may switch the top port off while awake: `brick-power usb-top off`, refused while a USB device is attached** (2026-10-18). It unbinds the port's two host-controller drivers (`sunxi-ohci`, `sunxi-ehci` for `5200000.*1-controller`), the only users of its 5 V regulator (`usb1-vbus`, PL8), which also stops their clocks and the port's PHY clock; `on` binds them again. Refused with a device attached, since a drive in use would be cut off; Specular asks the user. Nothing persists: each start-up begins with the port on ([power.md](power.md)). Rejected: a regulator "userspace consumer" (not built, and the host drivers hold the regulator, so it would stay on); the vendor drivers' `ehci_enable`/`ohci_enable` files (not symmetric: writing 1 switches the 5 V back on only for port 0).
 - **Nothing on a USB drive is mounted automatically** (2026-10-11). Stock's automounting mounted drives over the data card's mount point, hiding it. When to mount a drive on either port, where (not over the data card) and how to remove it safely is decided once there is a use for drives, e.g. games on a drive (2026-10-18).
 - **Sharing the card with a PC (planned for V1): Specular hands it over on request** (2026-10-18). It saves and quits any game, stops everything that writes the data partition (WebDAV, logs), unmounts it and exposes it as USB mass storage. When the PC ejects it or the cable is pulled, the device runs a FAT check and mounts it again; that check also repairs a cable pulled mid-write.
 
@@ -23,7 +24,7 @@ The Brick's two USB-C ports: how the bottom port decides between charging from a
 |---|---|---|
 | Roles | device (MUSB `udc`) or host (`ehci0`/`ohci0`) | host only (`ehci1`/`ohci1`) |
 | Role chosen by | AXP2202 USB-C state, through extcon | – |
-| 5 V out | AXP2202 `drivevbus` regulator, in host role | PL8, a fixed regulator, always on while awake |
+| 5 V out | AXP2202 `drivevbus` regulator, in host role | PL8, a fixed regulator, on while awake unless switched off (`brick-power usb-top`) |
 | Charging | yes; limit from BC1.2 | no |
 
 ### Role from cable state

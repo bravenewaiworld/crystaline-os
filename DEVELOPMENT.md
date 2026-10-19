@@ -29,6 +29,7 @@
 - **Start-up progress codes** are written to a clock-chip register that survives resets. Boot another card and read it to see how far a failed start got.
 - **Start-up failures** are shown on screen.
 - **Installer logs** go to `logs/` on the SD card.
+- **Power settings and the battery:** `brick-power` (no arguments) prints the CPU profile, the CPU speeds and thermal step in effect, the governor's sampling, the GPU clock, the top USB port and the battery guard's verdict. `/usr/libexec/brick/battery-guard state` takes one battery sample. The guard logs (tag `battery-guard`) every sample while the battery is low; `logread | /usr/libexec/brick/battery-guard replay` (or the same on the PC, from a copy of the log) shows what it decided and why. To watch a discharge without the guard powering off: `sv stop battery-guard; setsid sh -c 'DRY_RUN=1 /usr/libexec/brick/battery-guard | logger -t battery-guard' &` (until the next start-up).
 - **Kernel facilities:**
   - perf events: hardware counters and sampling (below). Tracepoints and probes are not available (so no `perf trace`, `perf sched`, `perf probe`): kernel tracing (`FTRACE`, `KPROBES`, `UPROBES`) is off.
   - debugfs.
@@ -71,12 +72,13 @@ The kernel is the same in both kinds of image, with the same facilities ("Kernel
 
 ## Testing
 
-Each test prints PASS, or FAIL and the first failure. `make test-timezone` runs its script under a PC build of the device's BusyBox (`tools/system/pc-busybox.sh`, into `build/pc-busybox/`, rebuilt when Buildroot's BusyBox configuration changes), so it sees BusyBox's shell and tools, as on the device. Before `make buildroot` it uses the PC's, and says so.
+Each test prints PASS, or FAIL and the first failure. `make test-battery-guard` and `test-timezone` run their script under a PC build of the device's BusyBox (`tools/system/pc-busybox.sh`, into `build/pc-busybox/`, rebuilt when Buildroot's BusyBox configuration changes), so it sees BusyBox's shell and tools, as on the device. Before `make buildroot` they use the PC's, and say so.
 
 - **Installer test harness** (`make test-installer`, after `make sd-card`): runs the internal-storage installer on the PC against image files of a stock device and our SD card. It covers install, backup, restore, and installs and restores cut short. Root is not needed.
+- **Battery guard test** (`make test-battery-guard`): runs the low-battery guard on the PC over sequences of samples (confused gauge, voltage dips, charging, a weak cable, a missing or unreadable battery) and against a fake battery.
 - **Bluetooth start-up test** (`make test-xr829-attach`, about 40 s): runs a PC build of `xr829-attach`, with every path under a fake root (`-DTEST_ROOT`), against a fake XR829 on a pty (`tools/system/test-xr829-attach.py`). The fake checks the boot ROM checksums, the port's speed and flow control at each stage, the uploaded firmware and the HCI commands. It covers the address (derived, kept, replaced), a boot ROM that answers late, reports an error or never answers, unexpected and refused HCI commands, the 20 s limit, and a missing chip ID or rfkill switch. Needs gcc and Python 3; root is not needed.
 - **Time zone test** (`make test-timezone`): runs `brick-timezone` on the PC against a fake root with the PC's zone files and a stub `hwclock`. It covers zone names refused and accepted, the link glibc reads, the kernel's offset given only on a change and retried after a failure, and a zone file that has gone. Under BusyBox, the script sees only BusyBox's tools and the stubs. Needs the PC's tzdata.
-- **Overnight power test** (`powertest`): logs battery drain across deep sleep, idle and load to the SD card.
+- **Overnight power test** (`powertest`): logs battery drain across deep sleep, idle and load to the SD card. The settings it compares are chosen from the environment (`TUNED_PROFILE`, `TUNED_USB_TOP`, `TUNED_SAMPLING`; see its header).
 
 ## On-device tools
 
@@ -90,7 +92,7 @@ In development images. Release images have only `sleepnow` and `status`; `make d
 | `i2creg` | Read/write a register over I2C |
 | `memreg` | Read/write a physical memory register |
 | `blkro` | Mark a block device read-only |
-| `sleepnow` | Deep sleep now (stops WiFi first) |
+| `sleepnow` | Deep sleep now (stops WiFi first; powers off instead with the battery empty) |
 | `powertest` | Overnight power test |
 | `status` | Hardware status screen; also the fallback frontend and the start-up error screen |
 
