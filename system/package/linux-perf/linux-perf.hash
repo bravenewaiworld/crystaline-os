@@ -1,0 +1,4 @@
+# From https://cdn.kernel.org/pub/linux/kernel/tools/perf/v6.18.0/sha256sums.asc
+sha256  6e70e300fdf7395dfa8aa33c14ef45ffe3d95fe8cf890fe42a52f8c4346ce927  perf-6.18.0.tar.xz
+# Locally computed
+sha256  fb5a425bd3b3cd6071a3a9aff9909a859e7c1158d54d32e07658398cd67eb6a0  COPYING

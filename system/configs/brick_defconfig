@@ -63,6 +63,17 @@ BR2_PACKAGE_UTIL_LINUX_BINARIES=y
 BR2_PACKAGE_UTIL_LINUX_PARTX=y
 BR2_PACKAGE_ZSTD=y
 
+# Debugging (DEVELOPMENT.md): strace, perf (system/package/linux-perf), and gdbserver with a cross
+# gdb for the PC (host/bin/aarch64-buildroot-linux-gnu-gdb). strace's call stacks (strace -k) use
+# elfutils' libdw, which nothing asks for: strace finds it only because perf brings elfutils and
+# Buildroot builds packages one at a time in name order. Without perf, -k is gone.
+BR2_PACKAGE_STRACE=y
+BR2_PACKAGE_LINUX_PERF=y
+BR2_PACKAGE_GDB=y
+BR2_PACKAGE_GDB_SERVER=y
+# BR2_PACKAGE_GDB_DEBUGGER is not set
+BR2_PACKAGE_HOST_GDB=y
+
 # Output: a tar of the root filesystem, which build-system.sh extends and packs into squashfs
 # (with the host's sqfstar, so no root rights are needed for file owners).
 BR2_TARGET_ROOTFS_TAR=y

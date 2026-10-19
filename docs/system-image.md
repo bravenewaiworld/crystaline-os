@@ -89,4 +89,8 @@ One-time import at start-up: a `wpa_supplicant.conf` at the card's root (its `ct
 - (2026-10-11, device) TrimUI's `adbd` kills a session's processes when the session ends, and sometimes comes up without the USB network link. Source: test card.
 - (2026-10-11, stock) TrimUI's BlueZ keeps its storage in `/etc/lib/bluetooth`, and its `hciattach` keeps the XR829's address in `/etc/bluetooth/xr_bt.conf`, writing a random one there if missing; on a read-only root the address (and so every pairing) would change each boot. Source: stock rootfs, `hciattach_xradio.c`.
 - (2026-10-14, device) A freshly written card got its data partition (28 GB) on the first start, with WebDAV up. Source: device check after commit 8f03615.
+- (2026-10-18, device) The kernel registers the CPU's performance counters (`armv8_pmuv3`, CPUs 0–3) from the device tree's `pmu` node, which gives them one interrupt per CPU (SPI 140–143). They don't appear in `/proc/interrupts` until perf first uses the counters: the driver requests them then. Source: `/sys/bus/event_source/devices/`, `/proc/device-tree/pmu`; `linux/drivers/perf/arm_pmu.c` (`armpmu_reserve_hardware`).
 
+## Open questions
+
+- Do the performance counters' interrupts fire? `perf record` needs them. `perf record -a -- sleep 5` collecting samples, and the `arm-pmu` lines in `/proc/interrupts` counting up on every CPU, would answer it.

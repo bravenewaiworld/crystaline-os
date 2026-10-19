@@ -1,0 +1,11 @@
+config BR2_PACKAGE_LINUX_PERF
+	bool "linux-perf"
+	depends on BR2_USE_WCHAR && !BR2_STATIC_LIBS && BR2_TOOLCHAIN_HAS_THREADS # elfutils
+	select BR2_PACKAGE_ELFUTILS
+	select BR2_PACKAGE_ZLIB
+	select BR2_PACKAGE_ZSTD
+	help
+	  perf, the kernel's profiler, from kernel.org's standalone perf
+	  release. Buildroot's own (linux-tools) needs a kernel built by
+	  Buildroot, and ours isn't. Not named "perf": linux-tools
+	  already defines that package's variables.

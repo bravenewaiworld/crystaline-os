@@ -28,7 +28,7 @@
 - **Start-up failures** are shown on screen.
 - **Installer logs** go to `logs/` on the SD card.
 - **Kernel facilities:**
-  - perf events (the kernel side; the `perf` tool isn't in the image yet).
+  - perf events: hardware counters and sampling (below). Tracepoints and probes are not available (so no `perf trace`, `perf sched`, `perf probe`): kernel tracing (`FTRACE`, `KPROBES`, `UPROBES`) is off.
   - debugfs.
   - Magic SysRq.
   - The running kernel's configuration at `/proc/config.gz`.
@@ -39,7 +39,20 @@
 - **Not yet available:**
   - A persistent system log.
   - Kernel crash records (built in, but with no storage to write to).
-  - `perf`, `gdbserver` and `strace` in the image.
+
+## Debugging programs
+
+`strace`, `gdbserver` and `perf` are in every image.
+
+- **strace:** `strace -p <pid>`, or `strace <command>`; `-k` adds each call's stack.
+- **perf:** `perf stat -p <pid>` counts CPU events; `perf record --call-graph dwarf -p <pid> -- sleep 10` then `perf report` samples where time goes (`-g` instead of `--call-graph dwarf` is cheaper, but our programs are built without frame pointers, so its stacks are cut short); `perf top` shows it live. Programs in the image are stripped, so perf names only the functions a program exports; for the rest, run a build that keeps its symbols (below).
+- **gdb**, from the PC, with the cross gdb Buildroot builds:
+  1. On the device: `gdbserver --attach :2345 <pid>`, or `gdbserver :2345 <program> <args>`.
+  2. On the PC: `build/buildroot/host/bin/aarch64-buildroot-linux-gnu-gdb -x build/buildroot/staging/usr/share/buildroot/gdbinit <program>`, then `target remote 192.168.7.2:2345`. `<program>` is the PC's copy of what runs on the device, with its symbols. The gdbinit points gdb at Buildroot's copies of the device's libraries (in `build/buildroot/staging`); those have function names but no line numbers. TrimUI's GPU libraries aren't there; `set solib-search-path $PWD/build/stock-root/usr/lib` finds them.
+- **Builds that keep symbols:**
+  - Our C programs: `rm build/tools/<tool>; make DEBUG=1 $PWD/build/tools/<tool>` (or `build/userspace/padbridge`; the Makefile names each program by its full path, so give that), then copy the result to the device: to `/tmp` to run it from there, or into the developer layer to replace the installed one. gdb's copy is the same file. It is still built with `-O2`, so gdb shows some variables as optimized out. `make system` would pack this build into the image; rebuild it the same way without `DEBUG=1` first.
+  - Specular: `CARGO_PROFILE_RELEASE_STRIP=false CARGO_PROFILE_RELEASE_DEBUG=true make deploy-specular`; gdb's copy is `build/specular/aarch64-unknown-linux-gnu/release/specular`.
+  - Buildroot's programs keep theirs in `build/buildroot/build/<package>/`.
 
 ## Testing
 

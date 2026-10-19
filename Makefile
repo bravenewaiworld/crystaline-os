@@ -11,10 +11,12 @@ STOCK_FW := $(call env,STOCK_FW)
 export STAGING_DIR := $(call env,STAGING_DIR)
 
 CC := $(CROSS_COMPILE)gcc
-CFLAGS := -O2 -Wall -Wextra
+# DEBUG=1 (any value) keeps symbols and adds debug information to our C programs, for gdb
+# (DEVELOPMENT.md). The code is the same as without it.
+CFLAGS := -O2 -Wall -Wextra $(if $(DEBUG),-g)
 # Static, so on-device tools don't depend on the device's libraries. This toolchain's static
 # glibc also needs the unwinder (-lgcc_eh).
-STATIC := -static -s -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
+STATIC := -static $(if $(DEBUG),,-s) -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 
 .PHONY: help all kernel gpu userspace specular installer device-tools buildroot system \
 	sd-card update-device deploy-specular run-specular test-installer install-image clean
