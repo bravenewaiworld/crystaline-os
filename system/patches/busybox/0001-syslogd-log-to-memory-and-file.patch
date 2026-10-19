@@ -1,0 +1,21 @@
+syslogd: with both -C and -O, log to the memory buffer and the file
+
+syslogd -C logs only to the memory buffer (read with logread) and ignores -O. The system log
+goes to both: the buffer for logread, and a file on the system partition that survives reboots.
+syslogd -C alone still logs only to the buffer.
+
+Upstream: not submitted
+
+--- a/sysklogd/syslogd.c
++++ b/sysklogd/syslogd.c
+@@ -893,7 +893,9 @@
+ #if ENABLE_FEATURE_IPC_SYSLOG
+ 		if ((option_mask32 & OPT_circularlog) && G.shbuf) {
+ 			log_to_shmem(G.printbuf);
+-			return;
++			/* With -O as well: also to that file */
++			if (!(option_mask32 & OPT_outfile))
++				return;
+ 		}
+ #endif
+ 		log_locally(now, G.printbuf, &G.logFile);

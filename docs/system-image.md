@@ -11,7 +11,8 @@ The system that runs on the Brick: how it is built, what it contains, how it sta
 - **glibc, with 4.9 kernel headers** (2026-10-14). TrimUI's GPU libraries need glibc 2.17 or newer; headers must not be newer than the kernel.
 - **BusyBox init with BusyBox's runit applets supervising every service** (2026-10-14). `runsvdir` restarts any service that exits; `sv` stops, starts and checks them. Packages' own start scripts are deleted. Services that need another check it with `sv check` and exit, to be retried a second later.
 - **The root filesystem is read-only** (squashfs, zstd) (2026-10-14). What must be written links into the state area on the system partition; services' control files live in a RAM copy of `/etc/sv`.
-- **The system log is kept in memory only** (512 KiB, `syslogd -C`) (2026-10-14), so logging never wears storage. Start-up has its own logs on disk (below).
+- **The system log is kept in memory and in a file on the system partition** (2026-10-18): `logread` reads the memory copy (512 KiB), and `/system/logs/messages` keeps what happened before a reboot, a crash or a freeze. The file is rotated at 512 KiB with one older file kept, so it takes at most 1 MiB; ext4 writes out every 5 s, so log lines reach storage in batches. BusyBox's `syslogd` does either one; our patch makes it do both (`system/patches/busybox`). Start-up has its own logs on disk (below). Rejected: memory only (2026-10-14, so logging never wore storage; but nothing survived a reboot).
+- **The kernel's messages go into the system log too** (BusyBox `klogd`) (2026-10-18), so that they are kept with what the services logged at the time, across reboots, rather than only in the kernel's small buffer (`dmesg`). It leaves the console's level alone (warnings only).
 - **User data lives on the SD card's FAT32 data partition, also when the system is installed on the eMMC** (2026-10-11). For portability and accessibility: the card is what users move between PC and device, any PC reads FAT32, and the system can be replaced without touching games and saves. Filesystem details: [storage.md](storage.md).
 - **File transfer: WebDAV first, then our own browser page; no MTP** (2026-10-11). `dufs` serves the data partition on port 80, both as WebDAV (mountable in PC file managers) and as a basic browser page, over WiFi or the USB network link. Rejected for now: MTP and USB mass storage. Either lets a PC write the card while the device may also be writing it, which corrupts the filesystem ([Knulli's warning](https://knulli.org/play/add-games/accessing-via-usb/)); they come once there is a safe way to hand the card over ([usb.md](usb.md)).
 - **WiFi is down at start-up; Specular brings it up and down** as its setting says, unloading the driver when off (2026-10-14). Networks are saved by `wpa_supplicant` itself in the state area ([wireless.md](wireless.md)).
@@ -41,7 +42,8 @@ Owners come from Buildroot's tar (`tar-with-owners.py` → `sqfstar`), so no roo
 
 | Service | What | Waits for |
 |---|---|---|
-| `syslogd` | in-memory system log | |
+| `syslogd` | system log, in memory and in `/system/logs/messages` | |
+| `klogd` | the kernel's messages into the system log | the system log's socket |
 | `dbus` | system message bus | |
 | `bluetoothd`, `bluealsa` | Bluetooth, Bluetooth audio output | `dbus` |
 | `hciattach` | attaches the XR829's Bluetooth (TrimUI's binary) | |
@@ -53,7 +55,7 @@ Owners come from Buildroot's tar (`tar-with-owners.py` → `sqfstar`), so no roo
 | `wpa_supplicant`, `wifi-dhcp` | WiFi (down until Specular starts them) | `wpa_supplicant` |
 | `ntpd` | clock from the network | a default route (checks every 30 s) |
 
-Shutdown (`rcK`): stop every service, waiting up to 10 s (Specular saves the running game), `sync`, unmount the data card.
+Shutdown (`rcK`): stop every service but the system log and `klogd`, waiting up to 10 s (Specular saves the running game), `sync`, unmount the data card. init then ends the rest and syncs again.
 
 ### Where things live
 
@@ -65,7 +67,8 @@ Shutdown (`rcK`): stop every service, waiting up to 10 s (Specular saves the run
 │   ├── bluetooth/      xr_bt.conf (controller address) and BlueZ's pairings
 │   ├── wifi/           wpa_supplicant.conf (saved networks, mode 600)
 │   └── machine-id      D-Bus machine ID
-└── logs/               init.log, rcS.log (replaced each start), install.log after an install
+└── logs/               init.log, rcS.log (replaced each start), install.log after an install,
+                        messages, messages.0 (the system log)
 
 /mnt/SDCARD  (FAT32 data partition, label BRICK)
 ├── roms/  bios/  saves/  configs/
@@ -89,6 +92,7 @@ One-time import at start-up: a `wpa_supplicant.conf` at the card's root (its `ct
 - (2026-10-11, device) TrimUI's `adbd` kills a session's processes when the session ends, and sometimes comes up without the USB network link. Source: test card.
 - (2026-10-11, stock) TrimUI's BlueZ keeps its storage in `/etc/lib/bluetooth`, and its `hciattach` keeps the XR829's address in `/etc/bluetooth/xr_bt.conf`, writing a random one there if missing; on a read-only root the address (and so every pairing) would change each boot. Source: stock rootfs, `hciattach_xradio.c`.
 - (2026-10-14, device) A freshly written card got its data partition (28 GB) on the first start, with WebDAV up. Source: device check after commit 8f03615.
+- (2026-10-18, upstream) BusyBox 1.37's `syslogd -C` logs only to the memory buffer and ignores `-O FILE`. Source: `sysklogd/syslogd.c`, `process_line`'s end.
 - (2026-10-18, device) The kernel registers the CPU's performance counters (`armv8_pmuv3`, CPUs 0–3) from the device tree's `pmu` node, which gives them one interrupt per CPU (SPI 140–143). They don't appear in `/proc/interrupts` until perf first uses the counters: the driver requests them then. Source: `/sys/bus/event_source/devices/`, `/proc/device-tree/pmu`; `linux/drivers/perf/arm_pmu.c` (`armpmu_reserve_hardware`).
 
 ## Open questions

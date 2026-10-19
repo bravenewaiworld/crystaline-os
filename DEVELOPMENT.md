@@ -22,7 +22,7 @@
 
 ## Seeing what happened
 
-- **System log.** All service output, Specular's included, goes to the in-memory system log (`logread`). It is lost on reboot.
+- **System log.** All service output, Specular's included, and the kernel's messages go to the system log: `logread` (`-f` to follow) shows this start's, from memory; `/system/logs/messages` and the older `messages.0` keep up to 1 MiB across reboots.
 - **Start-up logs** are kept on the system partition. A copy goes to a FAT partition a PC can read (`brick-log/`: log, kernel messages, process list), refreshed every second during start-up, so a start that ends in a reset still leaves them.
 - **Start-up progress codes** are written to a clock-chip register that survives resets. Boot another card and read it to see how far a failed start got.
 - **Start-up failures** are shown on screen.
@@ -37,7 +37,6 @@
   - I2C device files.
 - **Expensive kernel debugging is off by default:** slab, mutex and VM checks. Slab checks cost a GPU-heavy game about 12 %.
 - **Not yet available:**
-  - A persistent system log.
   - Kernel crash records (built in, but with no storage to write to).
 
 ## Debugging programs

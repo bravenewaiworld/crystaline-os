@@ -1,6 +1,8 @@
 #!/bin/sh
 # Shutdown and reboot: stop every service (Specular saves the running game when told to stop),
-# waiting up to 10 s, then unmount the data card so its last writes reach it.
-sv -w 10 force-stop /etc/service/* >/dev/null 2>&1
+# waiting up to 10 s, then unmount the data card so its last writes reach it. The system log (and
+# klogd, which feeds it the kernel's messages) keeps running, so it records the others stopping;
+# init's sync after it ends the remaining processes saves the end of /system/logs/messages.
+sv -w 10 force-stop $(ls -d /etc/service/* | grep -v -e '/syslogd$' -e '/klogd$') >/dev/null 2>&1
 sync
 umount /mnt/SDCARD 2>/dev/null

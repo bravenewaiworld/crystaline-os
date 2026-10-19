@@ -1,0 +1,11 @@
+#!/bin/sh
+# Copies the kernel's messages into the system log, so they are kept with everything else
+# (/system/logs/messages) rather than only in the kernel's small buffer (dmesg). Its first start
+# copies every message still in that buffer (all since boot, unless it filled up); a restart
+# carries on where the last one stopped. No -c: the console's log level stays as set at boot
+# (warnings and worse, DEVELOPMENT.md). Starts only once syslogd's socket exists, exiting
+# otherwise (retried a second later): klogd's reads take messages out of the kernel's buffer, so
+# any it sent before syslogd listened would be lost.
+exec 2>&1
+[ -S /dev/log ] || exit 1
+exec klogd -n

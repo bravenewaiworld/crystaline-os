@@ -1,4 +1,6 @@
 #!/bin/sh
-# The system log, kept in memory (-C: 512 KiB); read it with logread. Nothing is written to
-# storage, so logging never wears it.
-exec syslogd -n -C512
+# The system log, both in memory for logread (-C: 512 KiB) and in /system/logs/messages on the
+# system partition, which survives reboots. The file is rotated at 512 KiB, keeping one older file
+# (messages.0), so it takes at most 1 MiB of the system partition. -C and -O together need our
+# BusyBox patch (system/patches/busybox).
+exec syslogd -n -C512 -O /system/logs/messages -s 512 -b 1
