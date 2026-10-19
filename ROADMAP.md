@@ -208,6 +208,7 @@ Completed:
 
 Built, to test on the device:
 - WebDAV runs only while Specular's file-transfer screen is open, as an unprivileged user
+- Fixed: the file server couldn't listen as that user (the vendor kernel let only root and an Android group create network sockets; that restriction is now off)
 - Our own browser page for uploading and downloading games, saves and BIOS (uploads go to a temporary name first)
 
 ### Development and Debugging

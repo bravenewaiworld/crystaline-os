@@ -1,6 +1,6 @@
 # System image
 
-Status: In progress · Updated: 2026-10-18
+Status: In progress · Updated: 2026-10-19
 
 The system that runs on the Brick: how it is built, what it contains, how it starts its services, where its state and the user's files live, how files get to and from a PC, and how developers get in. It replaces TrimUI's system entirely; only the bootloaders and a few closed binaries remain from TrimUI ([platform.md](platform.md)).
 
@@ -157,6 +157,7 @@ Uploads run one at a time. A file is sent straight from disk (the browser never 
 - (2026-10-18, upstream) OpenSSH (without PAM) refuses every login, keys too, to an account whose password field starts with `!`; `*` only means no password matches. Source: OpenSSH 10.2 `platform.c` (`platform_locked_account`), `LOCKED_PASSWD_PREFIX` in its Linux build's `config.h`.
 - (2026-10-18, upstream) `sqfstar` (squashfs-tools 4.6) keeps extended attributes given in a tar's `SCHILY.xattr.*` headers, so a file capability can be set without root rights. Source: squashfs-tools `tar.c`; checked with an extracted image.
 - (2026-10-18, device) The kernel registers the CPU's performance counters (`armv8_pmuv3`, CPUs 0–3) from the device tree's `pmu` node, which gives them one interrupt per CPU (SPI 140–143). They don't appear in `/proc/interrupts` until perf first uses the counters: the driver requests them then. Source: `/sys/bus/event_source/devices/`, `/proc/device-tree/pmu`; `linux/drivers/perf/arm_pmu.c` (`armpmu_reserve_hardware`).
+- (2026-10-19, device) dufs, as `www-data`, failed to start with "Failed to bind `0.0.0.0:80`: Permission denied", though `/usr/bin/dufs` had its capability (`unsquashfs -pf` shows `security.capability` as revision 2 with `cap_net_bind_service`, the format Linux 4.9 reads). The vendor kernel had `CONFIG_ANDROID_PARANOID_NETWORK` (on by default in the vendor kernel): only root, holders of `CAP_NET_RAW` and members of Android's group 3003 (`AID_INET`) may create network sockets, so the server failed before it could use the capability. It is now off in our kernel configuration. Source: linux `net/ipv4/af_inet.c`, `net/ipv6/af_inet6.c` (`current_has_network`).
 
 ## Open questions
 
