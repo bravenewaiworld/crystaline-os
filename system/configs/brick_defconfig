@@ -30,6 +30,11 @@ BR2_TARGET_ENABLE_ROOT_LOGIN=y
 BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_BRICK_PATH)/board/brick/rootfs-overlay"
 BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_BRICK_PATH)/board/brick/post-build.sh"
 BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_BRICK_PATH)/board/brick/busybox.fragment"
+# Time zones for brick-timezone. BR2_TARGET_LOCALTIME is empty so that Buildroot makes no
+# /etc/localtime: post-build.sh links it into the state area (and drops the zones' leap-second
+# variants, right/).
+BR2_TARGET_TZ_INFO=y
+BR2_TARGET_LOCALTIME=""
 
 # Sound: amixer sets the volume (Specular); bluez-alsa plays to Bluetooth headphones.
 BR2_PACKAGE_ALSA_UTILS=y

@@ -1,0 +1,73 @@
+#!/bin/sh
+# brick-timezone: the time zone local times are shown in, and SD card files are stamped with.
+#   get        prints the zone, e.g. "Europe/Paris"; UTC until one is set
+#   set ZONE   makes ZONE (a name under /usr/share/zoneinfo, e.g. from list) the zone, and prints it
+#   list       prints the zones to choose from (UTC, then those of tzdata's zone.tab), one per line
+#   kernel     gives the kernel the zone's current offset from UTC, if it changed. Run by rcS at
+#              start-up, by set, and each minute by the timezone-offset service (to follow daylight
+#              saving time). A failure is only logged: set still succeeds.
+# The clocks (the system's and the clock chip's) stay in UTC. /etc/localtime links to
+# /var/state/time/localtime, which links to the zone's file; glibc reads it, so programs see the
+# new zone from their next localtime() or tzset(); a program that only calls localtime_r keeps
+# the zone it loaded first. Choosing the zone automatically is Specular's (it asks the user
+# before telling a lookup service the network's address); it then calls set. Errors go to the
+# system log (tag brick-timezone) and stderr.
+# BRICK_ROOT: a directory to use as the root, for testing on a PC.
+R=${BRICK_ROOT:-}
+ZONEINFO=/usr/share/zoneinfo	# without $R: the links' targets are paths on the device
+LINK=$R/var/state/time/localtime
+OFFSET=$R/run/brick-timezone.offset	# the offset last given to the kernel, as date +%z prints it
+
+log() { logger -s -t brick-timezone "$*"; }
+
+# zone: the zone in use; UTC if none is set or its file is gone (glibc then uses UTC too).
+zone() {
+	z=$(readlink $LINK) && [ -f "$R$z" ] && echo "${z#$ZONEINFO/}" || echo UTC
+}
+
+# valid ZONE: whether ZONE names a zone file. Only letters, digits and _+-/ (no dots, so no ".."
+# and none of zoneinfo's other files, such as zone.tab), not under posix/ or right/ (Buildroot's
+# tzdata keeps the zone files in posix/ and links each area to it, e.g. Europe -> posix/Europe),
+# and the file must be a compiled zone.
+valid() {
+	case $1 in '' | *[!A-Za-z0-9_+/-]* | /* | */ | posix/* | right/*) return 1 ;; esac
+	[ "$(head -c 4 "$R$ZONEINFO/$1" 2>/dev/null)" = TZif ]
+}
+
+# kernel: the kernel's own zone offset (sys_tz) is what the FAT driver converts SD card file times
+# with (FAT stores local times). It is a plain offset, so it must follow daylight saving time. -u
+# is essential: the kernel's first zone setting since boot otherwise takes the clock chip for local
+# time, shifts the system clock and from then on writes local time to the clock chip. With -u,
+# hwclock first sets offset 0, which uses up that one-time behaviour harmlessly.
+kernel() {
+	off=$(date +%z)
+	[ "$off" != "$(cat $OFFSET 2>/dev/null)" ] || return 0
+	e=$(hwclock -u --systz 2>&1) || { log "can't give the kernel the offset $off: $e"; return 1; }
+	echo "$off" >$OFFSET && log "kernel time zone offset $off"
+}
+
+case $1 in
+get)
+	zone
+	;;
+set)
+	valid "$2" || { echo "brick-timezone: no time zone \"$2\" (see brick-timezone list)" >&2; exit 1; }
+	old=$(zone)
+	# The link is replaced in one step, so a program never finds none.
+	mkdir -p ${LINK%/*} && ln -sfn "$ZONEINFO/$2" $LINK.new && mv -f $LINK.new $LINK ||
+		{ log "can't save the zone $2"; exit 1; }
+	[ "$old" = "$2" ] || log "time zone $old -> $2"
+	kernel
+	zone
+	;;
+list)
+	{ echo UTC; grep -v '^#' $R$ZONEINFO/zone.tab | cut -f 3 | sort; }
+	;;
+kernel)
+	kernel
+	;;
+*)
+	echo "usage: brick-timezone get | set ZONE | list | kernel" >&2
+	exit 2
+	;;
+esac

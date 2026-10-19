@@ -44,7 +44,7 @@ Owners come from Buildroot's tar (`tar-with-owners.py` → `sqfstar`), so no roo
 
 ### Start-up
 
-`rcS` (output to `/system/logs/rcS.log`, since the system log isn't running yet): mount `/run`, `/tmp`, `/dev/pts`, `/dev/shm`; `mdev` for devices and hotplug; load the GPU modules; mount the data card (`mount-card`, [storage.md](storage.md)); prepare the state area; copy `/etc/sv` to `/run/sv`. Then `runsvdir` starts:
+`rcS` (output to `/system/logs/rcS.log`, since the system log isn't running yet): mount `/run`, `/tmp`, `/dev/pts`, `/dev/shm`; `mdev` for devices and hotplug; load the GPU modules; give the kernel the time zone's offset (`brick-timezone kernel`, for file times on the card); mount the data card (`mount-card`, [storage.md](storage.md)); prepare the state area; copy `/etc/sv` to `/run/sv`. Then `runsvdir` starts:
 
 | Service | What | Waits for |
 |---|---|---|
@@ -60,6 +60,7 @@ Owners come from Buildroot's tar (`tar-with-owners.py` → `sqfstar`), so no roo
 | `webdav` | `dufs` on the data card, port 80 (down until Specular's File transfer screen) | data card mounted (else stays down) |
 | `wpa_supplicant`, `wifi-dhcp` | WiFi (down until Specular starts them) | `wpa_supplicant` |
 | `ntpd` | clock from the network | a default route (checks every 30 s) |
+| `timezone-offset` | the kernel's time zone offset for SD card file times, checked each minute ([power.md](power.md)) | |
 
 Shutdown (`rcK`): stop every service but the system log and `klogd`, waiting up to 10 s (Specular saves the running game), `sync`, unmount the data card. init then ends the rest and syncs again.
 
@@ -72,6 +73,7 @@ Shutdown (`rcK`): stop every service but the system log and `klogd`, waiting up 
 ├── state/              kept across versions; /var/state links here
 │   ├── bluetooth/      xr_bt.conf (controller address) and BlueZ's pairings
 │   ├── wifi/           wpa_supplicant.conf (saved networks, mode 600)
+│   ├── time/           localtime: the time zone (brick-timezone, power.md); /etc/localtime links here
 │   ├── ssh/            release images only: this device's SSH host keys (made on its first start),
 │   │                   authorized_keys (imported by brick-ssh), on (present while SSH is on)
 │   └── machine-id      D-Bus machine ID

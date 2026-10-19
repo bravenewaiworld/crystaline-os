@@ -23,3 +23,9 @@ ln -s /var/state/bluetooth "$T/var/lib/bluetooth"
 # D-Bus needs a machine ID that stays the same (its package links /var/lib/dbus/machine-id to
 # /etc/machine-id); the state script makes it once.
 ln -sfn /var/state/machine-id "$T/etc/machine-id"
+
+# The time zone, which brick-timezone keeps in the state area. Until it first sets one,
+# /var/state/time/localtime doesn't exist and glibc uses UTC.
+ln -sfn /var/state/time/localtime "$T/etc/localtime"
+# The zones' leap-second variants: nothing uses them.
+rm -rf "$T/usr/share/zoneinfo/right"

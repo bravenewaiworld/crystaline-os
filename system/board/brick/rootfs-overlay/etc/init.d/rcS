@@ -23,6 +23,9 @@ mdev -s
 modprobe pvrsrvkm
 modprobe dc_sunxi
 
+# The kernel's time zone offset, before the card is mounted: the FAT driver converts file times
+# with it (see brick-timezone).
+brick-timezone kernel
 /usr/libexec/brick/mount-card
 progress 0x11
 # State that survives reboots and updates, on the system partition (see usr/libexec/brick/state).

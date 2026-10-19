@@ -1,0 +1,10 @@
+#!/bin/sh
+# Keeps the kernel's time zone offset, which SD card file times are converted with, current
+# through daylight saving time changes (brick-timezone kernel). It checks every minute the
+# device is awake (sleep's countdown pauses during deep sleep, so the first check after waking
+# comes within a minute). brick-timezone logs itself.
+exec >/dev/null 2>&1
+while :; do
+	brick-timezone kernel
+	sleep 60
+done

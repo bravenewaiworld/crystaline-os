@@ -2,7 +2,7 @@
 
 Status: In progress · Updated: 2026-10-18
 
-Everything that decides how long the TrimUI Brick runs on a charge: the power chip (X-Powers AXP2202) and the separate CPU voltage regulator (TCS4838), the battery gauge and charger, CPU speed and its voltages, thermal limits, deep sleep, the system clock that survives sleep, and how we measure drain. Battery life is one of the project's goals, and most of it is decided here and by the display's idle behaviour ([display.md](display.md)).
+Everything that decides how long the TrimUI Brick runs on a charge: the power chip (X-Powers AXP2202) and the separate CPU voltage regulator (TCS4838), the battery gauge and charger, CPU speed and its voltages, thermal limits, deep sleep, the system clock that survives sleep and its time zone, and how we measure drain. Battery life is one of the project's goals, and most of it is decided here and by the display's idle behaviour ([display.md](display.md)).
 
 ## Decisions
 
@@ -16,6 +16,10 @@ Everything that decides how long the TrimUI Brick runs on a charge: the power ch
 - **Deep sleep through TrimUI's firmware, as stock's kernel is configured** (2026-10-11). The kernel suspends through PSCI `SYSTEM_SUSPEND` into TrimUI's TF-A and the "arisc" power-management firmware, without Allwinner's `SUNXI_SUSPEND` path. Rejected: suspend-to-idle (rails and clocks stay up; the only option without the arisc firmware, since crust has no A133 support).
 - **Panel 3.3 V switched with the panel; 1.8 V I/O rail always on** (2026-10-13). CLDO4 feeds only the panel, so the panel driver cuts it with the screen and in sleep; CLDO1 also feeds the eMMC's I/O and the codec. Rumble's BLDO3 is powered only while rumbling (2026-10-11).
 - **Clock: the kernel's own clock-chip handling plus `ntpd` while there is a network** (2026-10-14). `ntpd` waits for a default route (checking every 30 s) instead of failing and logging every few seconds while WiFi is off.
+- **The clocks stay in UTC; the time zone changes only how local time is shown and SD card files are stamped** (2026-10-18). The clock chip, the kernel and `ntpd` all work in UTC, so changing the zone never moves the clock or a sleep alarm. The zone is `/etc/localtime`, which links into the state area, since the root filesystem is read-only. The default is UTC. Rejected: the `TZ` variable (it is set per process, so every program would need restarting).
+- **The system only sets the zone it is given; finding it automatically is Specular's** (2026-10-18). `brick-timezone set` is the one way to change it. Rejected: an automatic lookup in the system (a geo-IP request from udhcpc's hook on each new WiFi network): the lookup tells a third party the network's address, so it needs the user's consent, which only Specular can ask for, and Specular then also owns when to look up.
+- **File times on the SD card in local time: the kernel's own zone offset follows the zone** (2026-10-18). FAT stores local times without a zone, and PCs read them as their local time. The FAT driver converts with the kernel's zone offset (`sys_tz`) at each conversion, so `brick-timezone kernel` sets it (`hwclock -u --systz`) at start-up before the card is mounted, on `set`, and each minute the device is awake (the `timezone-offset` service), which catches daylight saving time changes and wake-ups within a minute. exFAT stores UTC with its offset, so it is right either way; its `sys_tz` mount option only helps reading entries written without an offset. Caveats: files written in the minute after a change get the old offset; files the kernel read in before a change keep the old conversion while cached, and if written back without new times they move by the change. Rejected: `time_offset=` at mount (fixed, so wrong after a daylight saving time change until remounted); UTC on the card (a PC shows every device-written time shifted by the zone's offset); computing the next change and waking for it (more code for at most a minute's gain).
+- **All of tzdata's zones are in the image, without the leap-second variants (`right/`)** (2026-10-18). About 110 KB in the squashfs (200 KB with `right/`). Any zone file's name is accepted (not the `posix/` and `right/` variants); `list` offers those of tzdata's `zone.tab` (one or more per country), since aliases (such as `US/Eastern`) would only duplicate them.
 - **The battery driver reports the gauge's own level, without smoothing of its own** (2026-10-18). The gauge already smooths; the driver's extra smoothing (below, in register 0x0c) once lagged the gauge by 40 %. Not done yet. Rejected: keeping it and finding what else writes register 0x0c.
 
 ## Design
@@ -69,6 +73,25 @@ usb_power_supply { pmu_bc12_en = <1>; };	/* chip sets the input limit from charg
 
 **Clock.** The SoC's own real-time clock (`rtc0`, `RTC_DRV_SUNXI`). The kernel sets the system time from it at boot (`CONFIG_RTC_HCTOSYS`) and copies the system time back while it is network-synchronised (`CONFIG_RTC_SYSTOHC`); BusyBox `ntpd -n -p pool.ntp.org` runs as a service whenever a default route exists.
 
+**Time zone.** `brick-timezone` (`/usr/sbin`):
+
+```
+/etc/localtime → /var/state/time/localtime → /usr/share/zoneinfo/<zone>   missing or broken: UTC (glibc's fallback too)
+/run/brick-timezone.offset                  the offset last given to the kernel (date +%z)
+```
+
+What Specular uses (errors on stderr and in the system log, tag `brick-timezone`):
+
+```
+brick-timezone get          the zone, e.g. Europe/Paris
+brick-timezone set ZONE     sets ZONE (any zone file's name) and prints it; exit 1 if there is no such zone
+brick-timezone list         UTC, then zone.tab's zones in order of name, one per line
+```
+
+For an automatic zone, Specular asks the user once whether it may tell a lookup service the network's public address, looks the zone up when WiFi joins a network, and calls `set`; a lookup's answer may be an alias that `list` doesn't show. The image has no CA certificates (nothing uses them: Specular's HTTP client has no TLS), so a lookup over HTTPS would need Specular to bring its own (for example rustls with built-in roots); ipinfo.io also answers plain HTTP. A program sees a new zone at its next `localtime()` or `tzset()`; with only `localtime_r()`, glibc keeps the zone a program saw first, so Specular's clock must call `tzset()` before reading the time, and redraw after `set` (neither is done yet).
+
+`brick-timezone kernel` (rcS, `set`, the `timezone-offset` service each minute) gives the kernel the zone's current offset when it differs from the last one given. `-u` matters: the kernel's first zone setting after boot otherwise assumes the clock chip keeps local time, shifts the system clock, and from then on writes local time to the clock chip (`warp_clock`, `persistent_clock_is_local`).
+
 **Measuring.** The gauge reports whole percent only (about 30 mAh) and no discharge current, so drain is measured over long phases. `powertest` runs an unattended sequence (deep sleep, idle screen-on with base and tuned settings, screen off, full load), logging battery, temperatures, CPU speed, interrupts, idle-state residency and per-process wakeups to the SD card.
 
 ## Findings
@@ -93,3 +116,7 @@ usb_power_supply { pmu_bc12_en = <1>; };	/* chip sets the input limit from charg
 - (2026-10-13, device) `regulator-off-in-suspend` has no effect here: in this kernel only Exynos and Rockchip platform code applies it, and the arisc firmware decides rails from `standby_param`. The gauge's coulomb counter isn't usable (only its high word is exposed; gauge memory reads 0). Source: linux `regulator_suspend_prepare()` callers; register reads on our unit.
 - (2026-10, upstream) The AXP717 can't measure discharge current. Stock's power-off left the power chip in a state that drained and heated the battery; NextUI/MinUI fixed it with their own power-off sequence (masking the chip's interrupts, registers 0x40–0x4C, 0x22, 0x27). Source: github.com/Helaas/nextui-brick-poweroff-hook.
 - (2026-10-10, device) The power chip's charge-LED output is disabled on stock (register 0x70 = 0), and the device tree has `pmu_chgled_func = 0`, so our battery driver leaves it alone too. Yet the power key's charging light works on our system (red while charging, green when charged, 2026-10-18), so something outside our software drives it; see [leds-and-rumble.md](leds-and-rumble.md). Source: linux `axp2202_battery.c`.
+- (2026-10-18, device) The clock chip keeps UTC (`rtc0` read the same as `date -u`), with `CONFIG_RTC_HCTOSYS` and `CONFIG_RTC_SYSTOHC` set; nothing on the system reads or writes it as local time.
+- (2026-10-18, upstream) glibc's `localtime_r()` loads the zone once per process. `localtime()` and `tzset()` check `/etc/localtime` again and reload it when the file it leads to has changed (device, inode or modification time), which a stat call checks; `set` replaces the link, so the file changes. Source: glibc `time/tzset.c`, `time/tzfile.c`.
+- (2026-10-18, upstream) Geo-IP lookup services, for Specular's automatic zone: `ipinfo.io/timezone` answers a bare zone name (`America/Toronto`) over HTTPS and plain HTTP. `https://ipapi.co/timezone` answers the same, but answered 429 (rate-limited) after a few requests from one address, and its plain HTTP redirects to HTTPS. worldtimeapi.org refused connections. ip-api.com (`/line/?fields=timezone`) answers, but its free use is plain HTTP only and non-commercial only.
+- (2026-10-18, upstream) Linux's FAT driver converts every file time with the kernel's zone offset (`sys_tz`, set only through `settimeofday`), unless mounted with `tz=UTC` or `time_offset=`; its exFAT driver writes UTC with offset 0 and uses `sys_tz` (mount option `sys_tz`) or `time_offset=` only for entries that carry no offset. BusyBox `hwclock -u --systz` sets `sys_tz` from the current local offset (daylight saving time included); it first calls `settimeofday` with offset 0, then with the real one, which stops the kernel treating the clock chip as local time; it doesn't touch the clock chip. Source: linux `fs/fat/misc.c`, `kernel/time/time.c`, `kernel/time/ntp.c`; exFAT backport `fs/exfat/misc.c`; BusyBox `util-linux/hwclock.c`.
