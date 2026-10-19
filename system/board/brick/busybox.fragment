@@ -4,6 +4,8 @@ CONFIG_RUNSV=y
 CONFIG_RUNSVDIR=y
 CONFIG_SV=y
 CONFIG_SV_DEFAULT_SERVICE_DIR="/etc/service"
+# chpst runs a service as a normal user (WebDAV).
+CONFIG_CHPST=y
 # The system log in memory (syslogd -C), read with logread, and in a file it rotates (see
 # etc/sv/syslogd).
 CONFIG_FEATURE_IPC_SYSLOG=y

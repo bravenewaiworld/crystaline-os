@@ -1,1 +1,2 @@
+source "$BR2_EXTERNAL_BRICK_PATH/package/exfatprogs-upstream/Config.in"
 source "$BR2_EXTERNAL_BRICK_PATH/package/linux-perf/Config.in"

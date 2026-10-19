@@ -1,0 +1,5 @@
+# From https://github.com/exfatprogs/exfatprogs/releases/download/1.4.3/exfatprogs-1.4.3.tar.xz.sha256
+sha256  57226a8ec1bfbce06d68a42cde8cd980414a9457882e691fbce4a4f86c8d5f08  exfatprogs-1.4.3.tar.xz
+
+# Hash for license file
+sha256  8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  COPYING

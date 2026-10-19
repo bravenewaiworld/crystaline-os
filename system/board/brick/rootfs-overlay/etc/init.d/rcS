@@ -32,7 +32,8 @@ brick-power profile balanced
 # The kernel's time zone offset, before the card is mounted: the FAT driver converts file times
 # with it (see brick-timezone).
 brick-timezone kernel
-/usr/libexec/brick/mount-card
+# The data card: mounted now, and kept matching the card in the slot from here on (mdev.conf).
+/usr/libexec/brick/mount-card start
 progress 0x11
 # State that survives reboots and updates, on the system partition (see usr/libexec/brick/state).
 /usr/libexec/brick/state

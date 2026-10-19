@@ -1,62 +1,282 @@
 #!/bin/sh
-# Mounts the SD card's data partition (games, saves, settings) at /mnt/SDCARD, at start-up.
-# The card is the disk on the SD card controller (sdc0). Its data partition is the one named
-# "sdcard" (our cards). A card the system runs from that has none yet (a freshly written card,
-# whose image covers only the system's partitions) gets one over the rest of the card, formatted
-# FAT32. Any other card (with the system installed on the internal storage) is used through its
-# first FAT partition, other than our boot pictures' ("bootloader"). exFAT isn't supported
-# (ROADMAP.md).
-# Without a card, nothing is mounted and Specular says so.
+# Keeps the SD card's data partition (games, saves, settings) mounted at /mnt/SDCARD to match the
+# card in the slot, and reports how it stands in /run/card/state (format and states:
+# docs/storage.md).
+#   mount-card start   start-up (rcS): waits up to 5 s for a card, then as below
+#   mount-card event   mdev, when a disk appears, changes or goes (/etc/mdev.conf)
+#   mount-card         makes the mount match the card now (Specular runs it when a write to the card
+#                      fails as read-only, so that the state says so)
+#   mount-card stop    shutdown (rcK): unmounts, so the card's last writes reach it
+# Each run works from what is there now, not from the event that started it, and runs take turns
+# (a lock), so overlapping or out-of-order events still end with the mount matching the card.
+# Disks are told apart by device number, never by name: a card inserted after a removal gets the
+# old card's name (mmcblk1) while the old disk may still exist in the kernel (held by a lazy
+# unmount, or by /system).
+# Debugging: touch /run/card/trace to have each run's commands traced (sh -x) into it.
+R=${MOUNT_CARD_ROOT-}	# a fake root for tools/system/test-mount-card.sh; empty on the device
+MNT=$R/mnt/SDCARD RUN=$R/run/card
 log() { logger -s -t mount-card "$*"; }
 
-set -- /sys/bus/platform/devices/sdc0/mmc_host/mmc*/mmc*:*/block/mmcblk*
-[ -e "$1" ] || { log "no SD card"; exit 0; }
-card=${1##*/}
+# The helpers below work on the card's disk in $disk and /system's device number in $sys, both set
+# by sync_card.
+# mounted_dev PATH: the device number (e.g. 179:33) of what is mounted at PATH, if anything.
+mounted_dev() { awk -v m="$1" '$5 == m { print $3 }' $R/proc/self/mountinfo; }
+# holds_dev DEV: the name of the card's partition, or of the whole card, with device number DEV;
+# nothing if the card has none.
+holds_dev() {
+	grep -lx "$1" $R/sys/block/$disk/dev $R/sys/block/$disk/${disk}p*/dev 2>/dev/null |
+		sed 's|.*/\(.*\)/dev|\1|'
+}
+# holds_system: whether the card holds /system (the system runs from it).
+holds_system() { [ -n "$sys" ] && [ -n "$disk" ] && [ -n "$(holds_dev $sys)" ]; }
+# gone: whether the card has been removed since this run found it.
+gone() { [ ! -e $R/sys/block/$disk ]; }
+# card_disk: the disk (e.g. mmcblk1) on the SD card controller (sdc0), if a card is in.
+card_disk() {
+	set -- $R/sys/bus/platform/devices/sdc0/mmc_host/mmc*/mmc*:*/block/mmcblk*
+	[ -e "$1" ] && echo ${1##*/}
+}
+# fs_type NAME: the filesystem on /dev/NAME (vfat, exfat, …; empty if none). -p reads the device
+# itself, not blkid's cache, which may describe a previous card.
+fs_type() { blkid -p -o value -s TYPE $R/dev/$1; }
+# usable NAME: whether /dev/NAME holds a filesystem the data partition can have (FAT or exFAT).
+usable() { case $(fs_type $1) in vfat | exfat) ;; *) return 1 ;; esac; }
 
-# named NAME: the card's partition with GPT name NAME, e.g. mmcblk1p6.
-named() {
-	grep -l "^PARTNAME=$1\$" /sys/block/$card/${card}p*/uevent | sed 's|.*/\(.*\)/uevent|\1|' | grep .
+. "${0%/*}/card-options"	# card_options: the mount options
+
+# message STATE [REASON]: the state file's line 2, what Specular shows the user: what happened,
+# what still works, what to do.
+message() {
+	again="Take the card out and insert it again"
+	holds_system && again="Restart the Brick"	# pulling the system's own card turns it off
+	pc_repair="Repair the card on a PC (on Windows: the card's Properties, Tools, Check)"
+	case "$*" in
+	absent)	echo "No SD card. Insert the SD card with your games: games, saves and settings are all kept on it." ;;
+	checking)
+		echo "Checking the SD card. This takes a few seconds; your games appear when it is done." ;;
+	mounted)
+		[ "$check" != repaired ] ||
+			echo "The SD card had errors, which were repaired. If a game or save is missing or damaged, logs/card-check.log on the card lists what was changed." ;;
+	"read-only write-protected")
+		echo "This SD card is locked against writing: games play, but nothing is saved and no files can be added. Use a card that can be written to." ;;
+	"read-only damaged")
+		if [ "$check" = errors-left ]; then
+			echo "The SD card has errors that couldn't be repaired here, so nothing is written to it: games play, but nothing is saved. $pc_repair, then insert it again."
+		else
+			echo "An error was found on the SD card, so it was made read-only to protect your files: games play, but nothing is saved from now on. $again to check and repair it."
+		fi ;;
+	"read-only unchecked")
+		echo "The SD card couldn't be checked for errors, so nothing is written to it: games play, but nothing is saved. $again to try again. If this keeps happening, the card may be failing: copy your files to a PC." ;;
+	"failed no-partition")
+		echo "This SD card has no FAT32 or exFAT partition that can be read, so its files can't be used. Use a card formatted as FAT32 or exFAT (formatting it on a PC erases it)." ;;
+	"failed mount")
+		echo "This SD card's files can't be read: its filesystem is damaged or not supported. $pc_repair, or format it as FAT32 or exFAT (this erases it)." ;;
+	"failed partition")
+		echo "The SD card couldn't be set up for games. Restart the Brick to try again; if it fails again, write the system to the card again." ;;
+	"failed system-card-removed")
+		echo "The SD card holding the system was removed, so the Brick turned off. Insert the card and turn the Brick on again." ;;
+	esac
 }
 
-# first_fat: the card's lowest-numbered FAT partition, other than one named "bootloader".
-first_fat() {
-	for n in $(ls /sys/block/$card | sed -n "s/^${card}p//p" | sort -n); do
-		grep -q '^PARTNAME=bootloader$' /sys/block/$card/${card}p$n/uevent && continue
-		[ "$(blkid -o value -s TYPE /dev/${card}p$n)" = vfat ] && { echo ${card}p$n; return; }
+# report STATE [REASON]: replaces the state file in one step (rename), unless it already says this.
+report() {
+	line1="$1${2:+ $2}" details="card=$cid partition=$part type=$type check=$check"
+	new="$line1
+$(message "$@")
+$details"
+	[ "$new" = "$(cat $RUN/state 2>/dev/null)" ] && return
+	{ echo "$new" >$RUN/state.new && mv $RUN/state.new $RUN/state; } || rm -f $RUN/state.new
+	log "state: $line1: $details"
+}
+# failed REASON: reports the failure, or "absent" if the card was pulled during this run (then the
+# failure was only the removal).
+failed() { if gone; then report absent; else report failed $1; fi; }
+
+# check: checks $part, repairing what can be repaired safely, and sets $check: clean, unclean (only
+# the "not unmounted cleanly" mark was cleared), repaired, errors-left or not-run (it couldn't
+# check, e.g. read errors). Full output in $RUN/check.log.
+check() {
+	t0=$(date +%s)
+	case $type in
+	vfat)	fsck.fat -a $R/dev/$part >$RUN/check.log 2>&1
+		case $? in
+		0)	check=clean ;;
+		# 1 is also its exit code when it couldn't check: only this line says it changed something.
+		1)	if ! grep -q '^\*\*\* Filesystem was changed \*\*\*$' $RUN/check.log; then check=not-run
+			elif only_unclean; then check=unclean
+			else check=repaired; fi ;;
+		*)	check=not-run ;;
+		esac ;;
+	# Clearing only exFAT's "not unmounted cleanly" mark counts as nothing changed (0), so exFAT
+	# cards never report unclean.
+	exfat)	fsck.exfat -p $R/dev/$part >$RUN/check.log 2>&1
+		case $? in 0) check=clean ;; 1) check=repaired ;; 4) check=errors-left ;; *) check=not-run ;; esac ;;
+	esac
+	log "check: $part ($type): $check in $(($(date +%s) - t0)) s"
+	head -20 $RUN/check.log | while read -r l; do log "  $l"; done
+}
+
+# only_unclean: whether fsck.fat's only finding was the "not unmounted cleanly" mark that Linux sets
+# on every read-write mount. Linux sets it in the main boot sector only (byte 65 on FAT32), so
+# fsck.fat also reports that byte as differing from the backup boot sector, and leaves it alone.
+# Only the lines dosfstools 4.2 prints for those two findings are allowed: any other line counts as
+# a repair. If a later dosfstools rewords them, unclean checks report "repaired", the safe side.
+only_unclean() {
+	! grep -v -e '^fsck\.fat ' -e '^$' -e '^Dirty bit is set\.' -e '^ Automatically removing dirty bit\.$' \
+		-e '^There are differences between boot sector and its backup\.$' -e '^This is mostly harmless\.' \
+		-e '^  65:01/00$' -e '^  Not automatically fixing this\.$' \
+		-e '^\*\*\* Filesystem was changed \*\*\*$' -e '^Writing changes\.$' -e ': [0-9]* files, [0-9/]* clusters$' \
+		$RUN/check.log >/dev/null
+}
+
+# named NAME: the card's partition with GPT name NAME (the first, if several), e.g. mmcblk1p8.
+named() {
+	grep -l "^PARTNAME=$1\$" $R/sys/block/$disk/${disk}p*/uevent 2>/dev/null | sed 's|.*/\(.*\)/uevent|\1|' |
+		head -1
+}
+
+# data_partition: prints the card's data partition: the one named "sdcard" (our cards); on the card
+# holding /system, one made over the rest of the card; else the lowest-numbered FAT or exFAT
+# partition other than our boot pictures' ("bootloader"), or the whole card when it has no
+# partitions. Formatting happens only on the card holding /system, and only to an "sdcard"
+# partition with no filesystem (one this script added). Returns 1 if there is none, 2 if making it
+# failed.
+data_partition() {
+	p=$(named sdcard)
+	[ -n "$p" ] && usable $p && { echo $p; return; }
+	if holds_system; then
+		[ -n "$p" ] || { p=$(add_partition) || return 2; }
+		# No filesystem: a first start was cut short after adding the partition, so format it. But
+		# if the backup boot sector (sector 6; its type at byte 82: 6*512+82 = 3154) says FAT32, it
+		# was formatted and only its main boot sector is damaged: left alone (no-partition, to be
+		# repaired on a PC).
+		if [ -z "$(fs_type $p)" ] && [ "$(dd if=$R/dev/$p bs=1 skip=3154 count=5 2>/dev/null)" != FAT32 ]; then
+			log "formatting $p"
+			mkfs.fat -F 32 -n BRICK $R/dev/$p >/dev/null || return 2
+			echo $p; return
+		fi
+	fi
+	parts=$(ls $R/sys/block/$disk | sed -n "s/^${disk}p//p" | sort -n)
+	[ -n "$parts" ] || { usable $disk && echo $disk; return; }
+	for n in $parts; do
+		grep -q '^PARTNAME=bootloader$' $R/sys/block/$disk/${disk}p$n/uevent && continue
+		usable ${disk}p$n && { echo ${disk}p$n; return; }
 	done
 	return 1
 }
 
-# add_data_partition: adds the "sdcard" partition over the card's free space and formats it. Only
-# on the card the system runs from (the disk holding /system), and only a partition made here is
-# ever formatted.
-add_data_partition() {
-	grep -q "^/dev/${card}p[0-9]* /system " /proc/mounts || return 1
-	log "adding the data partition to $card"
+# add_partition: adds the "sdcard" partition over the card's free space and prints its name.
+add_partition() {
+	log "adding the data partition to $disk"
 	# The image's backup partition table sits at the image's end, not the card's: move it there.
 	# (--no-reread --no-tell-kernel: the kernel can't re-read the table of a card in use; partx
 	# below tells it about the one new partition.)
-	sfdisk --quiet --relocate gpt-bak-std --no-reread --no-tell-kernel /dev/$card &&
+	sfdisk --quiet --relocate gpt-bak-std --no-reread --no-tell-kernel $R/dev/$disk &&
 		# From the first free sector to the end; Microsoft basic data, the usual type for FAT.
 		echo 'size=+, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, name=sdcard' |
-		sfdisk --quiet --append --no-reread --no-tell-kernel /dev/$card || return
-	n=$(sfdisk --dump /dev/$card | sed -n "s|^/dev/${card}p\([0-9]*\) .*name=\"sdcard\".*|\1|p")
-	# partx adds just this partition to the kernel's view: re-reading the whole table isn't
-	# allowed while the system's partitions on the card are in use.
-	partx --add --nr $n /dev/$card && mkfs.fat -F 32 -n BRICK /dev/${card}p$n >/dev/null &&
-		echo ${card}p$n
+		sfdisk --quiet --append --no-reread --no-tell-kernel $R/dev/$disk || return
+	# The new partition's number, from its line in the table (e.g. "/dev/mmcblk1p8 : …").
+	n=$(sfdisk --dump $R/dev/$disk | sed -n 's|^[^ ]*[^0-9]\([0-9]*\) : .*name="sdcard".*|\1|p')
+	partx --add --nr $n $R/dev/$disk && echo ${disk}p$n
 }
 
-part=$(named sdcard) || part=$(add_data_partition) || part=$(first_fat) ||
-	{ log "no data partition on $card"; exit 0; }
+# release: lets go of a card that was removed or swapped. Lazy (-l): detaches the mount even while
+# programs still have files open on it (their reads and writes fail anyway: the card is gone).
+# Stops WebDAV, so that dufs lets go of its files; Specular's File transfer screen starts it again.
+release() {
+	umount -l $MNT && log "released the card that was removed"
+	sv down webdav 2>/dev/null
+}
 
-# Not "sync" (TrimUI's choice), which writes everything through at once: about 10x slower uploads
-# and more card wear. "flush" writes a file's data out soon after it is closed; programs that must
-# survive a power cut (e.g. saving a game) write a temporary file and rename it. errors=remount-ro:
-# on filesystem damage, stop writing rather than make it worse. File names are UTF-8 ("utf8") but
-# matched regardless of case, as FAT is on a PC; with iocharset=utf8 instead, Linux matches them
-# case-sensitively, so "roms/" wouldn't find a card's "Roms/" (the kernel's FAT documentation
-# warns against it for this reason).
-mkdir -p /mnt/SDCARD
-mount -t vfat -o rw,noatime,flush,iocharset=iso8859-1,utf8,errors=remount-ro /dev/$part /mnt/SDCARD ||
-	log "can't mount $part"
+# card_log: adds the check's output to logs/card-check.log on the card (moved to
+# card-check.log.old once it reaches 1 MiB).
+card_log() {
+	f=$MNT/logs/card-check.log
+	mkdir -p $MNT/logs
+	[ ! -f $f ] || [ $(wc -c <$f) -lt 1048576 ] || mv $f $f.old
+	{ echo "== $(date '+%Y-%m-%d %H:%M:%S') $part ($type): $check"; cat $RUN/check.log; } >>$f
+}
+
+# sync_card: makes the mount match the card in the slot and reports the state.
+sync_card() {
+	cid= part= type= check= disk=
+	sys=$(mounted_dev $R/system)
+	# The system's own card was pulled: nothing on it can be reached any more (the system log's
+	# file included), so the Brick turns off. Nothing is done to whatever card is in the slot now.
+	# <2>: the kernel log's "critical" level, so the line reaches the serial console.
+	if [ -n "$sys" ] && ! grep -qx "$sys" $R/sys/class/block/*/dev; then
+		echo "<2>mount-card: the SD card holding the system was removed; turning off" >$R/dev/kmsg
+		report failed system-card-removed
+		# Best effort, as sleep and poweroff are on the pulled card and run only if still in memory.
+		# The pause lets Specular, if it still runs, show the state's message.
+		sleep 3
+		poweroff -f
+		return
+	fi
+	disk=$(card_disk) && cid=$(cat $R/sys/block/$disk/device/cid)
+	# The mount is kept if it is on the card in the slot; otherwise it is a removed card's.
+	now=$(mounted_dev $MNT)
+	if [ -n "$now" ]; then
+		[ -n "$disk" ] && [ -n "$(holds_dev $now)" ] && { still_mounted; return; }
+		release
+	fi
+	[ -n "$disk" ] || { report absent; return; }
+	report checking
+	part=$(data_partition)
+	case $? in
+	0)	;;
+	2)	failed partition; return ;;
+	*)	failed no-partition; return ;;
+	esac
+	type=$(fs_type $part)
+	if [ "$(cat $R/sys/block/$disk/ro)" = 1 ]; then
+		ro=write-protected check=not-run	# a check would fail to write
+	else
+		check
+		case $check in errors-left) ro=damaged ;; not-run) ro=unchecked ;; *) ro= ;; esac
+	fi
+	gone && { report absent; return; }	# pulled during the check
+	opts=$(card_options $type $(id -g www-data))${ro:+,ro}
+	log "mounting $part ($type) with $opts"
+	mount -t $type -o $opts $R/dev/$part $MNT || { failed mount; return; }
+	[ -n "$ro" ] && { report read-only $ro; return; }
+	mkdir -p $MNT/roms $MNT/bios $MNT/saves
+	[ $check = clean ] || card_log
+	report mounted
+}
+
+# still_mounted: the mounted card is the one in the slot; reports it if the kernel has since made
+# it read-only after an error (errors=remount-ro), which nothing announces.
+still_mounted() {
+	# The last field is the filesystem's own options, where that read-only flag shows.
+	case ,$(awk -v m=$MNT '$5 == m { print $NF }' $R/proc/self/mountinfo), in *,ro,*) ;; *) return ;; esac
+	# Only a read-write mount can have been made read-only by the kernel; the other states were
+	# mounted read-only here, or already reported.
+	grep -q '^mounted' $RUN/state 2>/dev/null || return
+	part=$(holds_dev $now)
+	type=$(fs_type $part)
+	check=$(sed -n 's/.* check=//p' $RUN/state)	# the check from when it was mounted
+	log "the kernel made $part read-only after an error (dmesg has its messages)"
+	report read-only damaged
+}
+
+# holders: the processes using files on the card, one per line, e.g. "456(dufs)".
+holders() {
+	for p in $R/proc/[0-9]*; do
+		ls -l $p/cwd $p/fd 2>/dev/null | grep -q -e "-> $MNT/" -e "-> $MNT\$" && echo "${p##*/}($(cat $p/comm))"
+	done
+}
+
+mkdir -p $RUN $MNT
+[ -e $RUN/trace ] && { exec 2>>$RUN/trace; set -x; }
+[ "$1" != event ] || [ -n "$SEQNUM" ] || exit 0	# mdev -s at start-up: rcS runs "start" itself
+log "run: ${1:-asked}${ACTION:+ ($ACTION $MDEV)}"
+exec 9>>$RUN/lock && flock 9 || exit 1
+case $1 in
+start)	n=0	# up to 25 x 0.2 s
+	until [ -n "$(card_disk)" ] || [ $n -ge 25 ]; do sleep 0.2; n=$((n + 1)); done
+	sync_card ;;
+stop)	umount $MNT 2>/dev/null || [ -z "$(mounted_dev $MNT)" ] ||
+		log "can't unmount the SD card, in use by: $(echo $(holders))" ;;
+*)	sync_card ;;
+esac

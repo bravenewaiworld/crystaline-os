@@ -1,0 +1,16 @@
+config BR2_PACKAGE_EXFATPROGS_UPSTREAM
+	bool "exfatprogs-upstream"
+	depends on BR2_USE_WCHAR
+	depends on !BR2_PACKAGE_EXFATPROGS
+	select BR2_PACKAGE_UTIL_LINUX
+	select BR2_PACKAGE_UTIL_LINUX_LIBBLKID
+	help
+	  exFAT tools (fsck.exfat, mkfs.exfat, exfatlabel, ...) from
+	  exfatprogs 1.4, for fsck.exfat's repair fixes since the 1.2
+	  release Buildroot packages. Named exfatprogs-upstream because
+	  Buildroot's exfatprogs package already uses the EXFATPROGS_*
+	  make variables; both install the same programs, so only one
+	  can be enabled.
+
+comment "exfatprogs-upstream needs a toolchain w/ wchar"
+	depends on !BR2_USE_WCHAR

@@ -1,0 +1,24 @@
+# Sourced by mount-card and by the initramfs's init (its recovery menu), so that both mount the SD
+# card's data partition the same way.
+# card_options TYPE GID: mount options for a data partition of TYPE (vfat or exfat) whose files are
+# to belong to group GID (www-data's).
+# Not "sync" (TrimUI's choice), which writes everything through at once: about 10x slower uploads
+# and more card wear. "flush" writes a file's data out soon after it is closed; programs that must
+# survive a power cut (e.g. saving a game) write a temporary file and rename it. errors=remount-ro:
+# on filesystem damage, stop writing rather than make it worse. FAT: "utf8" makes file names UTF-8,
+# and iocharset=iso8859-1 is then only the table for matching them regardless of case, as a PC
+# does; iocharset=utf8 instead would make Linux's FAT match them case-sensitively, so "roms/"
+# wouldn't find a card's "Roms/" (the kernel's FAT documentation warns against iocharset=utf8 for
+# this reason). exFAT matches regardless of case either way.
+# File times: FAT converts them with the kernel's time zone, which brick-timezone (/usr/sbin) keeps
+# current, so the FAT mount must never get tz=UTC or time_offset=. exFAT stores UTC plus an offset;
+# sys_tz makes entries written without an offset (by some PCs) count as local time, as FAT's do.
+# FAT and exFAT have no owners: every file is root's and group www-data's, writable by both (gid,
+# umask), so WebDAV (dufs, running as www-data) can write the card too.
+card_options() {
+	owner=gid=$2,umask=0002
+	case $1 in
+	vfat)	echo rw,noatime,flush,iocharset=iso8859-1,utf8,errors=remount-ro,$owner ;;
+	exfat)	echo rw,noatime,iocharset=utf8,errors=remount-ro,sys_tz,$owner ;;
+	esac
+}

@@ -5,4 +5,4 @@
 # init's sync after it ends the remaining processes saves the end of /system/logs/messages.
 sv -w 10 force-stop $(ls -d /etc/service/* | grep -v -e '/syslogd$' -e '/klogd$') >/dev/null 2>&1
 sync
-umount /mnt/SDCARD 2>/dev/null
+/usr/libexec/brick/mount-card stop

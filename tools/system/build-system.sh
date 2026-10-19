@@ -124,11 +124,12 @@ fi
 echo "$VERSION" >"$R/etc/brick-version"
 V=$OUT/$VERSION
 mkdir -p "$V"
+# usr/bin/dufs: gets the right to listen on port 80, as it runs as a normal user (etc/sv/webdav).
 # -root-*: the tar has no entry for the root directory itself.
 # Here and for the initramfs below, the stream goes through a file rather than a pipe: sh (dash,
 # on Debian and Ubuntu) has no pipefail, so a failure in the first command of a pipe would go
 # unnoticed.
-python3 -I "$ROOT/tools/system/tar-with-owners.py" "$BR/images/rootfs.tar" "$R" >"$TMP/rootfs.tar"
+python3 -I "$ROOT/tools/system/tar-with-owners.py" "$BR/images/rootfs.tar" "$R" usr/bin/dufs >"$TMP/rootfs.tar"
 "$HOST/sqfstar" -comp zstd -quiet -root-uid 0 -root-gid 0 -root-mode 755 "$V/rootfs.squashfs" <"$TMP/rootfs.tar"
 
 # --- Initramfs --------------------------------------------------------------------------------
