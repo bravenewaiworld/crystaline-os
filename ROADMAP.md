@@ -53,6 +53,7 @@ Completed:
 
 Built, to test on the device:
 - Profiles through `brick-power profile performance|balanced|saver` (1200–2000 / 408–2000 / 408–1200 MHz); the governor now checks every 50 ms instead of every 2 s. Gate: idle power must not rise
+- A minimum CPU speed Specular raises during a game: `brick-power cpu-min <MHz>|default` (PS1 games settled near 1.2 GHz and fell short of full speed)
 
 TODO:
 - Decide whether to keep the 2.0 GHz step, by a long full-load run at 2.0 GHz with temperature logging; keep it if stable
