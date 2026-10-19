@@ -1,0 +1,33 @@
+module_common: connect each DRM file once
+
+Unless connecting is left to the PVR_SRVKM_INIT ioctl (PVRSRV_LINUX_DEV_INIT_ON_CONNECT; this
+build uses ON_PROBE), pvr_drm_open() connects the file, and the user libraries' ioctl then
+called PVRSRVDeviceServicesOpen() again, making a second connection that replaced the first.
+Closing the file disconnected only the second, so the first stayed in the device's connection
+list forever and kept its reference on the process's handle base (one per PID). That base, and
+every handle in it (e.g. display buffer imports, which keep display contexts and their
+"pvr_misr" threads alive), was then never freed. The ioctl now keeps the file's existing
+connection. Found on the TrimUI Brick, 2026-10-18.
+
+--- a/services/server/env/linux/module_common.c
++++ b/services/server/env/linux/module_common.c
+@@ -542,6 +542,19 @@
+ 	else
+ 	{
+ 		psConnectionPriv = (PVRSRV_CONNECTION_PRIV*)psDRMFile->driver_priv;
++
++#if (PVRSRV_DEVICE_INIT_MODE != PVRSRV_LINUX_DEV_INIT_ON_CONNECT)
++		/* One connection per file: open() has already connected it, so the
++		 * user libraries' PVR_SRVKM_INIT ioctl must not connect again. A
++		 * second connection would replace the first, which would then never
++		 * be disconnected, nor its process's handle base freed.
++		 */
++		if (psConnectionPriv->pvConnectionData)
++		{
++			mutex_unlock(&sDeviceInitMutex);
++			goto out;
++		}
++#endif
+ 	}
+ 
+ 	if (psDeviceNode->eDevState == PVRSRV_DEVICE_STATE_CREATED)

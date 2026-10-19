@@ -1,0 +1,159 @@
+dc bridge: destroy handles when the client destroys or releases a DC object
+
+The DC bridge was carried over from DDK 1.11, where PVRSRVReleaseHandleUnlocked() destroyed a
+handle. In 1.19 it only drops a lookup reference; the call that destroys a handle is
+PVRSRVDestroyHandleStagedUnlocked(), as the other 1.19 bridges use. So DCDeviceRelease,
+DCSystemBufferRelease, DCDisplayContextDestroy, DCBufferFree, DCBufferUnimport, DCBufferUnpin
+and DCBufferRelease destroyed nothing and returned whatever eError an earlier call had left in
+the pooled reply buffer. Every display context (with its "pvr_misr" workqueue thread), buffer
+and pin then lived as long as the connection. The reply now carries the real result, so a
+RETRY (e.g. a display context that still has flips queued) keeps the handle and goes back to
+the client to try again. Found on the TrimUI Brick, 2026-10-18.
+
+--- a/generated/rogue/dc_bridge/server_dc_bridge.c
++++ b/generated/rogue/dc_bridge/server_dc_bridge.c
+@@ -258,9 +258,16 @@
+ 	/* Lock over handle destruction. */
+ 	LockHandle(psConnection->psHandleBase);
+ 
+-	PVRSRVReleaseHandleUnlocked(psConnection->psHandleBase,
+-				    (IMG_HANDLE) psDCDeviceReleaseIN->
+-				    hDevice, PVRSRV_HANDLE_TYPE_DC_DEVICE);
++	psDCDeviceReleaseOUT->eError =
++	    PVRSRVDestroyHandleStagedUnlocked(psConnection->psHandleBase,
++					      (IMG_HANDLE) psDCDeviceReleaseIN->hDevice,
++					      PVRSRV_HANDLE_TYPE_DC_DEVICE);
++	if (unlikely((psDCDeviceReleaseOUT->eError != PVRSRV_OK) &&
++		     !PVRSRVIsRetryError(psDCDeviceReleaseOUT->eError)))
++	{
++		PVR_DPF((PVR_DBG_ERROR, "%s: %s", __func__,
++			 PVRSRVGetErrorString(psDCDeviceReleaseOUT->eError)));
++	}
+ 
+ 	/* Release now we have destroyed handles. */
+ 	UnlockHandle(psConnection->psHandleBase);
+@@ -1068,9 +1075,16 @@
+ 	/* Lock over handle destruction. */
+ 	LockHandle(psConnection->psHandleBase);
+ 
+-	PVRSRVReleaseHandleUnlocked(psConnection->psHandleBase,
+-				    (IMG_HANDLE) psDCSystemBufferReleaseIN->
+-				    hBuffer, PVRSRV_HANDLE_TYPE_DC_BUFFER);
++	psDCSystemBufferReleaseOUT->eError =
++	    PVRSRVDestroyHandleStagedUnlocked(psConnection->psHandleBase,
++					      (IMG_HANDLE) psDCSystemBufferReleaseIN->hBuffer,
++					      PVRSRV_HANDLE_TYPE_DC_BUFFER);
++	if (unlikely((psDCSystemBufferReleaseOUT->eError != PVRSRV_OK) &&
++		     !PVRSRVIsRetryError(psDCSystemBufferReleaseOUT->eError)))
++	{
++		PVR_DPF((PVR_DBG_ERROR, "%s: %s", __func__,
++			 PVRSRVGetErrorString(psDCSystemBufferReleaseOUT->eError)));
++	}
+ 
+ 	/* Release now we have destroyed handles. */
+ 	UnlockHandle(psConnection->psHandleBase);
+@@ -1644,11 +1658,16 @@
+ 	/* Lock over handle destruction. */
+ 	LockHandle(psConnection->psHandleBase);
+ 
+-	PVRSRVReleaseHandleUnlocked(psConnection->psHandleBase,
+-				    (IMG_HANDLE)
+-				    psDCDisplayContextDestroyIN->
+-				    hDisplayContext,
+-				    PVRSRV_HANDLE_TYPE_DC_DISPLAY_CONTEXT);
++	psDCDisplayContextDestroyOUT->eError =
++	    PVRSRVDestroyHandleStagedUnlocked(psConnection->psHandleBase,
++					      (IMG_HANDLE) psDCDisplayContextDestroyIN->hDisplayContext,
++					      PVRSRV_HANDLE_TYPE_DC_DISPLAY_CONTEXT);
++	if (unlikely((psDCDisplayContextDestroyOUT->eError != PVRSRV_OK) &&
++		     !PVRSRVIsRetryError(psDCDisplayContextDestroyOUT->eError)))
++	{
++		PVR_DPF((PVR_DBG_ERROR, "%s: %s", __func__,
++			 PVRSRVGetErrorString(psDCDisplayContextDestroyOUT->eError)));
++	}
+ 
+ 	/* Release now we have destroyed handles. */
+ 	UnlockHandle(psConnection->psHandleBase);
+@@ -1969,9 +1988,16 @@
+ 	/* Lock over handle destruction. */
+ 	LockHandle(psConnection->psHandleBase);
+ 
+-	PVRSRVReleaseHandleUnlocked(psConnection->psHandleBase,
+-				    (IMG_HANDLE) psDCBufferFreeIN->hBuffer,
+-				    PVRSRV_HANDLE_TYPE_DC_BUFFER);
++	psDCBufferFreeOUT->eError =
++	    PVRSRVDestroyHandleStagedUnlocked(psConnection->psHandleBase,
++					      (IMG_HANDLE) psDCBufferFreeIN->hBuffer,
++					      PVRSRV_HANDLE_TYPE_DC_BUFFER);
++	if (unlikely((psDCBufferFreeOUT->eError != PVRSRV_OK) &&
++		     !PVRSRVIsRetryError(psDCBufferFreeOUT->eError)))
++	{
++		PVR_DPF((PVR_DBG_ERROR, "%s: %s", __func__,
++			 PVRSRVGetErrorString(psDCBufferFreeOUT->eError)));
++	}
+ 
+ 	/* Release now we have destroyed handles. */
+ 	UnlockHandle(psConnection->psHandleBase);
+@@ -1991,9 +2017,16 @@
+ 	/* Lock over handle destruction. */
+ 	LockHandle(psConnection->psHandleBase);
+ 
+-	PVRSRVReleaseHandleUnlocked(psConnection->psHandleBase,
+-				    (IMG_HANDLE) psDCBufferUnimportIN->
+-				    hBuffer, PVRSRV_HANDLE_TYPE_DC_BUFFER);
++	psDCBufferUnimportOUT->eError =
++	    PVRSRVDestroyHandleStagedUnlocked(psConnection->psHandleBase,
++					      (IMG_HANDLE) psDCBufferUnimportIN->hBuffer,
++					      PVRSRV_HANDLE_TYPE_DC_BUFFER);
++	if (unlikely((psDCBufferUnimportOUT->eError != PVRSRV_OK) &&
++		     !PVRSRVIsRetryError(psDCBufferUnimportOUT->eError)))
++	{
++		PVR_DPF((PVR_DBG_ERROR, "%s: %s", __func__,
++			 PVRSRVGetErrorString(psDCBufferUnimportOUT->eError)));
++	}
+ 
+ 	/* Release now we have destroyed handles. */
+ 	UnlockHandle(psConnection->psHandleBase);
+@@ -2090,10 +2123,16 @@
+ 	/* Lock over handle destruction. */
+ 	LockHandle(psConnection->psHandleBase);
+ 
+-	PVRSRVReleaseHandleUnlocked(psConnection->psHandleBase,
+-				    (IMG_HANDLE) psDCBufferUnpinIN->
+-				    hPinHandle,
+-				    PVRSRV_HANDLE_TYPE_DC_PIN_HANDLE);
++	psDCBufferUnpinOUT->eError =
++	    PVRSRVDestroyHandleStagedUnlocked(psConnection->psHandleBase,
++					      (IMG_HANDLE) psDCBufferUnpinIN->hPinHandle,
++					      PVRSRV_HANDLE_TYPE_DC_PIN_HANDLE);
++	if (unlikely((psDCBufferUnpinOUT->eError != PVRSRV_OK) &&
++		     !PVRSRVIsRetryError(psDCBufferUnpinOUT->eError)))
++	{
++		PVR_DPF((PVR_DBG_ERROR, "%s: %s", __func__,
++			 PVRSRVGetErrorString(psDCBufferUnpinOUT->eError)));
++	}
+ 
+ 	/* Release now we have destroyed handles. */
+ 	UnlockHandle(psConnection->psHandleBase);
+@@ -2198,11 +2237,16 @@
+ 	/* Lock over handle destruction. */
+ 	LockHandle(psConnection->psProcessHandleBase->psHandleBase);
+ 
+-	PVRSRVReleaseHandleUnlocked(psConnection->psProcessHandleBase->
+-				    psHandleBase,
+-				    (IMG_HANDLE) psDCBufferReleaseIN->
+-				    hExtMem,
+-				    PVRSRV_HANDLE_TYPE_DEVMEM_MEM_IMPORT);
++	psDCBufferReleaseOUT->eError =
++	    PVRSRVDestroyHandleStagedUnlocked(psConnection->psProcessHandleBase->psHandleBase,
++					      (IMG_HANDLE) psDCBufferReleaseIN->hExtMem,
++					      PVRSRV_HANDLE_TYPE_DEVMEM_MEM_IMPORT);
++	if (unlikely((psDCBufferReleaseOUT->eError != PVRSRV_OK) &&
++		     !PVRSRVIsRetryError(psDCBufferReleaseOUT->eError)))
++	{
++		PVR_DPF((PVR_DBG_ERROR, "%s: %s", __func__,
++			 PVRSRVGetErrorString(psDCBufferReleaseOUT->eError)));
++	}
+ 
+ 	/* Release now we have destroyed handles. */
+ 	UnlockHandle(psConnection->psProcessHandleBase->psHandleBase);

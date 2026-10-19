@@ -1,0 +1,90 @@
+sunxi_a133: no voltage calls without a gpu-supply; skip unreachable operating points
+
+Without a gpu-supply (as on the Brick) regulator_get_optional() returns an error pointer, which
+the debugfs "voltage:" and "man:0" commands tested as true and passed to
+regulator_set_voltage(). The handle is now NULL when there is no supply, so those checks hold;
+the sysfs scene_ctrl performance-mode voltage calls check it too.
+
+sunxi_decide_pll() matched each operating point to the first PLL divider whose lowest rate
+(13/16 of its output) it reaches, without checking it is not above that divider's output. The
+399 MHz point (PLL 700 MHz: above 350, below 568) got gpu_dfs = 1 << (16 - 18), a negative
+shift, and a point below 13/16 of PLL/4 read core_clk[4], past the end of the array. Such
+points are now left out of the driver's clock table with an error message (the kernel's OPP
+list still has them; a request for one is refused by sunxi_set_freq_safe()). Found on the
+TrimUI Brick, 2026-10-18.
+
+--- a/services/system/rogue/sunxi_a133/sunxi_platform.c
++++ b/services/system/rogue/sunxi_a133/sunxi_platform.c
+@@ -362,13 +362,25 @@
+ 	val = prop->value;
+ 	while (nr) {
+ 		unsigned long freq = be32_to_cpup(val++) * 1000;
+-		sunxi->clk_table[i].volt = be32_to_cpup(val++);
+-		sunxi->clk_table[i].true_clk = freq;
+-		while (freq < (core_clk[j] * GPU_DFS_MIN)/GPU_DFS_MAX && j < 4)
+-			j++;
+-		if (j >= 4) {
+-			dev_err(sunxi->dev, "%s: give us an OPP table\n", __func__);
++		unsigned long volt = be32_to_cpup(val++);
++
++		nr -= 2;
++		/* gpu_dfs can only express a point from GPU_DFS_MIN/GPU_DFS_MAX of
++		 * core_clk[j] (the PLL divided by j + 1) up to all of it. A point
++		 * outside every divider's range is left out.
++		 */
++		for (j = 0; j < 4; j++) {
++			if (freq <= core_clk[j] &&
++			    freq >= (core_clk[j] * GPU_DFS_MIN) / GPU_DFS_MAX)
++				break;
++		}
++		if (j == 4) {
++			dev_err(sunxi->dev, "%s: %lu Hz is not reachable from the %ld Hz PLL, skipped\n",
++				__func__, freq, sunxi->pll_clk_rate);
++			continue;
+ 		}
++		sunxi->clk_table[i].volt = volt;
++		sunxi->clk_table[i].true_clk = freq;
+ 		step = core_clk[j]/16;
+ 		sunxi->clk_table[i].gpu_dfs = 1<<(GPU_DFS_MAX-freq/step);
+ 		sunxi->clk_table[i].core_clk =  core_clk[j];
+@@ -376,9 +388,10 @@
+ 				core_clk[j], freq, sunxi->clk_table[i].volt, sunxi->clk_table[i].gpu_dfs);
+ 		if (freq % step)
+ 			dev_err(sunxi->dev, "%s: give us an error freq:%lu\n", __func__, freq);
+-		nr -= 2;
+ 		i++;
+ 	}
++	/* With no usable point, only the PLL-rate default in entry 0 remains. */
++	sunxi->table_num = max(i, 1);
+ 	pll_rate = sunxi->pll_clk_rate;
+ 	core_rate = sunxi->clk_table[0].core_clk;
+ 	sunxi->current_clk = &sunxi->clk_table[0];
+@@ -463,11 +476,11 @@
+ 			wait_event_timeout(dvfs_wq,
+ 				(dvfs_status%2 == 0), msecs_to_jiffies(100));
+ 		first_vol = (sunxi_data->current_clk->true_clk < val);
+-		if (first_vol && sunxi_data->independent_power) {
++		if (first_vol && sunxi_data->independent_power && sunxi_data->regula) {
+ 			regulator_set_voltage(sunxi_data->regula, volt, INT_MAX);
+ 		}
+ 		sunxi_set_freq_safe(val, false);
+-		if (!first_vol && sunxi_data->independent_power) {
++		if (!first_vol && sunxi_data->independent_power && sunxi_data->regula) {
+ 			regulator_set_voltage(sunxi_data->regula, volt, INT_MAX);
+ 		}
+ 		break;
+@@ -741,8 +754,13 @@
+ 		goto err_free;
+ 	}
+ #endif /* defined(CONFIG_OF) */
++	/* NULL, not an error pointer, when there is no gpu-supply (as on the
++	 * Brick): callers test it with a plain if.
++	 */
+ 	sunxi_data->regula = regulator_get_optional(dev, "gpu");
+-	if (!IS_ERR_OR_NULL(sunxi_data->regula))
++	if (IS_ERR(sunxi_data->regula))
++		sunxi_data->regula = NULL;
++	else
+ 		volt_val = regulator_get_voltage(sunxi_data->regula);
+ 
+ 	if (get_clks_wrap(dev)) {
