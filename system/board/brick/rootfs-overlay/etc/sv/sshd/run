@@ -1,4 +1,10 @@
 #!/bin/sh
-# SSH (keys only), over WiFi or the USB network link (see usb).
+# SSH (keys only), over WiFi or the USB network link (the usb service). On release images (root's
+# authorized_keys links into the state area: build-system.sh), it runs only while switched on with
+# brick-ssh, staying down otherwise, and with host keys of the device's own (ssh-host-keys).
 exec 2>&1
+if [ -L /root/.ssh/authorized_keys ]; then
+	[ -e /var/state/ssh/on ] || { sv down sshd; exit 0; }
+	/usr/libexec/brick/ssh-host-keys || exit 1
+fi
 exec /usr/sbin/sshd -D -e

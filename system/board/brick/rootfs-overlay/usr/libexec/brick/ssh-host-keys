@@ -1,0 +1,21 @@
+#!/bin/sh
+# Makes a release image's SSH host keys, once per device, on its first start. Release images
+# (make system RELEASE=1) contain no keys: their host keys are links into /var/state/ssh
+# (build-system.sh), and those missing there are made. Run by sshd's service before sshd starts;
+# its output goes to sshd's log. Does nothing on development images, whose host keys are plain
+# files.
+log() { echo "ssh-host-keys: $*"; }
+
+for k in /etc/ssh/ssh_host_*_key; do
+	[ -L $k ] && [ ! -s $k ] || continue
+	f=$(readlink $k)
+	t=${k#/etc/ssh/ssh_host_}
+	t=${t%_key}
+	mkdir -p -m 700 "${f%/*}"
+	# Made under a temporary name, then renamed. A key that is empty after a power cut (renamed
+	# before it reached the disk) counts as missing (-s above).
+	rm -f "$f.new" "$f.new.pub"
+	ssh-keygen -q -t "$t" -N '' -f "$f.new" && mv "$f.new.pub" "$f.pub" && mv "$f.new" "$f" ||
+		{ log "can't make the $t host key"; exit 1; }
+	log "made this device's $t host key"
+done

@@ -1,0 +1,67 @@
+#!/bin/sh
+# brick-ssh: SSH on release images (make system RELEASE=1), for Specular's developer settings.
+#   (nothing)  prints the state, one name=value per line:
+#                image=release or image=development
+#                ssh=on or ssh=off (development images: always on)
+#                keys=N, the number of login keys (release images)
+#   on, off    switches SSH on or off, and keeps it so across reboots. Off leaves open sessions
+#              running until they end.
+#   import     replaces the login keys with those in authorized_keys at the SD card's root, and
+#              prints keys=N. Fails, keeping the old keys, if that file is missing or holds no
+#              valid key.
+# A release image trusts only keys imported here, by the user on the device: the card's file is
+# never read by itself, as anyone on the network can write the card while file transfer is on
+# (WebDAV has no password). Its keys are kept in the state area (/var/state/ssh), and its sshd
+# service runs only while SSH is on (etc/sv/sshd). On development images SSH is always on with the
+# checkout's key, and on, off and import fail.
+# Errors go to stderr, with exit status 1; changes are logged (tag brick-ssh).
+# BRICK_ROOT: a directory to use as the root, for testing on a PC.
+R=${BRICK_ROOT:-}
+D=$R/var/state/ssh
+KEYS=$D/authorized_keys
+ON=$D/on
+
+log() { logger -t brick-ssh "$*"; }
+fail() { echo "brick-ssh: $*" >&2; exit 1; }
+
+# release: whether this is a release image (root's authorized_keys links into the state area).
+release() { [ -L $R/root/.ssh/authorized_keys ]; }
+# keys FILE: the number of valid keys in FILE.
+keys() { ssh-keygen -l -f "$1" 2>/dev/null | wc -l; }
+
+case $1 in
+'')
+	if release; then
+		echo image=release
+		[ -e $ON ] && echo ssh=on || echo ssh=off
+		echo keys=$(keys $KEYS)
+	else
+		echo image=development
+		echo ssh=on
+	fi
+	;;
+on | off)
+	release || fail "a development image: SSH is always on"
+	mkdir -p -m 700 $D || fail "can't save the setting"
+	if [ $1 = on ]; then touch $ON; else rm -f $ON; fi || fail "can't save the setting"
+	sv $([ $1 = on ] && echo up || echo down) sshd >/dev/null || fail "can't switch SSH $1"
+	log "SSH $1"
+	;;
+import)
+	release || fail "a development image: its login key is the checkout's"
+	card=$R/mnt/SDCARD/authorized_keys
+	[ -f $card ] || fail "no authorized_keys at the SD card's root"
+	mkdir -p -m 700 $D || fail "can't save the keys"
+	# Line ends from Windows editors (CRLF) are made Unix ones.
+	(umask 077 && tr -d '\r' <$card >$KEYS.new) || fail "can't read $card"
+	n=$(keys $KEYS.new)
+	[ "$n" -gt 0 ] || { rm -f $KEYS.new; fail "no valid key in the SD card's authorized_keys"; }
+	mv -f $KEYS.new $KEYS || fail "can't save the keys"
+	log "imported $n login keys from the SD card"
+	echo keys=$n
+	;;
+*)
+	echo "usage: brick-ssh [on | off | import]" >&2
+	exit 2
+	;;
+esac

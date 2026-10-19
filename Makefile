@@ -19,15 +19,21 @@ CFLAGS := -O2 -Wall -Wextra $(if $(DEBUG),-g)
 STATIC := -static $(if $(DEBUG),,-s) -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 
 .PHONY: help all kernel gpu userspace specular installer device-tools buildroot system \
-	sd-card update-device deploy-specular run-specular test-installer install-image clean
+	sd-card update-device debug-running-release deploy-specular run-specular test-installer install-image clean
 
 help:
 	@echo 'Our system:'
 	@echo '  system           one version of the system: build/system/<version>/ (boot.img,'
-	@echo '                   rootfs.squashfs, manifest.json), also build/system/latest'
+	@echo '                   rootfs.squashfs, manifest.json), also build/system/latest;'
+	@echo '                   RELEASE=1: a release image (no development SSH key, serial login,'
+	@echo '                   debugging or hardware test tools)'
 	@echo '  sd-card          build/sd-card.img: an SD card that runs the latest version'
 	@echo '  update-device    build system, copy it to a Brick running our system, switch, reboot'
 	@echo '                   (SSH; BRICK=<address>, default 192.168.7.2 over USB)'
+	@echo '  debug-running-release  copy the debugging and hardware test tools a release image'
+	@echo '                   leaves out (strace, perf, gdbserver, memreg, ...) to a Brick running'
+	@echo '                   a release image, in memory until it restarts (SSH switched on there'
+	@echo '                   with your own key: SSH_KEY=<private key file>; BRICK= as above)'
 	@echo '  deploy-specular  build Specular, replace it on the Brick and restart it (kept across'
 	@echo '                   restarts until the next update-device)'
 	@echo '  run-specular     build Specular and run it once in the foreground on the Brick'
@@ -143,15 +149,21 @@ $(B)/stock-root/.done: $(B)/stock-fw/rootfs.fex
 	@touch $@
 
 # --- Our system -----------------------------------------------------------------------------
-# Always run: each build is a new version (named by time and git commit).
+# Always run: each build is a new version (named by time and git commit). RELEASE=1 makes a
+# release image (build-system.sh says what differs); sd-card and update-device take it too.
+RELEASE ?= 0
 system: buildroot kernel gpu userspace device-tools specular installer $(B)/stock-root/.done
-	tools/system/build-system.sh $(B)/system
+	RELEASE=$(RELEASE) tools/system/build-system.sh $(B)/system
 
 sd-card: system
 	tools/system/build-sd-card.sh $(B)/system/latest $(B)/sd-card.img
 
 update-device: system
 	tools/system/update-device.sh $(B)/system/latest
+
+# It copies the tools from where build-system.sh takes them: Buildroot's build and the device tools.
+debug-running-release: buildroot device-tools
+	tools/system/debug-running-release.sh
 
 deploy-specular: specular
 	tools/system/deploy-specular.sh $(SPECULAR_STAGE) $(SPECULAR_PREFIX)

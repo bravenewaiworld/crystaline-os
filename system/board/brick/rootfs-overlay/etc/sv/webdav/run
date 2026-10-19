@@ -1,9 +1,10 @@
 #!/bin/sh
-# File transfer over WiFi: dufs (github.com/sigoden/dufs) serves the data card on port 80, both as
-# WebDAV (mountable in PC file managers) and as a browser page for uploading and downloading.
-# No password: anyone on the network can read and write the card. -A: allow uploads, deletes and
-# search; files are written as root.
+# File transfer: dufs (github.com/sigoden/dufs) serves the data card on port 80, both as WebDAV
+# (mountable in PC file managers) and as a browser page for uploading and downloading. Down at
+# start-up (the `down` file): Specular runs it only while its "File transfer" screen is open
+# (sv up webdav, sv down webdav). No password: while it runs, anyone on the network can read and
+# write the card. -A: allow uploads, deletes and search; files are written as root.
 exec 2>&1
-# No data card: stay down (until the next start-up) rather than retry every second.
+# No data card: stay down rather than retry every second.
 mountpoint -q /mnt/SDCARD || { sv down webdav; exit 0; }
 exec /usr/bin/dufs -A -p 80 /mnt/SDCARD

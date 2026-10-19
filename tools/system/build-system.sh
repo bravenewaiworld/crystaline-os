@@ -3,7 +3,8 @@
 #   $OUT/<version>/rootfs.squashfs   the root filesystem (zstd), mounted read-only on the device
 #   $OUT/<version>/boot.img          our kernel + initramfs (system/board/brick/initramfs/init),
 #                                    written to the "boot" partition to run this version
-#   $OUT/<version>/manifest.json     version, git commit, build time, sizes and SHA-256 of both
+#   $OUT/<version>/manifest.json     version, git commit, build time, release or development,
+#                                    sizes and SHA-256 of both
 # and points $OUT/latest at it. Prints the version.
 #
 # Our parts are built by the top-level Makefile, never by Buildroot, so changing them needs no
@@ -11,14 +12,17 @@
 # the device tools and the installer. TrimUI's binaries come from its firmware: the GPU libraries
 # and firmware, the XR829's WiFi/Bluetooth firmware and its Bluetooth start-up program
 # (hciattach).
-# Development SSH keys (build/ssh-host-keys, made by dev-keys.sh) are included: root logs in
-# with dev_key.
+# RELEASE=1 (from the environment; `make system RELEASE=1`) builds a release image, without the
+# checkout's SSH keys, the serial-console login, and the debugging and hardware test tools a
+# development image (the default) has: see "Debugging tools" and "SSH and root" below.
 #
 # Runs without root rights: the base is unpacked as the current user, then packed from a tar
 # stream that restores Buildroot's owners (tar-with-owners.py; our files are root's).
-# Usage: build-system.sh <out-dir>
+# Usage: [RELEASE=1] build-system.sh <out-dir>
 set -eu
 OUT=$1
+RELEASE=${RELEASE:-0}
+case $RELEASE in 0 | 1) ;; *) echo "RELEASE must be 0 or 1, not '$RELEASE'" >&2; exit 1 ;; esac
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 . "$ROOT/tools/env.sh"
 B=$ROOT/build
@@ -26,12 +30,13 @@ BR=$B/buildroot
 KBUILD=$B/kernel
 BOARD=$ROOT/system/board/brick
 HOST=$BR/host/bin
+READELF=$(ls "$HOST"/aarch64-*-readelf | head -1)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
 dirty=$(git -C "$ROOT" status --porcelain --untracked-files=no | grep -q . && echo -dirty || true)
 commit=$(git -C "$ROOT" rev-parse --short HEAD)
 VERSION=$(date -u +%Y%m%d-%H%M%S)-$commit$dirty
-RELEASE=$(cat "$KBUILD/include/config/kernel.release")
+KERNEL_RELEASE=$(cat "$KBUILD/include/config/kernel.release")
 R=$TMP/root
 
 # --- Base -------------------------------------------------------------------------------------
@@ -45,9 +50,9 @@ put() { install -D -m "$3" "$1" "$R$2"; }
 # Kernel modules, the GPU driver's in extra/, and their dependency lists for modprobe.
 "$ROOT/tools/kmake.sh" "$KBUILD" modules_install INSTALL_MOD_PATH="$R" INSTALL_MOD_STRIP=1 \
 	DEPMOD=true >/dev/null
-for ko in "$B"/gpu/*.ko; do put "$ko" "/lib/modules/$RELEASE/extra/${ko##*/}" 644; done
-rm -f "$R/lib/modules/$RELEASE/build" "$R/lib/modules/$RELEASE/source"
-"$HOST/depmod" -b "$R" "$RELEASE"
+for ko in "$B"/gpu/*.ko; do put "$ko" "/lib/modules/$KERNEL_RELEASE/extra/${ko##*/}" 644; done
+rm -f "$R/lib/modules/$KERNEL_RELEASE/build" "$R/lib/modules/$KERNEL_RELEASE/source"
+"$HOST/depmod" -b "$R" "$KERNEL_RELEASE"
 
 put "$B/userspace/padbridge" /usr/bin/padbridge 755
 put "$B/installer/aarch64-unknown-linux-gnu/release/brick-install" /usr/sbin/brick-install 755
@@ -71,26 +76,65 @@ mkdir -p "$R/lib/firmware"
 cp "$TMP"/stock/firmware/*xr829* "$TMP"/stock/firmware/rgx.* "$R/lib/firmware/"
 put "$TMP/stock/hciattach" /usr/bin/hciattach 755
 
-# Development SSH access.
-"$ROOT/tools/system/dev-keys.sh"
-KEYS=$B/ssh-host-keys
-for t in rsa ecdsa ed25519; do
-	put "$KEYS/ssh_host_${t}_key" /etc/ssh/ssh_host_${t}_key 600
-	put "$KEYS/ssh_host_${t}_key.pub" /etc/ssh/ssh_host_${t}_key.pub 644
-done
-put "$KEYS/dev_key.pub" /root/.ssh/authorized_keys 600
-chmod 700 "$R/root/.ssh"
+# --- Debugging tools --------------------------------------------------------------------------
+# Release images leave out the debugging and hardware test tools in debug-tools.list, which `make
+# debug-running-release` copies into a running release's memory instead.
+if [ "$RELEASE" = 1 ]; then
+	mkdir "$TMP/left-out"
+	grep -v -e '^#' -e '^$' "$BOARD/debug-tools.list" | while read -r p; do
+		set -- "$R"/$p
+		[ -e "$1" ] || { echo "debug-tools.list: nothing in the image matches $p" >&2; exit 1; }
+		mv "$@" "$TMP/left-out/"
+	done
+	# Nothing still in the image may need a library left out (its NEEDED names are file names here,
+	# as the list takes each library's links too).
+	find "$R" -type f \( -perm -u+x -o -name '*.so*' \) -exec "$READELF" -d {} + 2>/dev/null |
+		sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' | sort -u >"$TMP/needed"
+	[ -s "$TMP/needed" ] || { echo "readelf ($READELF) found no libraries needed in the image" >&2; exit 1; }
+	if ls "$TMP/left-out" | grep -Fx -f "$TMP/needed" >&2; then
+		echo "debug-tools.list: the release image still needs the libraries above" >&2
+		exit 1
+	fi
+fi
+
+# --- SSH and root -----------------------------------------------------------------------------
+# Development: the checkout's SSH keys (build/ssh-host-keys, made by dev-keys.sh); root logs in
+# with dev_key, or without a password on the serial console.
+# Release: no keys in the image. The host keys and root's authorized_keys link into the state
+# area: the device makes host keys of its own (ssh-host-keys), and the login keys are only those
+# the user imports on the device (brick-ssh, which also switches SSH on and off). Root's password
+# becomes "*", which no password matches, so nobody can log in on the serial console ("!" would
+# mark the account locked, and sshd would then refuse root's keys too).
+install -d -m 700 "$R/root/.ssh"
+if [ "$RELEASE" = 1 ]; then
+	for t in rsa ecdsa ed25519; do
+		ln -s /var/state/ssh/ssh_host_${t}_key "$R/etc/ssh/ssh_host_${t}_key"
+	done
+	ln -s /var/state/ssh/authorized_keys "$R/root/.ssh/authorized_keys"
+	sed -i 's/^root:[^:]*:/root:*:/' "$R/etc/shadow"
+else
+	"$ROOT/tools/system/dev-keys.sh"
+	KEYS=$B/ssh-host-keys
+	for t in rsa ecdsa ed25519; do
+		put "$KEYS/ssh_host_${t}_key" /etc/ssh/ssh_host_${t}_key 600
+		put "$KEYS/ssh_host_${t}_key.pub" /etc/ssh/ssh_host_${t}_key.pub 644
+	done
+	put "$KEYS/dev_key.pub" /root/.ssh/authorized_keys 600
+fi
 
 echo "$VERSION" >"$R/etc/brick-version"
 V=$OUT/$VERSION
 mkdir -p "$V"
-python3 -I "$ROOT/tools/system/tar-with-owners.py" "$BR/images/rootfs.tar" "$R" |
-	"$HOST/sqfstar" -comp zstd -quiet "$V/rootfs.squashfs"
+# -root-*: the tar has no entry for the root directory itself.
+# Here and for the initramfs below, the stream goes through a file rather than a pipe: sh (dash,
+# on Debian and Ubuntu) has no pipefail, so a failure in the first command of a pipe would go
+# unnoticed.
+python3 -I "$ROOT/tools/system/tar-with-owners.py" "$BR/images/rootfs.tar" "$R" >"$TMP/rootfs.tar"
+"$HOST/sqfstar" -comp zstd -quiet -root-uid 0 -root-gid 0 -root-mode 755 "$V/rootfs.squashfs" <"$TMP/rootfs.tar"
 
 # --- Initramfs --------------------------------------------------------------------------------
 # init, the programs it runs and the libraries they need, listed for the kernel's gen_init_cpio
 # (which sets owners itself, so no root rights are needed).
-READELF=$(ls "$HOST"/aarch64-*-readelf | head -1)
 list=$TMP/initramfs.list
 {
 	for d in /dev /proc /sys /system /lower /newroot /bootlog /bin /sbin /etc /lib /usr /usr/bin \
@@ -127,7 +171,8 @@ for a in sh mount umount mkdir cat sed sleep findfs watchdog reboot switch_root 
 	grep dmesg ps sync kill; do
 	echo "slink /bin/$a busybox 777 0 0" >>"$list"
 done
-"$KBUILD/usr/gen_init_cpio" "$list" | gzip -9 >"$TMP/initramfs.cpio.gz"
+"$KBUILD/usr/gen_init_cpio" "$list" >"$TMP/initramfs.cpio"
+gzip -9 "$TMP/initramfs.cpio"
 
 # --- Boot image -------------------------------------------------------------------------------
 # Appended to U-Boot's boot arguments (for these, the last occurrence wins):
@@ -143,7 +188,7 @@ entry() { printf '"%s": { "size": %s, "sha256": "%s" }' "$1" "$(stat -c%s "$V/$1
 	"$(sha256sum "$V/$1" | cut -d' ' -f1)"; }
 cat >"$V/manifest.json" <<EOF
 { "version": "$VERSION", "commit": "$commit$dirty", "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "kernel": "$RELEASE",
+  "kernel": "$KERNEL_RELEASE", "release": $([ "$RELEASE" = 1 ] && echo true || echo false),
   "files": { $(entry boot.img), $(entry rootfs.squashfs) } }
 EOF
 ln -sfn "$VERSION" "$OUT/latest"

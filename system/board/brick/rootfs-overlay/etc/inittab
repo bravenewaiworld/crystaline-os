@@ -3,7 +3,9 @@
 # exit; `sv stop NAME` stops one).
 ::sysinit:/etc/init.d/rcS
 ::respawn:/usr/bin/runsvdir -P /etc/service
-# Development: a root shell on the serial console (UART pads on the board).
+# A login on the serial console (UART pads on the board): root without a password on development
+# images; on release images no password matches root's, so nobody can log in here
+# (tools/system/build-system.sh).
 ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100
 ::ctrlaltdel:/sbin/reboot
 ::shutdown:/etc/init.d/rcK

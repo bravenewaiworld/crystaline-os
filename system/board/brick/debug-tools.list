@@ -1,0 +1,25 @@
+# The debugging and hardware test tools, and the libraries only they use. Development images
+# have them; release images leave them out (tools/system/build-system.sh), and
+# `make debug-running-release` copies them into a running release's memory
+# (tools/system/debug-running-release.sh).
+# One shell pattern per line, relative to the root filesystem; each must match at least one file,
+# or the release build and the copy fail.
+usr/bin/strace
+usr/bin/strace-log-merge
+usr/bin/perf
+usr/bin/gdbserver
+# gdbserver's agent for fast tracepoints, loaded into the program being debugged
+usr/lib/libinproctrace.so
+# elfutils: symbols and call stacks for perf, and strace -k. [.-] takes the library and its
+# links (libdw-0.194.so, libdw.so.1, libdw.so), not other libraries starting libdw.
+usr/lib/libdw[.-]*
+usr/lib/libelf[.-]*
+usr/lib/libasm[.-]*
+# Our hardware test tools (tools/device; DEVELOPMENT.md, "On-device tools")
+usr/bin/dispctl
+usr/bin/glspin
+usr/bin/rumble
+usr/bin/i2creg
+usr/bin/memreg
+usr/bin/blkro
+usr/bin/powertest
