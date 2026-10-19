@@ -19,6 +19,7 @@
 - **Specular only:**
   - `make deploy-specular` replaces Specular through the developer layer and restarts it.
   - `make run-specular` runs a build once in the foreground with its output on your terminal, and puts the installed one back afterwards.
+- **Boot logo:** edit `system/board/brick/logo/make-logo.py` and regenerate the committed BMP (needs Pillow): `python3 system/board/brick/logo/make-logo.py specular/assets/fonts/Geist.ttf system/board/brick/logo/bootlogo.bmp /tmp/logo.png` (the PNG is a preview). It lives in the bootloader partition, which updates don't touch: it reaches a device only on a new SD card (`make sd-card`), and an install copies it from the card.
 - **Services** are supervised and restarted when they exit. They can be stopped, started and restarted individually (`sv`). After 3 failures within a minute, the frontend falls back to a hardware status screen until the next boot.
 
 ## Seeing what happened
