@@ -2,7 +2,8 @@
 # First program the kernel runs (the boot image's initramfs). Mounts the system partition, then
 # this version's read-only system image from it, and hands over to that system's init.
 #
-# Which version runs is decided by the boot partition alone: each boot image carries its own
+# Which version runs is decided by the boot image alone, which U-Boot loads from the boot slot its
+# settings name (boot_a or boot_b, passed on as brick.boot=): each boot image carries its own
 # version (/etc/brick-version) and mounts images/<that version>/ from the system partition, so the
 # kernel and its modules always match. The system partition is found by its filesystem UUID,
 # which U-Boot's settings put on the command line as root=UUID=... (the same names exist on both
@@ -17,15 +18,22 @@
 # Progress codes: each stage of the start-up (here, then the system's rcS) writes 0xB007XXYY to
 # the clock chip's spare register 7 (0x0700011C), which survives resets and power-off. YY is the
 # stage: 01 started, 02 watchdog, 03 system partition found, 04 checked, 05 mounted, 06 image
-# mounted, 07 handing over; rcS: 10 started, 11 data card, 12 services starting. XX is 00, or 03
-# while the partition is checked with YY then counting the seconds it has taken (to 255), or EE
-# once stage YY has failed. After a start that failed without a message (e.g. a reset loop), boot
-# another card and read it (memreg 0x0700011C): no B007 prefix means this program never ran.
+# mounted, 07 handing over, 08 recovery menu shown, 09 recovery action running; rcS: 10 started,
+# 11 data card, 12 services starting. XX is 00, or 03 while the partition is checked with YY then
+# counting the seconds it has taken (to 255), or EE once stage YY has failed. 08 and 09 aren't
+# stages: when the menu returns, the register goes back to the stage reached. After a start that
+# failed without a message (e.g. a reset loop), boot another card and read it (memreg
+# 0x0700011C): no B007 prefix means this program never ran.
 #
 # Start-up log: from the moment the system partition is found until the hand-over, this program's
 # log, the kernel's log and the running programs are copied every second to brick-log/ on the
 # "bootloader" partition (FAT, readable on a PC) of the disk the system is on, so a start that
 # ends in a reset still leaves them behind.
+#
+# Recovery menu: holding MENU while the device starts, or a start that fails once the system
+# partition is mounted, shows a menu (drawn by status) that can continue starting (if nothing
+# failed), start the previous version, install an update file from the SD card, or power off
+# (docs/boot.md).
 progress() { devmem 0x0700011C 32 $((0xB0070000 | $1)) 2>/dev/null; }
 stage() { STAGE=$1; progress $1; }
 
@@ -42,19 +50,165 @@ watchdog -T 16 -t 4 /dev/watchdog
 stage 0x02
 
 LOG=/run-init.log
-log() { echo "brick-init: $*" >/dev/kmsg; echo "$*" >>$LOG; }
+# log MESSAGE: to the kernel log and $LOG, and, once a recovery menu has been shown, to its own log
+# on the system partition ($RLOG) as well.
+log() { echo "brick-init: $*" >/dev/kmsg; echo "$*" >>$LOG; [ -z "$RLOG" ] || echo "$*" >>$RLOG; }
+# Checked once, here, so MENU must be down now; the menu itself waits for the system partition.
+status --held MENU 2>>$LOG &&
+	{ WANT_MENU=1; log "MENU held: recovery menu once the system partition is mounted"; }
 
-# fail TITLE [LINE]...: report why the system can't start, on screen and in the kernel log, then
-# wait (the watchdog keeps the device on, showing the message).
+# fail TITLE [LINE]...: report why the system can't start, then wait for good (the watchdog daemon
+# keeps the device from resetting). Once the system partition is mounted, the report is the
+# recovery menu, which returns only if it can't be shown; before that, or then, it is a message.
 fail() {
-	progress $((0xEE00 | STAGE))
 	log "failed: $*"
+	! grep -q ' /system ' /proc/mounts || recovery "$*"
+	progress $((0xEE00 | STAGE))
 	status --message "$@" "" "Version $VERSION" "To recover: insert a recovery SD card and restart" \
 		"(hold the power button to turn off)" >/dev/kmsg 2>&1
 	while :; do sleep 3600; done
 }
 
-log "version $VERSION"
+# --- Recovery menu ----------------------------------------------------------------------------
+# Its actions run brick-install on /system and the SD card's data partition, mounted at /card.
+# The progress register says 08 while it shows and 09 while an action runs; STAGE stays as it was,
+# so a later failure still reports the stage reached.
+
+# bi ARG...: brick-install for the recovery menu; callers log its output. --status: its default is
+# in /run, which the initramfs lacks. Without an SD card, /card is an empty folder in memory, so
+# brick-install's own log (logs/ there) is lost; its output is still in $RLOG.
+bi() { brick-install "$@" --system /system --data /card --status /brick-install.status; }
+
+# finish reboot|poweroff WHY: save the logs, unmount everything, then restart or power off at once.
+finish() {
+	log "$1: $2"
+	stop_saver
+	umount /newroot /lower /card /system 2>/dev/null
+	sync
+	$1 -f
+}
+
+# card_options: the SD card's mount options, shared with mount-card. (A missing file would end this
+# script, the kernel's first program, if sourced unchecked.)
+[ ! -f /usr/libexec/brick/card-options ] || . /usr/libexec/brick/card-options
+
+# mount_card: mount the SD card's data partition at /card, as the system's
+# /usr/libexec/brick/mount-card does (but never making or formatting one, which stays its job): on
+# the disk on the SD card's controller (sdc0), the partition named "sdcard", else the first FAT32 or
+# exFAT one other than "bootloader". Without one, prints why (shown as a note) and fails.
+mount_card() {
+	grep -q ' /card ' /proc/mounts && return
+	set -- /sys/bus/platform/devices/sdc0/mmc_host/mmc*/mmc*:*/block/mmcblk*
+	[ -e "$1" ] || { echo "No SD card"; return 1; }
+	c=${1##*/}
+	# Last, the whole card, for a card formatted without partitions.
+	for p in $(grep -l '^PARTNAME=sdcard$' /sys/block/$c/${c}p*/uevent 2>/dev/null |
+		sed 's|.*/\(.*\)/uevent|\1|') $(ls /sys/block/$c | sed -n "s/^${c}p//p" | sort -n |
+		sed "s/^/${c}p/") $c; do
+		grep -q '^PARTNAME=bootloader$' /sys/block/$c/$p/uevent 2>/dev/null && continue
+		for t in vfat exfat; do
+			mount -t $t -o $(card_options $t $(cat /etc/brick/www-data-gid)) /dev/$p /card \
+				2>/dev/null && { log "data partition $p ($t) mounted at /card"; return; }
+		done
+	done
+	echo "The SD card has no FAT32 or exFAT partition"
+	return 1
+}
+
+# menu TITLE [-n NOTE]... ITEM...: show a menu (status --menu) and set $chosen to the item chosen.
+# Returns 1 for B (back), 3 if it can't be shown; powers off after 10 minutes without a press.
+menu() {
+	i=$(status --menu "$@" 2>>$LOG)
+	case $? in
+	0) ;;
+	1) return 1 ;;
+	2) finish poweroff "no button pressed for 10 minutes" ;;
+	*) log "can't show the recovery menu"; return 3 ;;
+	esac
+	shift
+	while [ "$1" = -n ]; do shift 2; done
+	[ "$i" -ge 0 ] 2>/dev/null && [ "$i" -lt $# ] || { log "status --menu printed '$i'"; return 3; }
+	shift $i
+	chosen=$1
+	log "chosen: $chosen"
+}
+
+# task TITLE ARG...: run brick-install ARG..., showing its progress (status --task), then restart
+# once the user has read that it worked. Returns if it failed.
+task() {
+	t=$1
+	shift
+	progress 0x09
+	log "brick-install $*"
+	bi "$@" 2>&1 | tee -a $LOG $RLOG | status --task "$t" 2>>$LOG
+	case $? in
+	0) finish reboot "brick-install $1 done" ;;
+	2) finish poweroff "no button pressed for 10 minutes" ;;
+	esac
+	progress 0x08
+}
+
+# updates: the names of the card's update files, newest first (their names start with the
+# version's build time).
+updates() { ls -r /card/updates 2>/dev/null | grep '\.update$'; }
+
+# install_update: choose one of the card's 10 newest update files (10 fit on screen), install it.
+install_update() {
+	set --
+	while read -r f; do [ -z "$f" ] || set -- "$@" "$f"; done <<-EOF
+	$(updates | head -n 10)
+	EOF
+	menu "Install an update from the SD card" "$@" &&
+		task "Installing $chosen" update "/card/updates/$chosen"
+}
+
+# recovery REASON: the recovery menu. REASON is why the start failed, or empty. Returns when the
+# user chooses to continue starting (offered only when nothing failed), or if it can't be shown.
+recovery() {
+	reason=$1
+	mkdir -p /system/logs
+	RLOG=/system/logs/recovery-$(date -u +%Y%m%d-%H%M%S).log
+	cp $LOG $RLOG
+	set -- /system/logs/recovery-*.log	# keep the newest 10 (the names sort by time)
+	while [ $# -gt 10 ]; do rm -f "$1"; shift; done
+	log "recovery menu${reason:+ after: $reason}"
+	while :; do
+		progress 0x08
+		note=$(mount_card)
+		# "boot_a|boot_b <version|unknown> [running|previous]" per slot, then "next <slot>".
+		slots=$(bi slots 2>&1)
+		log "brick-install slots: $slots"
+		prev=$(echo "$slots" | sed -n 's/^boot_[ab] \([^ ]*\) previous$/\1/p')
+		set --
+		[ -n "$reason" ] || set -- "Continue starting"
+		[ -z "$prev" ] || [ "$prev" = "$VERSION" ] || set -- "$@" "Start the previous version $prev"
+		if [ -n "$(updates)" ]; then
+			set -- "$@" "Install an update from the SD card"
+		elif [ -z "$note" ]; then
+			note="No update files in updates/ on the SD card"
+		fi
+		set -- "$@" "Power off"
+		menu "Crystaline OS recovery" -n "Version $VERSION (${slot:-slot unknown})" \
+			${reason:+-n "Couldn't start: $reason"} ${note:+-n "$note"} "$@"
+		case $? in
+		0) ;;
+		1) continue ;;	# B: shown again, after looking at the card again (e.g. one just inserted)
+		*) break ;;
+		esac
+		case $chosen in
+		Continue*) break ;;
+		Start*) task "Starting the previous version" activate "$prev" ;;
+		Install*) install_update ;;
+		Power*) finish poweroff "chosen in the recovery menu" ;;
+		esac
+	done
+	umount /card 2>/dev/null	# the system mounts the card itself
+	progress $STAGE
+}
+
+# The boot slot this image was loaded from (see the top).
+slot=$(sed -n 's/.* brick\.boot=\([^ ]*\).*/\1/p' /proc/cmdline)
+log "version $VERSION, slot ${slot:-unknown}"
 uuid=$(sed -n 's/.* root=UUID=\([^ ]*\).*/\1/p' /proc/cmdline)
 [ -n "$uuid" ] || fail "No system partition given" "U-Boot's settings lack root=UUID=..."
 # The storage may still be starting up.
@@ -67,6 +221,8 @@ save_log() {
 	cp $LOG /bootlog/brick-log/init.log; dmesg >/bootlog/brick-log/dmesg.txt
 	ps >/bootlog/brick-log/ps.txt; sync
 }
+# stop_saver: stop the copying, copy a last time and unmount the bootloader partition.
+stop_saver() { [ -z "$saver" ] || { kill $saver; wait $saver 2>/dev/null; save_log; umount /bootlog; }; }
 disk=${dev#/dev/}; disk=${disk%p*}
 bl=$(grep -l '^PARTNAME=bootloader$' /sys/block/$disk/${disk}p*/uevent | sed 's|.*/\(.*\)/uevent|/dev/\1|')
 if [ -n "$bl" ] && mount -t vfat $bl /bootlog; then
@@ -89,6 +245,7 @@ log "e2fsck $dev: $rc"
 stage 0x04
 mount -t ext4 -o noatime $dev /system || fail "Can't mount the system partition" "$dev"
 stage 0x05
+[ -z "$WANT_MENU" ] || recovery ""
 
 img=/system/images/$VERSION/rootfs.squashfs
 [ -f $img ] || fail "System image missing" "$img"
@@ -108,11 +265,7 @@ fi
 mkdir -p /system/logs
 cp $LOG /system/logs/init.log
 stage 0x07	# while /dev/mem is still here
-if [ -n "$saver" ]; then
-	kill $saver; wait $saver 2>/dev/null
-	save_log
-	umount /bootlog
-fi
+stop_saver
 mount --move /system /newroot/system
 for d in dev proc sys; do mount --move /$d /newroot/$d; done
 exec switch_root /newroot /sbin/init

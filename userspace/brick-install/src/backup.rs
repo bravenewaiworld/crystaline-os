@@ -8,6 +8,15 @@
 //! A backup is made under a name ending in ".partial" and renamed once every piece has been read
 //! back and checked, so a folder without it is complete; one with it is left from a backup cut
 //! short, and is deleted when the next backup starts.
+//!
+//! A restore runs from the SD card's system. From the installed system, `restore` prepares it:
+//! it copies the first-stage loader from the internal storage back onto the card, where an
+//! install erased it, then leaves a marker, `backups/restore-pending.json` (`PENDING`), on the
+//! data partition. After a restart the card's system starts; Specular sees the marker (offer's
+//! `restore_pending`) and offers to continue, or to cancel, which erases the card's first-stage
+//! loader again. The loader is written before the marker: a power cut between the two leaves a
+//! card that starts the device without a marker, from which the backup can still be restored in
+//! Settings as usual.
 
 use std::fs::File;
 use std::io::{Read, Write};
@@ -15,15 +24,20 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::disk::{CHUNK, Disk};
-use crate::install::{self, RESTORING};
-use crate::report::{Context, Report, Result, fail, gb, read_json, timestamp};
+use crate::Paths;
+use crate::disk::{self, CHUNK, Disk};
+use crate::install::{self, CARD_BOOT0, RESTORING};
+use crate::report::{Context, Report, Result, fail, gb, hex, read_json, timestamp};
 
+/// How much of the disk each piece holds.
 const PIECE: u64 = 1 << 30;
-/// How many steps `restore` reports.
-pub const RESTORE_STEPS: usize = 3;
+/// The prepared-restore marker, in `<data>/backups/`:
+///   { "backup": the backup folder's name, "bytes": its disk size, "prepared": when (UTC) }
+const PENDING: &str = "restore-pending.json";
+/// The partitions a card made for this system has.
+const CARD_PARTS: [&str; 6] = ["bootloader", "env", "env-redund", "boot_a", "boot_b", "system"];
 
-/// A complete backup found on the card. `holds` is missing in backups made before it was recorded.
+/// A complete backup found on the card. `holds` is None when its manifest doesn't record it.
 pub struct Found { pub dir: PathBuf, pub created: String, pub bytes: u64, pub holds: Option<String> }
 
 /// The complete backups in `<data>/backups`, newest first.
@@ -43,8 +57,7 @@ pub fn list(data: &Path) -> Vec<Found> {
 pub fn leftovers(data: &Path) -> (Vec<PathBuf>, u64) {
     let dirs: Vec<PathBuf> = std::fs::read_dir(data.join("backups")).into_iter().flatten().flatten()
         .filter(|e| e.file_name().to_string_lossy().ends_with(".partial")).map(|e| e.path()).collect();
-    let bytes = dirs.iter().flat_map(|d| std::fs::read_dir(d).into_iter().flatten().flatten())
-        .filter_map(|f| f.metadata().ok()).map(|m| m.len()).sum();
+    let bytes = dirs.iter().map(|d| install::dir_bytes(d)).sum();
     (dirs, bytes)
 }
 
@@ -95,11 +108,26 @@ pub fn check(dir: &Path, report: &mut Report) -> Result<serde_json::Value> {
     Ok(m)
 }
 
-/// Writes the backup in `dir` back onto `disk`, in `RESTORE_STEPS` steps: every piece is checked
-/// first, then written, then the whole disk is read back and compared. The first chunk (with the
-/// partition table) is written last, over the `RESTORING` marker (see install.rs).
-pub fn restore(dir: &Path, disk: &Disk, report: &mut Report) -> Result<()> {
+/// `brick-install restore <dir>`: from the SD card, `restore`; from the installed system, `prepare`.
+pub fn restore_or_prepare(p: &Paths, dir: &Path, report: &mut Report) -> Result<String> {
+    if !p.on_card() { return prepare(p, dir, report); }
+    report.steps(3);
     report.step("Checking the backup");
+    install::battery_ok(&p.power, report)?;
+    let target = Disk::open(p.internal()?, true)?;
+    restore(dir, &target, report)?;
+    let marker = p.data.join("backups").join(PENDING);
+    if marker.exists() {
+        report.log(&format!("deleting {}", marker.display()));
+        std::fs::remove_file(&marker).ctx("deleting the prepared restore's marker")?;
+    }
+    Ok("Restored the internal storage. Power off, remove the SD card, then turn the device on.".into())
+}
+
+/// Writes the backup in `dir` back onto `disk`, in 3 steps (the caller starts the first): every
+/// piece is checked first, then written, then the whole disk is read back and compared. The first
+/// chunk (with the partition table) is written last, over the `RESTORING` marker (see install.rs).
+fn restore(dir: &Path, disk: &Disk, report: &mut Report) -> Result<()> {
     let m = check(dir, report)?;
     let total = m["bytes"].as_u64().unwrap_or(0);
     if total != disk.size {
@@ -151,4 +179,92 @@ fn each_piece(dir: &Path, m: &serde_json::Value, mut f: impl FnMut(&[u8]) -> Res
     Ok(())
 }
 
-pub fn hex(bytes: &[u8]) -> String { bytes.iter().map(|b| format!("{b:02x}")).collect() }
+/// Prepares restoring the backup in `dir` from the installed system (see the top of this file).
+fn prepare(p: &Paths, dir: &Path, report: &mut Report) -> Result<String> {
+    report.steps(2);
+    report.step("Checking");
+    let internal = Disk::open(p.internal()?, false)?;
+    let card = Disk::open(p.card()?, true)?;
+    can_prepare(&internal, &card)?;
+    let m = read_json(&dir.join("manifest.json"), "the backup's manifest")?;
+    if m["bytes"].as_u64() != Some(internal.size) {
+        return fail(format!("the backup is of a {} disk, the internal storage holds {}", gb(m["bytes"].as_u64().unwrap_or(0)), gb(internal.size)), "This backup is from another device.");
+    }
+    if let Some(missing) = m["pieces"].as_array().into_iter().flatten().filter_map(|p| p["file"].as_str()).find(|f| !dir.join(f).is_file()) {
+        return fail(format!("{missing} of the backup is missing"), "This backup can't be used.");
+    }
+    report.log(&format!("backup {}: {} bytes, made {}", dir.display(), m["bytes"], m["created"]));
+    install::battery_ok(&p.power, report)?;
+
+    report.step("Making the SD card start the device");
+    let (from, len) = install::bytes(CARD_BOOT0);
+    card.write_checked(from, &internal.read_at(from, len as usize)?, "the first-stage loader (from the internal storage)", report)?;
+    let name = dir.file_name().unwrap_or_default().to_string_lossy();
+    let marker = serde_json::json!({ "backup": name, "bytes": m["bytes"], "prepared": timestamp() });
+    let (path, tmp) = (p.data.join("backups").join(PENDING), p.data.join("backups").join(format!("{PENDING}.new")));
+    let write = || -> std::io::Result<()> {
+        let mut f = File::create(&tmp)?;
+        f.write_all(&serde_json::to_vec_pretty(&marker).unwrap())?;
+        f.sync_all()?;
+        std::fs::rename(&tmp, &path)?;
+        File::open(p.data.join("backups"))?.sync_all()
+    };
+    write().ctx("writing the prepared restore's marker")?;
+    report.log(&format!("wrote {}: {marker}", path.display()));
+    Ok("Restart to continue the restore from the SD card.".into())
+}
+
+/// Whether a restore can be prepared: the internal storage holds this system, and the card is one
+/// of ours that starts (the boot slot its settings name holds a boot image).
+fn can_prepare(internal: &Disk, card: &Disk) -> Result<()> {
+    if install::holds(internal) != "this-system" {
+        return fail(format!("the internal storage holds {}, not this system", install::holds(internal)), "Restore from the SD card's system instead.");
+    }
+    const REWRITE: &str = "Copy backups/ off the SD card to a PC, write a fresh card with this system, copy backups/ back, then try again.";
+    let parts = card.partitions()?;
+    if let Some(missing) = CARD_PARTS.iter().find(|n| disk::named(&parts, n, &card.path).is_err()) {
+        return fail(format!("the SD card has no {missing} partition: it wasn't made for this version of the system"), REWRITE);
+    }
+    let (settings, _) = crate::env::current(card, &parts)?;
+    let slot = crate::env::get(&settings.pairs, "boot_partition").unwrap_or_default();
+    if !disk::named(&parts, slot, &card.path).and_then(|s| card.read_at(s.start, 8)).is_ok_and(|b| b == b"ANDROID!") {
+        return fail(format!("the SD card's boot slot {slot:?} holds no system"), REWRITE);
+    }
+    Ok(())
+}
+
+/// `brick-install restore --cancel`, on the SD card: drops a prepared restore (its marker) and
+/// erases the card's first-stage loader again, so the device starts from the internal storage.
+pub fn cancel(p: &Paths, report: &mut Report) -> Result<String> {
+    report.steps(1);
+    report.step("Cancelling the restore");
+    if !p.on_card() { return fail("the system isn't running from an SD card", "Cancel the restore from the SD card's system."); }
+    let held = install::holds(&Disk::open(p.internal()?, false)?);
+    if held != "this-system" {
+        return fail(format!("the internal storage holds {held}, not this system"), "Without this system on the internal storage, the device has to start from the SD card.");
+    }
+    let marker = p.data.join("backups").join(PENDING);
+    match std::fs::remove_file(&marker) {
+        Ok(()) => report.log(&format!("deleted {}", marker.display())),
+        Err(e) => report.log(&format!("{}: {e}", marker.display())),
+    }
+    let card = Disk::open(p.card()?, true)?;
+    let (from, len) = install::bytes(CARD_BOOT0);
+    card.write_checked(from, &vec![0; len as usize], "zeros over the card's first-stage loader", report)?;
+    Ok("The restore is cancelled. Restart to start from the internal storage.".into())
+}
+
+/// For `offer` on the SD card: the prepared restore's marker, or null.
+pub fn pending(data: &Path) -> serde_json::Value {
+    read_json(&data.join("backups").join(PENDING), "").unwrap_or(serde_json::Value::Null)
+}
+
+/// For `offer` on the installed system: whether a restore can be prepared ({ "possible": true }
+/// or { "why_not" }); the backup itself is checked when it runs.
+pub fn offer_prepare(p: &Paths) -> serde_json::Value {
+    let ready = || can_prepare(&Disk::open(p.internal()?, false)?, &Disk::open(p.card()?, false)?);
+    match ready() {
+        Ok(()) => serde_json::json!({ "possible": true }),
+        Err(e) => serde_json::json!({ "why_not": e.message }),
+    }
+}

@@ -2,7 +2,8 @@
 //!
 //! Everything comes from the card the system runs from, so the internal storage starts exactly
 //! what runs now: the boot area (first-stage loader and boot package), the bootloader partition
-//! (a FAT filesystem holding the boot logo), the boot image of the running version, and a new system partition holding that version's files
+//! (a FAT filesystem holding the boot logo), U-Boot's settings, the boot image of the running
+//! version (into boot slot A), and a new system partition holding that version's files
 //! (images/<version>/) and the state (saved WiFi networks, Bluetooth pairings). Then everything
 //! written is read back and checked, and the card's first-stage loader is erased (unless asked
 //! not to), so the device starts from the internal storage: the boot ROM tries the card first.
@@ -13,69 +14,66 @@
 //! is written at known places, without it). `holds` tells these states apart. Until the very end the card
 //! still starts the device, so a cut-short install can simply be run again.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
+use crate::Paths;
 use crate::backup;
 use crate::disk::{self, Disk, SECTOR};
 use crate::env;
-use crate::report::{Context, Report, Result, SEE_LOG, fail, gb, read_json};
+use crate::report::{Context, Report, Result, SEE_LOG, fail, gb, hex, read_json};
 
 /// The internal storage's partitions, in sectors (start, size; None: the rest of the disk).
-/// TrimUI's first four exactly where its own eMMC layout has them, as the only layout known to
-/// start from the eMMC (they start 1024 sectors later than on an SD card), then our system
-/// partition over everything after them.
-const LAYOUT: [(&str, u64, Option<u64>); 5] = [
+/// TrimUI's first four stay exactly where its own eMMC layout has them (its "boot" is our boot_a):
+/// it is the only layout known to start from the eMMC. That is why they start 1024 sectors later
+/// than on our SD card, and why the two settings copies sit side by side here rather than in
+/// separate 4 MiB units as on the card. Then boot slot B, the kernel's crash records (pstore),
+/// and our system partition over the rest.
+const LAYOUT: [(&str, u64, Option<u64>); 7] = [
     ("bootloader", 41984, Some(49152)),
     ("env", 91136, Some(1024)),
     ("env-redund", 92160, Some(1024)),
-    ("boot", 93184, Some(49152)),
-    ("system", 142336, None),
+    ("boot_a", 93184, Some(49152)),
+    ("boot_b", 142336, Some(49152)),
+    ("pstore", 191488, Some(2048)),
+    ("system", 193536, None),
 ];
-/// The boot area, in sectors (first, end exclusive): from the first-stage loader (boot0, at 16; its copy at 256) up to
-/// where the card's partitions start, including the boot package at 32800. Copied from the card
+/// The boot area, in sectors (first, end exclusive): from the first-stage loader (boot0, at 16;
+/// its copy at 256) up to where the card's partitions start, including the boot package at 32800. Copied from the card
 /// as it is (the boot ROM and the first-stage loader read the same places on both disks).
 const BOOT_AREA: (u64, u64) = (16, 40960);
 /// The part of the boot area erased on the card so it no longer starts, in sectors (first, end
-/// exclusive): both copies of boot0, up to the boot package.
-const CARD_BOOT0: (u64, u64) = (16, 32800);
-/// Markers for the partition table's header sector (see the top of this file).
+/// exclusive): both copies of boot0, up to the boot package. A prepared restore writes it back
+/// (backup.rs).
+pub const CARD_BOOT0: (u64, u64) = (16, 32800);
+/// The marker in the partition table's header sector while an install writes (see the top of
+/// this file).
 pub const INSTALLING: &[u8] = b"BRICK-INSTALLING";
+/// The marker while a restore writes (backup.rs).
 pub const RESTORING: &[u8] = b"BRICK-RESTORING";
 
-/// The smallest internal storage the system fits on (the boot partitions, then 1 GiB).
-const MIN_SIZE: u64 = 142336 * SECTOR + (1 << 30);
+/// The smallest internal storage the system fits on (the partitions before the system
+/// partition, then 1 GiB).
+const MIN_SIZE: u64 = LAYOUT[LAYOUT.len() - 1].1 * SECTOR + (1 << 30);
 
-/// Where things are; on the device all are found by `Paths::find`, and any can be given instead
-/// (e.g. image files and folders on a PC, for tests).
-pub struct Paths {
-    /// The internal storage (a disk device, or an image file).
-    pub target: PathBuf,
-    /// The disk the system runs from (the SD card).
-    pub source: PathBuf,
-    /// The running system's partition (images/, state/), mounted.
-    pub system: PathBuf,
-    /// The card's data partition (backups/, logs/).
-    pub data: PathBuf,
-    /// The running system's version.
-    pub version: String,
-}
-
+/// The install's options (main.rs's usage).
 pub struct Options { pub backup: bool, pub keep_card_bootable: bool, pub dry_run: bool }
 
-/// The installation, step by step.
+/// `brick-install install`: the steps in docs/install-and-update.md ("Install steps"). Returns the
+/// closing message (the DONE line).
 pub fn install(p: &Paths, o: &Options, report: &mut Report) -> Result<String> {
     report.steps(if o.backup { 6 } else { 5 });
     report.step("Checking");
-    let source = Disk::open(&p.source, !o.dry_run && !o.keep_card_bootable)?;
-    let target = Disk::open(&p.target, !o.dry_run)?;
-    let card = disk::partitions(&p.source, report)?;
-    let (card_boot, card_env) = (disk::named(&card, "bootloader", &p.source)?, disk::named(&card, "env", &p.source)?);
-    report.log(&format!("installing version {} from {} onto {} ({} bytes, holding {})", p.version, p.source.display(), p.target.display(), target.size, holds(&target)));
-    if p.source == p.target { return fail("the internal storage is the disk the system runs from", "Start the device from an SD card to install."); }
+    if !p.on_card() { return fail("the system isn't running from an SD card", "Start the device from an SD card to install."); }
+    let (source_path, target_path) = (p.card()?, p.internal()?);
+    let source = Disk::open(source_path, !o.dry_run && !o.keep_card_bootable)?;
+    let target = Disk::open(target_path, !o.dry_run)?;
+    let card = source.partitions()?;
+    let card_boot = disk::named(&card, "bootloader", source_path)?;
+    report.log(&format!("installing version {} from {} onto {} ({} bytes, holding {})", p.version, source_path.display(), target_path.display(), target.size, holds(&target)));
     if target.size < MIN_SIZE { return fail(format!("the internal storage holds only {}", gb(target.size)), format!("The system needs at least {}.", gb(MIN_SIZE))); }
-    battery_ok()?;
+    battery_ok(&p.power, report)?;
     let images = p.system.join("images").join(&p.version);
     let manifest = check_images(&images, report)?;
     if o.backup { backup_room(&p.data, target.size)?; }
@@ -87,18 +85,25 @@ pub fn install(p: &Paths, o: &Options, report: &mut Report) -> Result<String> {
 
     report.step("Writing the start-up files");
     if !o.dry_run { mark(&target, INSTALLING)?; }
-    let uuid = std::fs::read_to_string("/proc/sys/kernel/random/uuid").ctx("making a filesystem UUID")?.trim().to_string();
-    let settings = env::set(&source.read_at(card_env.start, env::SIZE)?, "mmc_root", &format!("UUID={uuid}"))?;
+    let (uuid, pstore_uuid) = (new_uuid()?, new_uuid()?);
+    // The card's settings, as U-Boot uses them, pointed at the internal storage's partitions;
+    // the same in both copies.
+    let (card_settings, state) = env::current(&source, &card)?;
+    report.log(&state);
+    let changes = [("mmc_root", &*format!("UUID={uuid}")), ("boot_partition", "boot_a"), ("blkoops_blkdev", &*format!("PARTUUID={pstore_uuid}"))];
+    let settings = env::encode(&card_settings.pairs, &changes, card_settings.flags)?;
     let boot_img = std::fs::read(images.join("boot.img")).ctx("reading boot.img")?;
-    let (boot_area, bootloader) = (bytes(BOOT_AREA), part("bootloader"));
+    let (boot_area, bootloader, pstore) = (bytes(BOOT_AREA), part("bootloader"), part("pstore"));
     if bootloader.1 < card_boot.size { return fail("the card's bootloader partition doesn't fit the internal storage's", SEE_LOG); }
-    if boot_img.len() as u64 > part("boot").1 { return fail("boot.img doesn't fit the internal storage's boot partition", SEE_LOG); }
+    if boot_img.len() as u64 > part("boot_a").1 { return fail("boot.img doesn't fit the internal storage's boot slots", SEE_LOG); }
     if !o.dry_run {
         source.copy_to(boot_area.0, &target, boot_area.0, boot_area.1, report)?;
         source.copy_to(card_boot.start, &target, bootloader.0, card_boot.size, report)?;
         target.write_at(part("env").0, &settings)?;
         target.write_at(part("env-redund").0, &settings)?;
-        target.write_at(part("boot").0, &boot_img)?;
+        target.write_at(part("boot_a").0, &boot_img)?;
+        // TrimUI's data would otherwise sit where the kernel looks for crash records.
+        target.zero(pstore.0, pstore.1)?;
         target.sync()?;
     }
 
@@ -113,19 +118,20 @@ pub fn install(p: &Paths, o: &Options, report: &mut Report) -> Result<String> {
         same("bootloader partition", target.read_at(bootloader.0, card_boot.size as usize)?, source.read_at(card_boot.start, card_boot.size as usize)?)?;
         same("U-Boot settings", target.read_at(part("env").0, env::SIZE)?, settings.clone())?;
         same("U-Boot settings (copy)", target.read_at(part("env-redund").0, env::SIZE)?, settings)?;
-        same("boot image", target.read_at(part("boot").0, boot_img.len())?, boot_img)?;
-        check_system(&p.target, system.0, &p.version, &manifest, report)?;
+        same("boot image", target.read_at(part("boot_a").0, boot_img.len())?, boot_img)?;
+        same("crash record partition", target.read_at(pstore.0, pstore.1 as usize)?, vec![0; pstore.1 as usize])?;
+        check_system(target_path, system.0, &p.version, &manifest, report)?;
     }
 
     report.step("Finishing");
-    let script = layout_script(target.size);
+    let script = layout_script(target.size, &pstore_uuid);
     report.log(&format!("partition table:\n{script}"));
     if !o.dry_run {
-        sfdisk(&p.target, &script, report)?;
-        let parts = disk::partitions(&p.target, report)?;
+        sfdisk(target_path, &script, report)?;
+        let parts = target.partitions()?;
         for (name, ..) in LAYOUT {
             let (start, size) = part(name);
-            if !disk::named(&parts, name, &p.target).is_ok_and(|q| q.start == start && (size == 0 || q.size == size)) {
+            if !disk::named(&parts, name, target_path).is_ok_and(|q| q.start == start && (size == 0 || q.size == size)) {
                 return fail(format!("the internal storage's partition {name} doesn't read back as written"), "Try installing again; if it fails again, the internal storage may be failing.");
             }
         }
@@ -133,7 +139,8 @@ pub fn install(p: &Paths, o: &Options, report: &mut Report) -> Result<String> {
     if o.keep_card_bootable {
         report.log("the card stays bootable, as asked: the device keeps starting from it while it is in");
     } else if !o.dry_run {
-        source.zero(CARD_BOOT0.0 * SECTOR, (CARD_BOOT0.1 - CARD_BOOT0.0) * SECTOR)?;
+        let (from, len) = bytes(CARD_BOOT0);
+        source.zero(from, len)?;
         source.sync()?;
         report.log("erased the card's first-stage loader: the device now starts from the internal storage");
     }
@@ -149,19 +156,22 @@ fn part(name: &str) -> (u64, u64) {
     (start * SECTOR, size.unwrap_or(0) * SECTOR)
 }
 
-fn bytes((from, to): (u64, u64)) -> (u64, u64) { (from * SECTOR, (to - from) * SECTOR) }
+/// A range of sectors (first, end exclusive) as bytes (start, length).
+pub fn bytes((from, to): (u64, u64)) -> (u64, u64) { (from * SECTOR, (to - from) * SECTOR) }
 
-/// sfdisk's script for `LAYOUT` on a disk of `size` bytes. 16 table entries, so the table (sectors
-/// 2 to 5) ends before the boot area.
-fn layout_script(size: u64) -> String {
+/// sfdisk's script for `LAYOUT` on a disk of `size` bytes, the pstore partition with GPT UUID
+/// `pstore_uuid` (U-Boot's settings name it by that). 16 table entries, so the table (sectors 2
+/// to 5) ends before the boot area.
+fn layout_script(size: u64, pstore_uuid: &str) -> String {
     // The last 33 sectors stay free for the backup table: its header, and room for a standard
-    // 128-entry table (sfdisk's default; ours needs only 4).
+    // 128-entry table (sfdisk's default; ours needs only 7).
     let last = size / SECTOR - 34;
     let mut s = format!("label: gpt\ntable-length: 16\nfirst-lba: {}\nlast-lba: {last}\n", LAYOUT[0].1);
     for (name, start, len) in LAYOUT {
         let len = len.unwrap_or(last + 1 - start);
         // Linux filesystem type, as TrimUI's: U-Boot finds partitions by name.
-        s += &format!("start={start}, size={len}, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name={name}\n");
+        let uuid = if name == "pstore" { format!(", uuid={pstore_uuid}") } else { String::new() };
+        s += &format!("start={start}, size={len}, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name={name}{uuid}\n");
     }
     s
 }
@@ -174,8 +184,13 @@ pub fn holds(disk: &Disk) -> &'static str {
     if header.starts_with(INSTALLING) { return "unfinished-install"; }
     if header.starts_with(RESTORING) { return "unfinished-restore"; }
     // TrimUI's layout has a partition named UDISK; ours has one named system.
-    let names = disk.gpt_names().unwrap_or_default();
+    let names: Vec<String> = disk.partitions().unwrap_or_default().into_iter().map(|p| p.name).collect();
     if names.iter().any(|n| n == "system") { "this-system" } else if names.iter().any(|n| n == "UDISK") { "trimui" } else { "unknown" }
+}
+
+/// A new random UUID.
+fn new_uuid() -> Result<String> {
+    Ok(std::fs::read_to_string("/proc/sys/kernel/random/uuid").ctx("making a UUID")?.trim().to_string())
 }
 
 /// Writes `marker` over the partition table's header (see the top of this file).
@@ -222,15 +237,30 @@ fn write_system(p: &Paths, target: &Disk, (start, _): (u64, u64), uuid: &str, re
     result.map(|_| ())
 }
 
-/// Checks the running version's files against its manifest; returns the manifest.
-fn check_images(dir: &Path, report: &mut Report) -> Result<serde_json::Value> {
+/// Refuses a version whose kernel doesn't make our device-tree changes itself (its manifest lacks
+/// `"dt_edits": true`, which build-system.sh writes), for installs, activations and update files.
+/// The boot packages we write are TrimUI's, unchanged, so such a version would start without its
+/// buttons, internal storage or CPU voltage control. Devices installed before 2026-10-18 would
+/// still run it (their boot package has the changes), but get the same refusal: one rule for
+/// every device.
+pub fn require_dt_edits(manifest: &serde_json::Value) -> Result<()> {
+    if manifest["dt_edits"] == true { return Ok(()); }
+    fail(format!("version {} is too old: its kernel doesn't make the device-tree changes itself",
+                 manifest["version"].as_str().unwrap_or("(unnamed)")), "Choose a newer version.")
+}
+
+/// Checks a version's files (in `dir`, images/<version>/) against its manifest; returns the
+/// manifest.
+pub fn check_images(dir: &Path, report: &mut Report) -> Result<serde_json::Value> {
     let m = read_json(&dir.join("manifest.json"), "the system's manifest")?;
+    require_dt_edits(&m)?;
     for (name, f) in m["files"].as_object().into_iter().flatten() {
         let mut sha = Sha256::new();
         let file = Disk::open(&dir.join(name), false)?;
         file.each_chunk(0, file.size, |_, c| { sha.update(c); Ok(()) })?;
-        if backup::hex(&sha.finalize()) != f["sha256"].as_str().unwrap_or_default() {
-            return fail(format!("{name} of the running system doesn't match its manifest"), "The SD card's system is damaged: write a fresh card.");
+        if hex(&sha.finalize()) != f["sha256"].as_str().unwrap_or_default() {
+            return fail(format!("{name} of version {} doesn't match its manifest", dir.file_name().unwrap_or_default().to_string_lossy()),
+                        "The system partition is damaged: write a fresh SD card.");
         }
         report.log(&format!("{name}: matches the manifest"));
     }
@@ -247,7 +277,7 @@ fn check_system(target: &Path, start: u64, version: &str, manifest: &serde_json:
         let path = format!("/images/{version}/{name}");
         report.log(&format!("$ debugfs -R 'cat {path}' {at}"));
         let out = std::process::Command::new("debugfs").args(["-R", &format!("cat {path}"), &at]).output().ctx("starting debugfs")?;
-        let sha = backup::hex(&Sha256::digest(&out.stdout));
+        let sha = hex(&Sha256::digest(&out.stdout));
         if sha != f["sha256"].as_str().unwrap_or_default() {
             return fail(format!("{path} on the internal storage doesn't read back as written"), "Try installing again; if it fails again, the internal storage may be failing.");
         }
@@ -256,12 +286,17 @@ fn check_system(target: &Path, start: u64, version: &str, manifest: &serde_json:
     Ok(())
 }
 
-/// Refuses to install on a battery under half full, unless charging. (No battery: a PC.)
-fn battery_ok() -> Result<()> {
-    let Some(bat) = std::fs::read_dir("/sys/class/power_supply").into_iter().flatten().flatten()
-        .map(|e| e.path()).find(|p| std::fs::read_to_string(p.join("type")).is_ok_and(|t| t.trim() == "Battery")) else { return Ok(()) };
+/// Refuses a task that must not be cut short on a battery under half full, unless charging.
+/// `power`: the kernel's power supplies (sysfs's power_supply class); no battery there: a PC.
+pub fn battery_ok(power: &Path, report: &mut Report) -> Result<()> {
+    let Some(bat) = std::fs::read_dir(power).into_iter().flatten().flatten()
+        .map(|e| e.path()).find(|p| std::fs::read_to_string(p.join("type")).is_ok_and(|t| t.trim() == "Battery")) else {
+        report.log(&format!("no battery in {}", power.display()));
+        return Ok(());
+    };
     let read = |f: &str| std::fs::read_to_string(bat.join(f)).unwrap_or_default().trim().to_string();
     let (level, status) = (read("capacity").parse::<u32>().unwrap_or(100), read("status"));
+    report.log(&format!("battery: {level} %, {status}"));
     if level >= 50 || matches!(status.as_str(), "Charging" | "Full") { return Ok(()); }
     fail(format!("the battery is at {level} %"), "Connect the charger, or charge to at least 50 %, then try again.")
 }
@@ -274,6 +309,12 @@ pub fn backup_room(data: &Path, need: u64) -> Result<()> {
     fail(format!("a backup needs {} on the SD card, {} is free", gb(need), gb(free)), "Free some space on the card, or install without a backup.")
 }
 
+/// The total size of the files directly in `dir` (not in its subfolders).
+pub fn dir_bytes(dir: &Path) -> u64 {
+    std::fs::read_dir(dir).into_iter().flatten().flatten().filter_map(|f| f.metadata().ok()).map(|m| m.len()).sum()
+}
+
+/// The free space on the filesystem holding `path` (0 if it can't be read).
 pub fn free_bytes(path: &Path) -> u64 {
     let c = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap_or_default();
     let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
@@ -287,10 +328,13 @@ mod tests {
 
     #[test]
     fn the_layout_keeps_trimuis_first_partitions_and_the_table_before_the_boot_area() {
-        let s = layout_script(15269888 * SECTOR); // this Brick's eMMC
+        let s = layout_script(15269888 * SECTOR, "U"); // this Brick's eMMC
         assert!(s.contains("table-length: 16") && s.contains("first-lba: 41984") && s.contains("last-lba: 15269854"));
-        assert!(s.contains("start=93184, size=49152, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=boot"));
-        assert!(s.contains("start=142336, size=15127519, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=system"));
+        assert!(s.contains("start=93184, size=49152, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=boot_a\n"));
+        assert!(s.contains("start=191488, size=2048, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=pstore, uuid=U\n"));
+        assert!(s.contains("start=193536, size=15076319, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=system\n"));
+        // Each partition starts where the one before it ends.
+        assert!(LAYOUT.windows(2).all(|w| w[0].1 + w[0].2.unwrap() == w[1].1));
         assert!(2 + 16 * 128 / 512 <= BOOT_AREA.0); // the table's entries end before boot0
     }
 }

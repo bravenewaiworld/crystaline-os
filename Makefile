@@ -19,7 +19,7 @@ CFLAGS := -O2 -Wall -Wextra $(if $(DEBUG),-g)
 STATIC := -static $(if $(DEBUG),,-s) -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 
 .PHONY: help all kernel gpu userspace specular installer device-tools buildroot system \
-	sd-card update-device debug-running-release deploy-specular run-specular test-installer test-battery-guard \
+	sd-card update-file update-device debug-running-release deploy-specular run-specular test-installer test-battery-guard \
 	test-mount-card test-xr829-attach test-timezone test-dt-edits test-exfat stock-fw install-image clean
 
 help:
@@ -29,8 +29,10 @@ help:
 	@echo '                   RELEASE=1: a release image (no development SSH key, serial login,'
 	@echo '                   debugging or hardware test tools)'
 	@echo '  sd-card          build/sd-card.img: an SD card that runs the latest version'
-	@echo '  update-device    build system, copy it to a Brick running our system, switch, reboot'
-	@echo '                   (SSH; BRICK=<address>, default 192.168.7.2 over USB)'
+	@echo '  update-file      build/updates/crystaline-<version>.update: the latest version as a'
+	@echo '                   signed update file (KEY=<key.pem>, default the development key)'
+	@echo '  update-device    build system, install it on a Brick running our system as an update,'
+	@echo '                   reboot (SSH; BRICK=<address>, default 192.168.7.2 over USB; KEY= as above)'
 	@echo '  debug-running-release  copy the debugging and hardware test tools a release image'
 	@echo '                   leaves out (strace, perf, gdbserver, memreg, ...) to a Brick running'
 	@echo '                   a release image, in memory until it restarts (SSH switched on there'
@@ -174,8 +176,15 @@ system: buildroot kernel gpu userspace device-tools specular installer $(B)/stoc
 sd-card: system
 	tools/system/build-sd-card.sh $(B)/system/latest $(B)/sd-card.img
 
+# KEY: the private key that signs update files (sign-update.sh); without it, this checkout's
+# development key, which only development systems trust.
+update-file: system
+	tools/system/dev-keys.sh
+	v=$$(basename "$$(readlink -f $(B)/system/latest)") && tools/system/sign-update.sh $(B)/system/latest \
+		$(or $(KEY),$(B)/ssh-host-keys/update_key.pem) $(B)/updates/crystaline-$$v.update
+
 update-device: system
-	tools/system/update-device.sh $(B)/system/latest
+	UPDATE_KEY=$(KEY) tools/system/update-device.sh $(B)/system/latest
 
 # It copies the tools from where build-system.sh takes them: Buildroot's build and the device tools.
 debug-running-release: buildroot device-tools
@@ -187,6 +196,7 @@ deploy-specular: specular
 run-specular: specular
 	tools/run-specular.sh $(SPECULAR_STAGE)$(SPECULAR_PREFIX)/specular
 
+# Its own PC build of the installer has the test-only cut points (userspace/brick-install/src/cut.rs).
 test-installer:
 	tools/system/test-installer.sh
 

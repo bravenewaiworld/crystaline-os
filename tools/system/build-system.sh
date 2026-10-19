@@ -2,7 +2,7 @@
 # Assemble one version of the system: Buildroot's base root filesystem plus our parts, as
 #   $OUT/<version>/rootfs.squashfs   the root filesystem (zstd), mounted read-only on the device
 #   $OUT/<version>/boot.img          our kernel + initramfs (system/board/brick/initramfs/init),
-#                                    written to the "boot" partition to run this version
+#                                    written to a boot slot to run this version
 #   $OUT/<version>/manifest.json     version, git commit, build time, release or development,
 #                                    whether the kernel makes our device-tree changes (dt_edits),
 #                                    sizes and SHA-256 of both
@@ -24,6 +24,14 @@ OUT=$1
 RELEASE=${RELEASE:-0}
 case $RELEASE in 0 | 1) ;; *) echo "RELEASE must be 0 or 1, not '$RELEASE'" >&2; exit 1 ;; esac
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+# is_key FILE: FILE holds an update key: 64 lower-case hex characters, as
+# sign-update.sh --public-key prints them.
+is_key() { k=$(cat "$1") && [ ${#k} -eq 64 ] && [ -z "$(printf %s "$k" | tr -d 0-9a-f)" ]; }
+RELEASE_KEY=$ROOT/system/board/brick/update-keys/release.pub
+if [ "$RELEASE" = 1 ] && ! is_key "$RELEASE_KEY"; then
+	echo "refusing to build a release image: $RELEASE_KEY is a placeholder, not the release key" >&2
+	exit 1
+fi
 . "$ROOT/tools/env.sh"
 B=$ROOT/build
 BR=$B/buildroot
@@ -121,6 +129,18 @@ else
 	put "$KEYS/dev_key.pub" /root/.ssh/authorized_keys 600
 fi
 
+# --- Update keys ------------------------------------------------------------------------------
+# brick-install update accepts update files signed by a key in /etc/brick/update-keys/: the
+# release key (the maintainer's, kept offline) and, on development images, this checkout's
+# development key (made by dev-keys.sh). The release key file is a placeholder until the release
+# key exists; a development image then goes without it.
+if is_key "$RELEASE_KEY"; then
+	put "$RELEASE_KEY" /etc/brick/update-keys/release.pub 644
+else
+	echo "warning: no release key yet ($RELEASE_KEY): only development update files will install" >&2
+fi
+[ "$RELEASE" = 1 ] || put "$B/ssh-host-keys/update_key.pub" /etc/brick/update-keys/dev.pub 644
+
 echo "$VERSION" >"$R/etc/brick-version"
 V=$OUT/$VERSION
 mkdir -p "$V"
@@ -137,9 +157,15 @@ python3 -I "$ROOT/tools/system/tar-with-owners.py" "$BR/images/rootfs.tar" "$R" 
 # (which sets owners itself, so no root rights are needed).
 list=$TMP/initramfs.list
 {
-	for d in /dev /proc /sys /system /lower /newroot /bootlog /bin /sbin /etc /lib /usr /usr/bin \
-		/usr/sbin /usr/lib; do
+	for d in /dev /proc /sys /system /lower /newroot /bootlog /card /bin /sbin /etc /etc/brick \
+		/etc/brick/update-keys /lib /usr /usr/bin /usr/sbin /usr/lib /usr/libexec \
+		/usr/libexec/brick; do
 		echo "dir $d 755 0 0"
+	done
+	# The recovery menu's brick-install checks update files against the same keys as the system
+	# (-e: without any, the pattern stays as written).
+	for k in "$R"/etc/brick/update-keys/*; do
+		[ ! -e "$k" ] || echo "file /etc/brick/update-keys/${k##*/} $k 644 0 0"
 	done
 	# The dynamic loader looks for libraries in /lib64 and /usr/lib64 only (Buildroot's root
 	# filesystem links both to lib, as here).
@@ -149,6 +175,12 @@ list=$TMP/initramfs.list
 	echo "nod /dev/console 600 0 0 c 5 1"
 	echo "file /init $BOARD/initramfs/init 755 0 0"
 	echo "file /etc/brick-version $R/etc/brick-version 644 0 0"
+	# The recovery menu mounts the SD card with mount-card's options, which name www-data's group:
+	# as a number, since the initramfs has no user database.
+	echo "file /usr/libexec/brick/card-options $R/usr/libexec/brick/card-options 644 0 0"
+	sed -n 's/^www-data:[^:]*:\([0-9]*\):.*/\1/p' "$R/etc/group" >"$TMP/www-data-gid"
+	[ -s "$TMP/www-data-gid" ] || { echo "no www-data group in the root filesystem" >&2; exit 1; }
+	echo "file /etc/brick/www-data-gid $TMP/www-data-gid 644 0 0"
 } >"$list"
 # need FILE: add FILE (a path in the root filesystem) and, recursively, the libraries it needs and
 # its dynamic loader. A path that is a link in the root filesystem becomes a copy of its target.
@@ -167,8 +199,9 @@ need() {
 need /bin/busybox
 need /sbin/e2fsck
 need /usr/bin/status
-for a in sh mount umount mkdir cat sed sleep findfs watchdog reboot switch_root cp echo ln devmem \
-	grep dmesg ps sync kill; do
+need /usr/sbin/brick-install
+for a in sh mount umount mkdir cat sed sleep findfs watchdog reboot poweroff switch_root cp echo ln \
+	devmem grep dmesg ps sync kill tee date ls sort head rm; do
 	echo "slink /bin/$a busybox 777 0 0" >>"$list"
 done
 "$KBUILD/usr/gen_init_cpio" "$list" >"$TMP/initramfs.cpio"

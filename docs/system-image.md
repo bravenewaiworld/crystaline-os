@@ -44,7 +44,7 @@ Owners come from Buildroot's tar (`tar-with-owners.py` → `sqfstar`), so no roo
 
 ### Start-up
 
-`rcS` (output to `/system/logs/rcS.log`, since the system log isn't running yet): mount `/run`, `/tmp`, `/dev/pts`, `/dev/shm`; `mdev` for devices and hotplug; load the GPU modules; apply the balanced CPU profile (`brick-power`, [power.md](power.md)); give the kernel the time zone's offset (`brick-timezone kernel`, for file times on the card); mount the data card, waiting up to 5 s for one (`mount-card start`; from then on mdev runs `mount-card` as cards come and go, [storage.md](storage.md)); prepare the state area; copy `/etc/sv` to `/run/sv`. Then `runsvdir` starts:
+`rcS` (output to `/system/logs/rcS.log`, since the system log isn't running yet): mount `/run`, `/tmp`, `/dev/pts`, `/dev/shm`; `mdev` for devices and hotplug; load the GPU modules; apply the balanced CPU profile (`brick-power`, [power.md](power.md)); give the kernel the time zone's offset (`brick-timezone kernel`, for file times on the card); mount the data card, waiting up to 5 s for one (`mount-card start`; from then on mdev runs `mount-card` as cards come and go, [storage.md](storage.md)); prepare the state area; save kernel crash records ([boot.md](boot.md)); copy `/etc/sv` to `/run/sv`. Then `runsvdir` starts:
 
 | Service | What | Waits for |
 |---|---|---|
@@ -79,12 +79,14 @@ Shutdown (`rcK`): stop every service but the system log and `klogd`, waiting up 
 │   │                   authorized_keys (imported by brick-ssh), on (present while SSH is on)
 │   └── machine-id      D-Bus machine ID
 └── logs/               init.log, rcS.log (replaced each start), install.log after an install,
-                        messages, messages.0 (the system log)
+                        messages, messages.0 (the system log), recovery-<time>.log and
+                        crash-<UTC time>/ (boot.md)
 
 /mnt/SDCARD  (the data partition, storage.md)
 ├── roms/  bios/  saves/  configs/
 ├── cache/              downloaded box art and indexes; safe to delete
 ├── backups/            eMMC backups (install-and-update.md)
+├── updates/            update files for Settings and the recovery menu (install-and-update.md)
 ├── logs/               installer logs; card-check.log: the card's repairs and unclean removals
 ├── wpa_supplicant.conf optional; its networks are imported once
 └── authorized_keys     optional: SSH login keys, for brick-ssh import on release images

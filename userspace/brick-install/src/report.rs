@@ -2,7 +2,7 @@
 //!
 //! Lines on stdout, one message each:
 //!   LOG-FILE <path>        where the full log is (first line, if there is a log)
-//!   TASK <install|restore> which task this is
+//!   TASK <name>            which task this is: install, restore, update or activate
 //!   STEP <i>/<n> <label>   a step started
 //!   PROGRESS <0.00-1.00>   how far the current step is
 //!   DONE <message>         finished; the last line
@@ -38,6 +38,7 @@ impl<T, E: std::fmt::Display> Context<T> for std::result::Result<T, E> {
     fn ctx(self, doing: &str) -> Result<T> { self.map_err(|e| Failure { message: format!("{doing}: {e}"), hint: SEE_LOG.into() }) }
 }
 
+/// One task's messages (the protocol above) and its log.
 pub struct Report {
     log: Option<File>,
     status: Option<File>,
@@ -49,7 +50,7 @@ pub struct Report {
 }
 
 impl Report {
-    /// The report of task `name` ("install" or "restore"). Writes the log to
+    /// The report of task `name` (the TASK line). Writes the log to
     /// `<dir>/<name>-<time>.log` (`dir` is made if missing); without a dir, or if it can't be
     /// written, there is no log file (the messages still go out). Copies the messages to `status`.
     pub fn new(dir: Option<&Path>, name: &str, status: Option<File>) -> Self {
@@ -89,12 +90,14 @@ impl Report {
         self.say(&format!("PROGRESS {:.2}", pct as f32 / 100.0));
     }
 
+    /// The task succeeded: the DONE line, which ends the report.
     pub fn done(&mut self, message: &str) {
         self.log(&format!("== done: {message}"));
         self.flush_log();
         self.say(&format!("DONE {message}"));
     }
 
+    /// The task failed: the FAIL line, which ends the report.
     pub fn failed(&mut self, f: &Failure) {
         self.log(&format!("== failed: {}\n   hint: {}", f.message, f.hint));
         self.flush_log();
@@ -129,7 +132,6 @@ impl Report {
     }
 }
 
-
 /// Reads a JSON file; `what` names it in a failure.
 pub fn read_json(path: &Path, what: &str) -> Result<serde_json::Value> {
     let data = std::fs::read(path).ctx(&format!("reading {what}"))?;
@@ -143,6 +145,9 @@ pub fn timestamp() -> String {
     unsafe { libc::gmtime_r(&secs, &mut tm) };
     format!("{:04}{:02}{:02}-{:02}{:02}{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec)
 }
+
+/// Bytes as lower-case hex, e.g. a SHA-256 as manifests write it.
+pub fn hex(bytes: &[u8]) -> String { bytes.iter().map(|b| format!("{b:02x}")).collect() }
 
 /// "7.8 GB".
 pub fn gb(bytes: u64) -> String { format!("{:.1} GB", bytes as f64 / 1e9) }

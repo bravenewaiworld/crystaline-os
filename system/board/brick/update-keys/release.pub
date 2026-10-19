@@ -1,0 +1,4 @@
+PLACEHOLDER: not a key. Replace this file with the release key's public half (64 hex characters):
+openssl genpkey -algorithm ed25519 -out release.pem   (offline; keep release.pem secret)
+tools/system/sign-update.sh --public-key release.pem > system/board/brick/update-keys/release.pub
+Until then development images go without a release key, and release images (RELEASE=1) don't build.

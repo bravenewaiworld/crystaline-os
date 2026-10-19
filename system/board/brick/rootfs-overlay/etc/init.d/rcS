@@ -38,6 +38,17 @@ progress 0x11
 # State that survives reboots and updates, on the system partition (see usr/libexec/brick/state).
 /usr/libexec/brick/state
 
+# Kernel crash records (the log at an oops or panic, kept on the disk's pstore partition): copied
+# to /system/logs/crash-<UTC time>/ and removed, which erases them from the partition. The newest
+# 10 copies are kept (newest by name, so this relies on the clock chip's time).
+mount -t pstore pstore /sys/fs/pstore 2>/dev/null
+if [ -n "$(ls /sys/fs/pstore 2>/dev/null)" ]; then
+	d=/system/logs/crash-$(date -u +%Y%m%d-%H%M%S)
+	mkdir -p "$d" && cp /sys/fs/pstore/* "$d/" && rm /sys/fs/pstore/* &&
+		logger -s -t crash "kernel crash records saved in $d"
+	ls -d /system/logs/crash-* | head -n -10 | xargs rm -rf
+fi
+
 # Services: copied to RAM (/etc/service links there), since runsv writes its control files
 # (supervise/) into each service's directory and the root filesystem is read-only.
 cp -a /etc/sv /run/sv

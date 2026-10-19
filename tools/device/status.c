@@ -9,11 +9,30 @@
  * panning to it. The font is the kernel's 8x16 console font (extracted from linux/ at build time),
  * drawn at double size: 64 columns by 24 rows on the 1024x768 panel.
  *
- * `status --message TITLE [LINE]...` instead shows TITLE (in red) and the lines once, then exits,
- * leaving them on screen: the boot image's start-up program (initramfs) uses it to report why
- * the system couldn't start.
+ * The other modes serve the boot image's start-up program (initramfs; its recovery menu is in
+ * docs/boot.md):
+ *   status --message TITLE [LINE]...    show TITLE (in red) and the lines, then exit, leaving them
+ *                                       on screen (why the system couldn't start)
+ *   status --held BUTTON                exit 0 if BUTTON (a label printed on the Brick, e.g. MENU)
+ *                                       is held now, 1 if not
+ *   status --menu TITLE [-n NOTE]... ITEM...
+ *                                       a list to choose from with the D-pad; A prints the chosen
+ *                                       item's index (from 0) and exits 0, leaving "ITEM..." on
+ *                                       screen; B exits 1; 10 minutes without a press exits 2. The
+ *                                       notes appear under the title. Nothing scrolls: rows past
+ *                                       the screen's 24 aren't shown, so keep lists short.
+ *   status --task TITLE                 show brick-install's progress lines (LOG-FILE, STEP,
+ *                                       PROGRESS, DONE, FAIL; docs/install-and-update.md) read
+ *                                       from stdin, then wait for A (only A): exit 0 after DONE,
+ *                                       1 after FAIL or input ending without either, 2 after 10
+ *                                       minutes without a press. Up to 8 steps are listed.
+ * Every mode exits 3 if it can't run (no framebuffer, no buttons, bad arguments). --held, --menu
+ * and --task read the buttons' input device, "brick-keys", directly. padbridge takes that device
+ * for itself while it runs, so then --menu and --task get no presses: they are for the
+ * initramfs, where padbridge doesn't run.
  */
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <linux/fb.h>
 #include <linux/input.h>
@@ -47,12 +66,19 @@
 /* Ignore power-button events this long after waking: the press that woke the device arrives
  * once it is running again and must not send it straight back to sleep. */
 #define WAKE_GRACE_MS	1500
+/* --menu and --task give up after this long without a button press, so a forgotten screen
+ * doesn't drain the battery (the initramfs then powers off). */
+#define IDLE_MS		(10 * 60 * 1000)
 
 /* Allwinner display driver ioctl (include/video/sunxi_display2.h); this kernel has no
  * /sys/class/backlight. Arguments: screen, level. */
 #define DISP_LCD_SET_BRIGHTNESS	0x102
 
-enum { GREY = 0x909090, WHITE = 0xffffff, GREEN = 0x60e060, YELLOW = 0xe0d060, RED = 0xe06060 };
+enum { GREY = 0x909090, WHITE = 0xffffff, GREEN = 0x60e060, YELLOW = 0xe0d060, RED = 0xe06060,
+       SELECTED = 0x304860 };	/* the background of the chosen menu item */
+
+/* Exit statuses shared by the modes (see the top); 0 and 1 mean what each mode says. */
+enum { IDLE = 2, CANT_RUN = 3 };
 
 static struct fb_var_screeninfo var;
 static uint8_t *fb;		/* both pages, mapped */
@@ -115,6 +141,73 @@ static void line(uint32_t rgb, const char *fmt, ...)
 	for (i = 0; buf[i] && (i + 1) * CELL_W <= (int)var.xres; i++)
 		draw_char(i * CELL_W, row * CELL_H, buf[i], pixel(rgb));
 	row++;
+}
+
+/* Print @text on as many rows as it needs, breaking it at spaces where it can. */
+static void wrapped(uint32_t rgb, const char *text)
+{
+	int cols = var.xres / CELL_W, n;
+
+	while (*text) {
+		n = strlen(text);
+		if (n > cols) {
+			for (n = cols; n > 0 && text[n] != ' '; n--)
+				;
+			if (!n)
+				n = cols;
+		}
+		line(rgb, "%.*s", n, text);
+		for (text += n; *text == ' '; text++)
+			;
+	}
+}
+
+/* Fill the background of the row the next line() draws on, before drawing it. */
+static void fill_row(uint32_t rgb)
+{
+	uint32_t p = pixel(rgb);
+	int x, y;
+
+	for (y = row * CELL_H; y < (row + 1) * CELL_H && y < (int)var.yres; y++)
+		for (x = 0; x < (int)var.xres; x++)
+			page[y * stride + x] = p;
+}
+
+/* Start a blank frame, from row 0, on the page not on screen; show_frame() then shows it. */
+static void begin_frame(void)
+{
+	page = (uint32_t *)(fb + (size_t)!var.yoffset * var.yres * stride * 4);
+	memset(page, 0, (size_t)var.yres * stride * 4);
+	row = 0;
+}
+
+static void show_frame(void)
+{
+	var.yoffset = var.yoffset ? 0 : var.yres;
+	ioctl(fb_fd, FBIOPAN_DISPLAY, &var);
+}
+
+/* Start a frame with @title in @rgb on the second row, then leave a blank row. */
+static void begin_titled(uint32_t rgb, const char *title)
+{
+	begin_frame();
+	row = 1;
+	line(rgb, "%s", title);
+	row++;
+}
+
+/* Print @text on the bottom row (which buttons do what). */
+static void footer(const char *text)
+{
+	row = var.yres / CELL_H - 1;
+	line(GREY, "%s", text);
+}
+
+/* Exit with CANT_RUN (see the top), saying why. */
+static void cant_run(const char *why)
+{
+	fprintf(stderr, "status: %s\n", why);
+	exit(CANT_RUN);
 }
 
 /* First line of a file, without the newline; "" if it can't be read. */
@@ -317,11 +410,9 @@ static void draw(int pad_fd, int jack_fd)
 {
 	static long next_slow;
 	struct timespec up;
-	int back = !var.yoffset, i;
+	int i;
 
-	page = (uint32_t *)(fb + (size_t)back * var.yres * stride * 4);
-	memset(page, 0, (size_t)var.yres * stride * 4);
-	row = 0;
+	begin_frame();
 	clock_gettime(CLOCK_BOOTTIME, &up);
 	line(GREEN, "Brick status          up %ld:%02ld:%02ld", up.tv_sec / 3600,
 	     up.tv_sec / 60 % 60, up.tv_sec % 60);
@@ -351,9 +442,7 @@ static void draw(int pad_fd, int jack_fd)
 	show_sleep();
 	row++;
 	line(GREY, "POWER: sleep / wake");
-
-	var.yoffset = back * var.yres;
-	ioctl(fb_fd, FBIOPAN_DISPLAY, &var);
+	show_frame();
 }
 
 static void set_backlight(int level)
@@ -423,21 +512,240 @@ static int open_inputs(struct pollfd *fds, int *pad, int *jack)
 	return n;
 }
 
-/* Show @n lines, the first in red, on the page not on screen, then pan to it. */
+/* Show @n lines, the first in red. */
 static void show_message(char **lines, int n)
 {
-	int back = !var.yoffset, i;
+	int i;
 
-	page = (uint32_t *)(fb + (size_t)back * var.yres * stride * 4);
-	memset(page, 0, (size_t)var.yres * stride * 4);
-	row = 1;
-	for (i = 0; i < n; i++) {
-		line(i ? WHITE : RED, "%s", lines[i]);
-		if (!i)
-			row++;
+	begin_titled(RED, lines[0]);
+	for (i = 1; i < n; i++)
+		line(WHITE, "%s", lines[i]);
+	show_frame();
+}
+
+/* "brick-keys" codes for A (the right button) and B (the bottom one), as docs/input.md lists. */
+#define BUTTON_A	BTN_EAST
+#define BUTTON_B	BTN_SOUTH
+
+/* The buttons' input device, "brick-keys", opened non-blocking. */
+static int open_keys(void)
+{
+	struct dirent *e;
+	DIR *d = opendir("/dev/input");
+	int fd = -1;
+
+	while (d && fd < 0 && (e = readdir(d))) {
+		char path[300], name[64] = "";
+
+		if (strncmp(e->d_name, "event", 5))
+			continue;
+		snprintf(path, sizeof(path), "/dev/input/%s", e->d_name);
+		fd = open(path, O_RDONLY | O_NONBLOCK);
+		if (fd < 0)
+			continue;
+		ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+		if (strcmp(name, "brick-keys")) {
+			close(fd);
+			fd = -1;
+		}
 	}
-	var.yoffset = back * var.yres;
-	ioctl(fb_fd, FBIOPAN_DISPLAY, &var);
+	if (d)
+		closedir(d);
+	if (fd < 0)
+		cant_run("no \"brick-keys\" input device");
+	return fd;
+}
+
+/* Wait until a button is pressed on @fd (from open_keys) and return its code; exits with IDLE
+ * after IDLE_MS without one. Only presses made after @fd was opened count. */
+static int next_press(int fd)
+{
+	struct pollfd p = { .fd = fd, .events = POLLIN };
+	struct input_event ev;
+	long left, deadline = now_ms() + IDLE_MS;
+	ssize_t n;
+
+	for (;;) {
+		while ((n = read(fd, &ev, sizeof(ev))) == sizeof(ev))
+			if (ev.type == EV_KEY && ev.value == 1)
+				return ev.code;
+		if (n >= 0 || errno != EAGAIN)
+			break;
+		left = deadline - now_ms();
+		if (left <= 0)
+			exit(IDLE);
+		if (poll(&p, 1, left) < 0 && errno != EINTR)
+			break;
+	}
+	cant_run("can't read the buttons");
+	return -1;
+}
+
+/* --held: the exit status for the button labelled @name (0: held, 1: not). Codes as "brick-keys"
+ * sends them (docs/input.md). */
+static int held(const char *name)
+{
+	static const struct { const char *name; int code; } buttons[] = {
+		{ "A", BUTTON_A }, { "B", BUTTON_B }, { "X", BTN_NORTH }, { "Y", BTN_WEST },
+		{ "L1", BTN_TL }, { "R1", BTN_TR }, { "L2", BTN_TL2 }, { "R2", BTN_TR2 },
+		{ "SELECT", BTN_SELECT }, { "START", BTN_START }, { "MENU", BTN_MODE },
+		{ "F1", BTN_TRIGGER_HAPPY1 }, { "F2", BTN_TRIGGER_HAPPY2 }, { "UP", BTN_DPAD_UP },
+		{ "DOWN", BTN_DPAD_DOWN }, { "LEFT", BTN_DPAD_LEFT }, { "RIGHT", BTN_DPAD_RIGHT },
+	};
+	unsigned char bits[KEY_MAX / 8 + 1] = { 0 };
+	size_t i, n = sizeof(buttons) / sizeof(buttons[0]);
+	int fd;
+
+	for (i = 0; i < n && strcmp(buttons[i].name, name); i++)
+		;
+	if (i == n)
+		cant_run("no such button");
+	fd = open_keys();
+	/* brick-keys is a gpio-keys device, which reads the buttons when opened: this is current. */
+	if (ioctl(fd, EVIOCGKEY(sizeof(bits)), bits) < 0)
+		cant_run("can't read the buttons");
+	return TEST(bits, buttons[i].code) ? 0 : 1;
+}
+
+/* --menu: @argv is TITLE [-n NOTE]... ITEM... */
+static int menu(int argc, char **argv)
+{
+	int first = 1, sel = 0, n, fd, code, i;
+
+	while (first + 1 < argc && !strcmp(argv[first], "-n"))
+		first += 2;
+	n = argc - first;
+	if (n < 1)
+		cant_run("--menu needs at least one item");
+	fd = open_keys();
+	for (;;) {
+		begin_titled(GREEN, argv[0]);
+		for (i = 2; i < first; i += 2)
+			wrapped(YELLOW, argv[i]);
+		if (first > 1)
+			row++;
+		for (i = 0; i < n; i++) {
+			if (i == sel)
+				fill_row(SELECTED);
+			line(WHITE, "%c %s", i == sel ? '>' : ' ', argv[first + i]);
+		}
+		footer("D-pad: choose   A: select   B: back");
+		show_frame();
+
+		code = next_press(fd);
+		if (code == BTN_DPAD_UP)
+			sel = (sel + n - 1) % n;
+		else if (code == BTN_DPAD_DOWN)
+			sel = (sel + 1) % n;
+		else if (code == BUTTON_A)
+			break;
+		else if (code == BUTTON_B)
+			return 1;
+	}
+	/* The choice stays on screen until the caller shows something else. */
+	begin_titled(GREEN, argv[0]);
+	line(WHITE, "%s...", argv[first + sel]);
+	show_frame();
+	printf("%d\n", sel);
+	return 0;
+}
+
+#define MAX_STEPS	8	/* --task lists steps 1 to MAX_STEPS; later ones aren't shown */
+#define BAR_W		32	/* --task's progress bar, in characters */
+
+/* What --task has read so far. */
+static struct {
+	char log[512], steps[MAX_STEPS][64], end[512], hint[512];
+	char other[512];	/* the last line that isn't a progress line (e.g. a crash message) */
+	int step, nsteps;
+	int result;		/* -1 while running, then 0 (DONE) or 1 (FAIL) */
+	double done;		/* the step's progress (0-1); below 0 until it reports any */
+} t = { .result = -1 };
+
+/* Take in one line of brick-install's output. FAIL lines are "FAIL <message>\t<hint>"; TASK
+ * lines say nothing worth showing. */
+static void task_line(const char *s)
+{
+	int i, n, at = 0;
+
+	if (!strncmp(s, "LOG-FILE ", 9)) {
+		snprintf(t.log, sizeof(t.log), "Log: %s", s + 9);
+	} else if (sscanf(s, "STEP %d/%d %n", &i, &n, &at) == 2 && at) {
+		if (i >= 1 && i <= MAX_STEPS)
+			snprintf(t.steps[i - 1], sizeof(t.steps[0]), "%s", s + at);
+		t.step = i;
+		t.nsteps = n;
+		t.done = -1;
+	} else if (!strncmp(s, "PROGRESS ", 9)) {
+		t.done = atof(s + 9);
+	} else if (!strncmp(s, "DONE ", 5)) {
+		snprintf(t.end, sizeof(t.end), "%s", s + 5);
+		t.result = 0;
+	} else if (!strncmp(s, "FAIL ", 5)) {
+		n = strcspn(s + 5, "\t");
+		snprintf(t.end, sizeof(t.end), "%.*s", n, s + 5);
+		snprintf(t.hint, sizeof(t.hint), "%s", s[5 + n] ? s + 6 + n : "");
+		t.result = 1;
+	} else if (strncmp(s, "TASK ", 5) && s[0]) {
+		snprintf(t.other, sizeof(t.other), "%s", s);
+	}
+}
+
+static void draw_task(const char *title)
+{
+	char bar[BAR_W + 1];
+	int k, w;
+
+	begin_titled(GREEN, title);
+	for (k = 1; k <= t.step && k <= MAX_STEPS; k++) {
+		int finished = k < t.step || t.result == 0, failed = k == t.step && t.result == 1;
+
+		line(failed ? RED : finished ? GREY : WHITE, "Step %d of %d: %s%s", k, t.nsteps,
+		     t.steps[k - 1], finished ? "  done" : "");
+		if (k == t.step && t.result < 0 && t.done >= 0) {
+			w = t.done > 1 ? BAR_W : (int)(t.done * BAR_W);
+			memset(bar, 0xdb, w);			/* the font's full block */
+			memset(bar + w, 0xb0, BAR_W - w);	/* and its light shade */
+			bar[BAR_W] = 0;
+			line(WHITE, "  %s %3.0f%%", bar, t.done * 100);
+		}
+	}
+	row++;
+	if (t.result >= 0) {
+		wrapped(t.result ? RED : GREEN, t.end);
+		wrapped(WHITE, t.hint);
+		row++;
+	}
+	wrapped(GREY, t.log);
+	footer(t.result < 0 ? "Working: don't turn the device off" : "A: continue");
+	show_frame();
+}
+
+/* --task: shows the task until it ends, then waits for A. The buttons are opened only once it
+ * has ended, so presses made while it ran don't count, and a missing button device can't make
+ * status exit mid-task: brick-install, writing into status's input, would then be killed by
+ * SIGPIPE. For the same reason main() checks the framebuffer before anything is read. */
+static int task(const char *title)
+{
+	char s[512];
+	int fd;
+
+	draw_task(title);
+	while (t.result < 0 && fgets(s, sizeof(s), stdin)) {
+		s[strcspn(s, "\n")] = 0;
+		task_line(s);
+		draw_task(title);
+	}
+	if (t.result < 0) {
+		snprintf(t.end, sizeof(t.end), "It stopped without saying whether it worked.");
+		snprintf(t.hint, sizeof(t.hint), "%s", t.other);
+		t.result = 1;
+		draw_task(title);
+	}
+	fd = open_keys();
+	while (next_press(fd) != BUTTON_A)
+		;
+	return t.result;
 }
 
 int main(int argc, char **argv)
@@ -446,25 +754,30 @@ int main(int argc, char **argv)
 	struct pollfd fds[MAX_INPUTS];
 	int nfds, pad, jack, i;
 
+	if (argc > 2 && !strcmp(argv[1], "--held"))	/* needs no framebuffer */
+		return held(argv[2]);
 	fb_fd = open("/dev/fb0", O_RDWR);
 	if (fb_fd < 0 || ioctl(fb_fd, FBIOGET_VSCREENINFO, &var) < 0 ||
 	    ioctl(fb_fd, FBIOGET_FSCREENINFO, &fix) < 0 || var.bits_per_pixel != 32 ||
-	    var.yres_virtual < 2 * var.yres) {
-		fprintf(stderr, "status: needs a 32-bit /dev/fb0 with two pages\n");
-		return 1;
-	}
+	    var.yres_virtual < 2 * var.yres)
+		cant_run("needs a 32-bit /dev/fb0 with two pages");
 	stride = fix.line_length / 4;
 	fb = mmap(NULL, (size_t)fix.line_length * var.yres * 2, PROT_READ | PROT_WRITE, MAP_SHARED,
 		  fb_fd, 0);
-	if (fb == MAP_FAILED) {
-		perror("status: mmap");
-		return 1;
-	}
+	if (fb == MAP_FAILED)
+		cant_run("can't map /dev/fb0");
 	set_backlight(BACKLIGHT);
 	if (argc > 2 && !strcmp(argv[1], "--message")) {
 		show_message(argv + 2, argc - 2);
 		return 0;
 	}
+	if (argc > 2 && !strcmp(argv[1], "--menu"))
+		return menu(argc - 2, argv + 2);
+	if (argc > 2 && !strcmp(argv[1], "--task"))
+		return task(argv[2]);
+	if (argc > 1)
+		cant_run("usage: status [--message TITLE [LINE]... | --held BUTTON | --menu TITLE "
+			 "[-n NOTE]... ITEM... | --task TITLE]");
 	nfds = open_inputs(fds, &pad, &jack);
 
 	for (;;) {

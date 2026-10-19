@@ -1,5 +1,6 @@
-//! One install or restore at a time, and a way to watch it from its start by whoever comes later
-//! (Specular, restarted while the task ran).
+//! One task (install, restore, update, activate) at a time, and a way to watch it from its start
+//! by whoever comes later (Specular, restarted while the task ran). Dry runs and the read-only
+//! commands (offer, slots) don't take part.
 //!
 //! The status file (/run/brick-install.status; /run is emptied at each start-up) holds a copy of
 //! everything the running task printed (report.rs's protocol). The task holds an exclusive
@@ -22,7 +23,7 @@ pub const STATUS: &str = "/run/brick-install.status";
 pub fn take(path: &Path) -> Result<File> {
     let file = OpenOptions::new().create(true).append(true).open(path).ctx(&format!("opening {}", path.display()))?;
     if !try_lock(&file, libc::LOCK_EX) {
-        return fail("an install or a restore is already running", "Wait until it has finished.");
+        return fail("another install, restore or update is already running", "Wait until it has finished.");
     }
     file.set_len(0).ctx(&format!("emptying {}", path.display()))?;
     Ok(file)

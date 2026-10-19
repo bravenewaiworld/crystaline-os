@@ -68,7 +68,7 @@ otherwise                                        → lowest-numbered FAT or exFA
 none                                             → failed no-partition
 ```
 
-The card layout is in [boot.md](boot.md), the eMMC layout after an install in [install-and-update.md](install-and-update.md).
+The card layout is in [boot.md](boot.md), the eMMC's after an install below.
 
 #### The check
 
@@ -149,6 +149,22 @@ pub enum CardStatus { Absent, Checking, Mounted, ReadOnly, Failed }
 - What 4.9 can't do: report creation time in `stat` (no `statx`); the "shut down" ioctl works, but nothing calls it on card removal.
 
 A remount resets every option it doesn't name except `uid`, `gid`, `fmask` and `dmask`, and fails if `iocharset`, `time_offset`, `sys_tz`, `keep_last_dots` or `allow_utime` would change.
+
+### The eMMC after an install (512-byte sectors)
+
+```
+0-5          protective MBR, GPT header, 16 GPT entries
+16 … 40959   boot area copied from the card: boot0, its copy at 256, boot package at 32800
+41984        bootloader  24 MiB   FAT, copied from the card
+91136        env        512 KiB   card's U-Boot settings, pointed at the partitions below
+92160        env-redund 512 KiB   same
+93184        boot_a      24 MiB   running version's boot.img (TrimUI's "boot")
+142336       boot_b      24 MiB   left as it was until the first update
+191488       pstore       1 MiB   kernel crash records; zeroed, a new GPT UUID at each install
+193536       system      rest     ext4, label brick-system (last 34 sectors: backup GPT)
+```
+
+The first four stay where TrimUI's layout has them, the only layout known to start from the eMMC ([install-and-update.md](install-and-update.md)). The installer writes it (`LAYOUT` in `userspace/brick-install/src/install.rs`).
 
 ### TrimUI's eMMC layout (512-byte sectors, from 41984)
 

@@ -7,10 +7,16 @@ publish = false
 
 [dependencies]
 crc32fast = "1.5"
+# Checking update files' signatures only (update.rs).
+ed25519-dalek = { version = "2.2", default-features = false }
 libc = "0.2"
 serde_json = "1"
 sha2 = "0.10"
 zstd = { version = "0.13", default-features = false }
+
+[features]
+# Test-only cut points (cut.rs), for tools/system/test-installer.sh's PC build; never in a device build.
+cut-points = []
 
 [profile.release]
 lto = "fat"
