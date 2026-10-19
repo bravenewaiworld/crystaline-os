@@ -19,7 +19,8 @@ CFLAGS := -O2 -Wall -Wextra $(if $(DEBUG),-g)
 STATIC := -static $(if $(DEBUG),,-s) -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 
 .PHONY: help all kernel gpu userspace specular installer device-tools buildroot system \
-	sd-card update-device debug-running-release deploy-specular run-specular test-installer install-image clean
+	sd-card update-device debug-running-release deploy-specular run-specular test-installer \
+	test-xr829-attach install-image clean
 
 help:
 	@echo 'Our system:'
@@ -38,6 +39,7 @@ help:
 	@echo '                   restarts until the next update-device)'
 	@echo '  run-specular     build Specular and run it once in the foreground on the Brick'
 	@echo '  test-installer   test the installer on the PC against image files (after sd-card)'
+	@echo '  test-xr829-attach  test the Bluetooth start-up program on the PC against a fake chip'
 	@echo 'Parts:'
 	@echo '  kernel  gpu  userspace  installer  device-tools'
 	@echo '  specular       Specular and its emulator cores (the specular/ submodule'"'"'s own build)'
@@ -85,9 +87,11 @@ buildroot: $(BUILDROOT_SRC)/.done
 	$(BR)
 
 # --- Userspace services -------------------------------------------------------------------
-userspace: $(B)/userspace/padbridge
+userspace: $(B)/userspace/padbridge $(B)/userspace/xr829-attach
 
 $(B)/userspace/padbridge: userspace/padbridge/padbridge.c
+$(B)/userspace/xr829-attach: userspace/xr829-attach/xr829-attach.c
+$(B)/userspace/padbridge $(B)/userspace/xr829-attach:
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $< $(STATIC)
 
@@ -173,6 +177,9 @@ run-specular: specular
 
 test-installer:
 	tools/system/test-installer.sh
+
+test-xr829-attach:
+	tools/system/test-xr829-attach.sh
 
 clean:
 	@[ ! -d $(B) ] || find $(B) -mindepth 1 -maxdepth 1 ! -name ssh-host-keys -exec rm -rf {} +

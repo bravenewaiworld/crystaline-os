@@ -15,10 +15,8 @@ cp -a "$BR2_EXTERNAL_BRICK_PATH/board/brick/rootfs-overlay/etc/sv" "$T/etc/sv"
 mkdir -p "$T/system" "$T/mnt/SDCARD"
 ln -sfn /system/state "$T/var/state"
 
-# The XR829's Bluetooth address file and BlueZ's storage (pairings) share one directory in the
-# state area, which survives updates.
-mkdir -p "$T/etc/bluetooth"
-ln -sfn /var/state/bluetooth/xr_bt.conf "$T/etc/bluetooth/xr_bt.conf"
+# BlueZ's storage (pairings) is in the state area, which survives updates, next to the XR829's
+# Bluetooth address file (xr829-attach uses /var/state/bluetooth/xr_bt.conf).
 rm -rf "$T/var/lib/bluetooth"	# a directory in BlueZ's package
 ln -s /var/state/bluetooth "$T/var/lib/bluetooth"
 

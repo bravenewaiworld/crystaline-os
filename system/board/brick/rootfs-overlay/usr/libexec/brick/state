@@ -1,8 +1,8 @@
 #!/bin/sh
 # State that must survive reboots and updates (Bluetooth address and pairings, saved WiFi
 # networks) lives on the system partition, in /system/state; the root filesystem links /var/state
-# there, and both the XR829's Bluetooth address file (/etc/bluetooth/xr_bt.conf) and BlueZ's
-# storage (/var/lib/bluetooth) into /var/state/bluetooth. Runs after mount-card.
+# there, and BlueZ's storage (/var/lib/bluetooth) into /var/state/bluetooth, where the XR829's
+# Bluetooth address file (xr_bt.conf) also is. Runs after mount-card, as it reads the card (below).
 mkdir -p /var/state/bluetooth /var/state/wifi
 [ -s /var/state/machine-id ] || dbus-uuidgen >/var/state/machine-id
 

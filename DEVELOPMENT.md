@@ -71,6 +71,7 @@ The kernel is the same in both kinds of image, with the same facilities ("Kernel
 ## Testing
 
 - **Installer test harness** (`make test-installer`, after `make sd-card`): runs the internal-storage installer on the PC against image files of a stock device and our SD card. It covers install, backup, restore, and installs and restores cut short. Root is not needed.
+- **Bluetooth start-up test** (`make test-xr829-attach`, about 40 s): runs a PC build of `xr829-attach`, with every path under a fake root (`-DTEST_ROOT`), against a fake XR829 on a pty (`tools/system/test-xr829-attach.py`). The fake checks the boot ROM checksums, the port's speed and flow control at each stage, the uploaded firmware and the HCI commands. It covers the address (derived, kept, replaced), a boot ROM that answers late, reports an error or never answers, unexpected and refused HCI commands, the 20 s limit, and a missing chip ID or rfkill switch. Needs gcc and Python 3; root is not needed.
 - **Overnight power test** (`powertest`): logs battery drain across deep sleep, idle and load to the SD card.
 
 ## On-device tools

@@ -1,0 +1,2 @@
+#!/bin/sh
+exec logger -t xr829-attach

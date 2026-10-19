@@ -9,9 +9,8 @@
 #
 # Our parts are built by the top-level Makefile, never by Buildroot, so changing them needs no
 # Buildroot rebuild: the kernel and its modules, the GPU driver, Specular and its cores, padbridge,
-# the device tools and the installer. TrimUI's binaries come from its firmware: the GPU libraries
-# and firmware, the XR829's WiFi/Bluetooth firmware and its Bluetooth start-up program
-# (hciattach).
+# xr829-attach, the device tools and the installer. TrimUI's binaries come from its firmware: the
+# GPU libraries and firmware, and the XR829's WiFi/Bluetooth firmware.
 # RELEASE=1 (from the environment; `make system RELEASE=1`) builds a release image, without the
 # checkout's SSH keys, the serial-console login, and the debugging and hardware test tools a
 # development image (the default) has: see "Debugging tools" and "SSH and root" below.
@@ -55,6 +54,7 @@ rm -f "$R/lib/modules/$KERNEL_RELEASE/build" "$R/lib/modules/$KERNEL_RELEASE/sou
 "$HOST/depmod" -b "$R" "$KERNEL_RELEASE"
 
 put "$B/userspace/padbridge" /usr/bin/padbridge 755
+put "$B/userspace/xr829-attach" /usr/bin/xr829-attach 755
 put "$B/installer/aarch64-unknown-linux-gnu/release/brick-install" /usr/sbin/brick-install 755
 for f in "$B"/tools/* "$ROOT/tools/device/powertest" "$ROOT/tools/device/sleepnow"; do
 	put "$f" "/usr/bin/${f##*/}" 755
@@ -64,17 +64,15 @@ put "$DUFS" /usr/bin/dufs 755
 cp -R "$B/specular-install/." "$R/"
 
 # TrimUI's GPU libraries (with their NULL window system, loaded by name) and firmware, and the
-# XR829's firmware and Bluetooth start-up program. Only these come from TrimUI's system.
+# XR829's firmware. Only these come from TrimUI's system.
 for l in libEGL.so libEGL.so.1 libGLESv2.so libGLESv2.so.2 libIMGegl.so libsrv_um.so \
 	libglslcompiler.so libusc.so libpvrNULL_WSEGL.so; do
 	cp -P "$B/stock-root/usr/lib/$l" "$R/usr/lib/$l"
 done
 mkdir -p "$TMP/stock"
 debugfs -R "rdump /lib/firmware $TMP/stock" "$B/stock-fw/rootfs.fex" 2>/dev/null
-debugfs -R "dump /usr/bin/hciattach $TMP/stock/hciattach" "$B/stock-fw/rootfs.fex" 2>/dev/null
 mkdir -p "$R/lib/firmware"
 cp "$TMP"/stock/firmware/*xr829* "$TMP"/stock/firmware/rgx.* "$R/lib/firmware/"
-put "$TMP/stock/hciattach" /usr/bin/hciattach 755
 
 # --- Debugging tools --------------------------------------------------------------------------
 # Release images leave out the debugging and hardware test tools in debug-tools.list, which `make

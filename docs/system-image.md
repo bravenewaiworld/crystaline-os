@@ -31,9 +31,9 @@ The system that runs on the Brick: how it is built, what it contains, how it sta
 ```
 make system
   Buildroot (system/configs/brick_defconfig)  → rootfs.tar (base)
-  + kernel modules, GPU modules, padbridge, brick-install, device tools, dufs,
+  + kernel modules, GPU modules, padbridge, xr829-attach, brick-install, device tools, dufs,
     Specular + cores + fonts, frontend-run
-  + TrimUI's: GPU libraries (EGL, GLESv2, NULL window system, …), rgx.* and *xr829* firmware, hciattach
+  + TrimUI's: GPU libraries (EGL, GLESv2, NULL window system, …), rgx.* and *xr829* firmware
   + dev SSH host keys, root's authorized_keys (RELEASE=1: links into the state area, for keys
     made or imported on the device, and no root password), /etc/brick-version
   - RELEASE=1: the debugging and hardware test tools (system/board/brick/debug-tools.list)
@@ -52,7 +52,7 @@ Owners come from Buildroot's tar (`tar-with-owners.py` → `sqfstar`), so no roo
 | `klogd` | the kernel's messages into the system log | the system log's socket |
 | `dbus` | system message bus | |
 | `bluetoothd`, `bluealsa` | Bluetooth, Bluetooth audio output | `dbus` |
-| `hciattach` | attaches the XR829's Bluetooth (TrimUI's binary) | |
+| `xr829-attach` | starts the XR829's Bluetooth and attaches it as `hci0` ([wireless.md](wireless.md)) | |
 | `padbridge` | buttons → standard gamepad ([input.md](input.md)) | |
 | `frontend` | Specular (`frontend-run`, with the fallback above) | `padbridge` |
 | `usb` | USB network link ([usb.md](usb.md)) | |
@@ -114,7 +114,6 @@ Specular (not yet done): an "SSH" on/off setting and an "Import SSH keys from th
 
 - (2026-10-10, stock) TrimUI's system is Tina Linux 1.1.1 (OpenWrt base, `procd`); its launcher exits immediately without a genuine anti-clone chip, and its button daemon reads the GPIO controller through `/dev/mem`. Source: stock rootfs, `MainUI` and `trimui_inputd` disassembly.
 - (2026-10-11, device) TrimUI's `adbd` kills a session's processes when the session ends, and sometimes comes up without the USB network link. Source: test card.
-- (2026-10-11, stock) TrimUI's BlueZ keeps its storage in `/etc/lib/bluetooth`, and its `hciattach` keeps the XR829's address in `/etc/bluetooth/xr_bt.conf`, writing a random one there if missing; on a read-only root the address (and so every pairing) would change each boot. Source: stock rootfs, `hciattach_xradio.c`.
 - (2026-10-14, device) A freshly written card got its data partition (28 GB) on the first start, with WebDAV up. Source: device check after commit 8f03615.
 - (2026-10-18, upstream) BusyBox 1.37's `syslogd -C` logs only to the memory buffer and ignores `-O FILE`. Source: `sysklogd/syslogd.c`, `process_line`'s end.
 - (2026-10-18, device) `sqfstar` gives the image's root directory the building user's owner and mode 777 unless told otherwise (`-root-uid`, `-root-gid`, `-root-mode`), as the tar has no entry for `/`. `sshd` checks the owner and mode of every directory above a key file outside the home directory, up to `/`, so release images' `/var/state/ssh/authorized_keys` (really `/system/state/ssh/`) needs `/` to be root's and not writable by others. Source: `ls -ld /` on 20261017-231308-c07c480-dirty (uid 1000, `drwxrwxrwx`); OpenSSH `misc.c` (`safe_path`).

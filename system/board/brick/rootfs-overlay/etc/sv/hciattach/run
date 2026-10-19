@@ -1,8 +1,0 @@
-#!/bin/sh
-# Attaches the XR829's Bluetooth controller on serial port ttyS1: uploads its firmware and sets its
-# address. The XR829 has no address of its own: TrimUI's hciattach reads /etc/bluetooth/xr_bt.conf
-# (linked into /var/state/bluetooth), or makes up a random one and saves it there, so the address,
-# and with it the pairings, stay the same across reboots. This is TrimUI's hciattach: BlueZ's own
-# doesn't support the XR829 (replacing it: ROADMAP.md).
-exec 2>&1
-exec /usr/bin/hciattach -n ttyS1 xradio	# -n: stay in the foreground

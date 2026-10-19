@@ -1,0 +1,6 @@
+#!/bin/sh
+# Powers up the XR829's Bluetooth side on ttyS1, loads its firmware, sets its address and attaches
+# it as hci0 (userspace/xr829-attach). It stays running while attached; if it exits, runit starts
+# it again a second later.
+exec 2>&1
+exec /usr/bin/xr829-attach
