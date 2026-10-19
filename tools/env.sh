@@ -1,6 +1,6 @@
 # Settings shared by the build scripts and the Makefile. Sourced (not run), with ROOT set to the
 # project root. Each can be overridden from the environment.
-# The third-party inputs live in third-party/ (not in git) until the build fetches them itself.
+# The third-party inputs live in third-party/ (not in git); tools/fetch-third-party.sh fetches them.
 
 # Cross compiler: the one in Creality's Sonic Pad SDK (github.com/CrealityTech/sonic_pad_os,
 # prebuilt/gcc/linux-x86/aarch64/toolchain-sunxi-glibc), which targets the same chip family and

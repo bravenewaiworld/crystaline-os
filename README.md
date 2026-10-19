@@ -31,39 +31,38 @@ You need:
 - A card reader for your computer.
 - [balenaEtcher](https://etcher.balena.io/), which runs on Windows, macOS and Linux.
 
-1. Download the latest `crystaline-os-sd-card.img` from the Releases page.
+1. Download the SD card image (`crystaline-<release>-sd-card.img.xz`) of the latest release from the Releases page. balenaEtcher reads it as it is: no need to unpack it.
 2. Open balenaEtcher. Choose **Flash from file** and pick the image. Choose your SD card as the target, then **Flash**.
    If your computer then asks to format the card, click **Cancel**. Some of the card's partitions are ones your computer can't read.
 3. Put the card in the Brick and turn it on. The first start takes a little longer while it prepares the card's storage space.
 4. Turn the Brick off and put the card back in your computer. It shows up as a drive named `BRICK`.
-5. Make a folder named `roms` on it and copy your games into it. Any sub-folders are fine. BIOS files go in a folder named `bios`.
+5. Copy your games into its `roms` folder. Any sub-folders are fine. BIOS files go in the `bios` folder.
 
 **Going back to TrimUI's system:** take the card out and restart.
 
 **Installing onto the device itself.** This frees the card for games and saves only.
 1. Open **Settings → Internal storage**.
 2. Choose to back up TrimUI's system to the card first. The backup is your way back to TrimUI's system.
-3. Once installed, any card you use must be formatted FAT32. Most cards over 32 GB come formatted exFAT, which doesn't work yet.
+3. Once installed, any card formatted FAT32 or exFAT (as most cards come) works for your games.
 
-**Going back to TrimUI's system after installing.** Restoring only works when the Brick has started from a Crystaline OS SD card.
-1. Copy the card's `backups` folder to your computer.
-2. Flash the card again as above (this erases it). Start the Brick from it once, then turn it off.
-3. Copy the `backups` folder back onto the card.
-4. Turn the Brick on with the card in, open **Settings → Internal storage**, and restore the backup.
+**Going back to TrimUI's system after installing.** You need a Crystaline OS SD card with the backup in its `backups` folder, such as the card you installed from.
+1. With that card in, open **Settings → Internal storage** and choose to restore the backup.
+2. The Brick restarts from the card and asks you to confirm the restore.
+3. Once it is done, take the card out and restart.
 
-**While Crystaline OS is in development:** anyone on your WiFi network can read and change the card's files while WiFi is on.
+**File transfer has no password:** while its screen is open, anyone on your network can read and change the card's files.
 
 ## Developer setup
 
 Building needs a Linux PC (on Windows, use WSL 2).
 
 You need:
-- **Host tools:** make, gcc/g++, git, curl, rsync, cmake, python3, dtc (`fdtget`/`fdtput`), e2fsprogs (a `mke2fs` that supports `-d` and `orphan_file`, plus `debugfs`), sfdisk (util-linux), and OpenSSH (`ssh`, `scp`, `ssh-keygen`). Also everything [Buildroot requires](https://buildroot.org/downloads/manual/manual.html#requirement-mandatory).
+- **Host tools:** make, gcc/g++, git, curl, rsync, cmake, python3, dtc (`fdtget`/`fdtput`), 7z, pkg-config and fontconfig's development files, e2fsprogs (a `mke2fs` that supports `-d` and `orphan_file`, plus `debugfs`), sfdisk (util-linux), and OpenSSH (`ssh`, `scp`, `ssh-keygen`). Also everything [Buildroot requires](https://buildroot.org/downloads/manual/manual.html#requirement-mandatory).
 - **Rust**, through [rustup]. The pinned toolchain and the `aarch64-unknown-linux-gnu` target are installed on first build.
-- **Third-party inputs** that are not downloaded automatically yet. `tools/env.sh` lists where each is expected in `third-party/`, and each location can be overridden by an environment variable:
+- **Third-party inputs**, fetched and checked by `tools/fetch-third-party.sh` ([DEVELOPMENT.md](DEVELOPMENT.md#third-party-inputs)). `tools/env.sh` lists where each is expected in `third-party/`, and each location can be overridden by an environment variable:
   - The cross compiler from Creality's Sonic Pad SDK ([CrealityTech/sonic_pad_os]; GCC 6.4, glibc 2.23).
   - The PowerVR GPU kernel driver source ([pocketforge-os/gpu-km-tsp]).
-  - TrimUI's stock firmware v1.1.1 (`trimui_tg3040.awimg`). It supplies the first-stage loader, U-Boot, the GPU libraries and the WiFi/Bluetooth firmware.
+  - TrimUI's stock firmware v1.1.1 (`trimui_tg3040.awimg`). It supplies the first-stage loader, U-Boot, the GPU libraries and the WiFi/Bluetooth firmware. It has no stable download address: set `TRIMUI_FW_URL` to one, or put the file in place yourself.
   - dufs v0.46.0 (static aarch64 binary), the WebDAV server.
 - **Submodules:** clone with `--recurse-submodules`. The kernel ([Crystaline Linux], a fork of PocketForge's kernel-tsp) and the [Specular] frontend are separate repositories.
 

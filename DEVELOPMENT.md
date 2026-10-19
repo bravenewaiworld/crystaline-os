@@ -2,6 +2,13 @@
 
 `make help` lists every build and device target. Commands that reach the device take its address from `BRICK` (default `192.168.7.2`, the USB network link).
 
+## Third-party inputs
+
+`tools/fetch-third-party.sh` fetches the inputs `tools/env.sh` lists into `third-party/`, and checks each one against the hash pinned in the script. `--check` only checks what is there.
+- An input that doesn't match its pin is reported and left alone: remove it and run again.
+- TrimUI's firmware (`trimui_tg3040.awimg` v1.1.1) has no stable download address. Set `TRIMUI_FW_URL` to one, or put the file in `third-party/trimui-firmware-v1.1.1/` yourself; it is checked either way.
+- To move an input to a new version, change its pin in the script. A download is pinned by its SHA-256. A git source is pinned by its commit and the tree ID of the directory used (`git rev-parse <commit>:<path>`, or `<commit>^{tree}` for the whole repository).
+
 ## Getting onto the device
 
 - **SSH** (root, key only), over the USB network link or WiFi. The build creates the host keys and a development login key once per checkout; every image built from that checkout accepts it, so a reflash never changes the device's identity. Anyone holding that key has root on any image you build. Log in with `ssh -o IdentitiesOnly=yes -i build/ssh-host-keys/dev_key root@192.168.7.2` (without `IdentitiesOnly`, keys from an SSH agent such as 1Password's are offered first, and the device hangs up after a few). Files move with `scp` or SFTP.
@@ -73,7 +80,7 @@ What a release image leaves out, and whether it can come back on a running devic
 
 The kernel is the same in both kinds of image, with the same facilities ("Kernel facilities" above).
 
-`make debug-running-release` (`BRICK=` as usual; `SSH_KEY=<private key file>` unless ssh offers your key by itself) copies the tools from this checkout's build (Buildroot's, and the device tools) to `/run/debug` on the device. That is memory (about 9 MB): nothing on the device's storage changes, and they are gone at the next restart, when it can simply be run again. Then, in an SSH session on the device, `. /run/debug/env` puts them on `PATH`, and they work as in "Debugging programs" above. It refuses, and removes the copy, if the device's dynamic loader finds that a program needs a library or library version the device lacks; to fix that, check out the commit at the end of the device's version (`/etc/brick-version`) and run it again (it builds Buildroot and the device tools first). gdb on the PC uses this checkout's copies of programs and libraries, which for a release built elsewhere may not match the device's: `set sysroot target:` makes it read the device's own instead, which are stripped, so it names only exported functions; for more, build from the release's commit.
+`make debug-running-release` (`BRICK=` as usual; `SSH_KEY=<private key file>` unless ssh offers your key by itself) copies the tools from this checkout's build (Buildroot's, and the device tools) to `/run/debug` on the device. That is memory (about 9 MB): nothing on the device's storage changes, and they are gone at the next restart, when it can simply be run again. Then, in an SSH session on the device, `. /run/debug/env` puts them on `PATH`, and they work as in "Debugging programs" above. It refuses, and removes the copy, if the device's dynamic loader finds that a program needs a library or library version the device lacks; to fix that, check out the commit at the end of the device's version (`/etc/brick-version`) and run it again (it builds Buildroot and the device tools first). gdb on the PC uses this checkout's copies of programs and libraries, which for a release built elsewhere (the GitHub release workflow) may not match the device's: `set sysroot target:` makes it read the device's own instead, which are stripped, so it names only exported functions; for more, build from the release's commit.
 
 ## Testing
 
@@ -87,6 +94,19 @@ Each test prints PASS, or FAIL and the first failure. `make test-battery-guard`,
 - **Device-tree edits test** (`make test-dt-edits`, a few seconds): generates the kernel's edits table from `dt-tweaks.sh` and applies it on the PC with the kernel's own code. It checks the result against `dt-tweaks.sh` run directly, that applying it again or to an already-patched tree changes nothing, that U-Boot's eMMC tuning is kept and other values set before the kernel are replaced and logged, that a mismatch applies nothing, and that the recorder refuses what the kernel can't redo. Trees saved from devices in `build/dt-samples/` (by `tools/system/dt-check.sh`) are applied too, with their log lines printed. Needs dtc and `build/stock-fw` (`make stock-fw`). `KERNEL_SRC=<kernel tree>` tests another tree than `linux/`.
 - **exFAT driver test** (`make test-exfat`, after `make buildroot`; the first run also builds QEMU, about 15 minutes, and the test kernel; after that about 4 minutes): boots our kernel, with lock checking, in QEMU on an initramfs made from the device's root filesystem, against a virtual disk, using the device's `mkfs.exfat`/`fsck.exfat` and mount-card's mount options. The functional suite covers file operations, names matched regardless of case, saves by rename, preallocated files (as Windows and macOS write them) read through the page cache, `O_DIRECT` and `mmap`, timestamps outside exFAT's range, loop images and which remounts the driver accepts. Then `ROUNDS` power cuts (default 10): writes, saves and mkdir/rm reset 3–14 s in, then `fsck.exfat -n`, a repair with `-p` if it finds errors, and a check that the last save is whole. Any kernel warning fails it. QEMU (`build/qemu`) and the test kernel (`build/test-exfat/`) are kept for the next run. Logs are in `build/test-exfat/logs/`. `KERNEL_SRC=<kernel tree>` tests another tree than `linux/`. Not part of the release workflow: too slow.
 - **Overnight power test** (`powertest`): logs battery drain across deep sleep, idle and load to the SD card. The settings it compares are chosen from the environment (`TUNED_PROFILE`, `TUNED_USB_TOP`, `TUNED_SAMPLING`; see its header).
+
+## Making a release
+
+1. Tag the commit with today's date and push the tag: `git tag v0.2026.10.18 && git push origin v0.2026.10.18`. A second release on the same day is `v0.2026.10.18.2`, then `.3`, and so on. The workflow refuses any other form of tag, and a date more than a day ahead or more than a week old.
+2. GitHub Actions (`.github/workflows/release.yml`) runs `make system sd-card RELEASE=1` and the PC tests (every `make test-*` in "Testing" but `test-exfat`, which takes too long), then waits for a reviewer to approve the `release` environment. Once approved, it signs the update file and makes a draft release named after the tag. The draft holds `crystaline-<tag>-sd-card.img.xz`, `crystaline-<tag>.update` and `SHA256SUMS`; its notes give the system version, commit and build time.
+3. Check the draft and publish it.
+
+Running the workflow by hand (Actions → Release → Run workflow) builds and tests without releasing; the results stay with the run for 30 days. Runs on `main` save the caches (third-party inputs, Buildroot's downloads and its output), because a tag's run can use only caches made on `main`. A push to `main` that changes Buildroot's configuration, the `Makefile` or a pin starts such a run by itself; without it, the next release would build Buildroot from scratch, which takes about an hour longer.
+
+One-time setup of the GitHub repository:
+- **Variable `TRIMUI_FW_URL`** (Settings → Secrets and variables → Actions → Variables): a download address of TrimUI's `trimui_tg3040.awimg` v1.1.1.
+- **The release key.** Make it on your PC: `openssl genpkey -algorithm ed25519 -out release.pem`. Put its public half in place with `tools/system/sign-update.sh --public-key release.pem >system/board/brick/update-keys/release.pub`, and commit it before tagging: devices accept only updates signed with the key their system was built with. Keep `release.pem` safe offline; GitHub never shows a secret again.
+- **Environment `release`** (Settings → Environments): a required reviewer, deployments limited to tags matching `v*`, and the secret `UPDATE_SIGNING_KEY` holding the whole of `release.pem`. Before signing, the workflow checks that the secret matches `release.pub`.
 
 ## On-device tools
 

@@ -1,4 +1,4 @@
 # Build output
 /build/
-# Third-party inputs not fetched by the build yet (see tools/env.sh)
+# Third-party inputs (tools/fetch-third-party.sh)
 /third-party/

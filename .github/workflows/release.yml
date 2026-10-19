@@ -1,0 +1,238 @@
+# Makes a release from a tag (DEVELOPMENT.md, "Making a release"): builds and tests a release
+# image, then, once a reviewer approves the protected "release" environment, signs the update file
+# and puts the SD card image, the update file and SHA256SUMS in a draft GitHub Release.
+# Run by hand on a branch, it only builds and tests, and keeps the results with the run for 30 days
+# (run by hand on a tag, it makes that tag's release). It does the same on a push to main that
+# changes what the caches hold, so that they stay current. Only runs on main save the caches: GitHub
+# lets a run use only caches made on its own branch or tag, or on main, so caches made for a tag
+# would never be used again.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*.*']
+    branches: [main]
+    # On main, what the cache keys below are made from (GitHub doesn't apply paths to tags). The
+    # Makefile is here for BUILDROOT_VERSION, so any change to it builds once more.
+    paths:
+      - system/configs/brick_defconfig
+      - system/Config.in
+      - system/external.*
+      - system/package/**
+      - system/patches/**
+      - system/board/brick/busybox.fragment
+      - Makefile
+      - tools/fetch-third-party.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash # with pipefail, unlike the default
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+    steps:
+      # v<major>.<YYYY>.<MM>.<DD>, the day the release is made; a second release that day adds .2,
+      # a third .3, and so on. The date may be a day ahead (time zones) and up to a week old (re-runs).
+      - name: Check the tag
+        if: env.TAG != ''
+        run: |
+          [[ $TAG =~ ^v[0-9]+\.([0-9]{4})\.([0-9]{2})\.([0-9]{2})(\.[2-9]|\.[1-9][0-9]+)?$ ]] ||
+            { echo "::error::$TAG is not v<major>.<YYYY>.<MM>.<DD>, or v<major>.<YYYY>.<MM>.<DD>.<2 or more>"; exit 1; }
+          day=${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}
+          [ "$(date -u -d "$day" +%F 2>/dev/null)" = "$day" ] || { echo "::error::$TAG: $day is not a date"; exit 1; }
+          if [[ $day > $(date -u -d '+1 day' +%F) || $day < $(date -u -d '-7 days' +%F) ]]; then
+            echo "::error::$TAG: $day is more than a day ahead of today (UTC), or more than a week old"; exit 1
+          fi
+
+      # The runner starts with about 14 GB free; the build needs more (Buildroot's output alone is 9 GB).
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          persist-credentials: false
+
+      # build-system.sh refuses the placeholder too, but only after the hours spent building the parts.
+      - name: Check the release key is in place
+        run: |
+          [[ $(<system/board/brick/update-keys/release.pub) =~ ^[0-9a-f]{64}$ ]] ||
+            { echo "::error::system/board/brick/update-keys/release.pub is not a key (DEVELOPMENT.md, Making a release)"; exit 1; }
+
+      - name: Install the build's tools
+        run: |
+          sudo apt-get update
+          # Buildroot's requirements; the image tools (dtc/fdtput, sfdisk, mke2fs/debugfs, 7z, zstd,
+          # xz); Specular's (cmake, and fontconfig for a build script of its UI library); the tests'
+          # (mkfs.vfat, mkfs.exfat, time zone data).
+          sudo apt-get install -y --no-install-recommends \
+            build-essential bc bzip2 cpio file gawk patch perl rsync unzip wget \
+            device-tree-compiler fdisk e2fsprogs p7zip-full zstd xz-utils \
+            cmake pkg-config libfontconfig-dev dosfstools exfatprogs tzdata curl git jq python3
+
+      # The toolchains the installer and Specular pin (each one's rust-toolchain.toml).
+      - name: Install Rust
+        run: |
+          for f in userspace/brick-install/rust-toolchain.toml specular/rust-toolchain.toml; do
+            rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' "$f")" \
+              --profile minimal --target aarch64-unknown-linux-gnu
+          done
+
+      - name: Buildroot's version
+        id: buildroot
+        run: echo "version=$(sed -n 's/^BUILDROOT_VERSION := //p' Makefile)" >>"$GITHUB_OUTPUT"
+
+      # The fetch script holds the pins, so changing any pin changes the key.
+      - name: Restore third-party/
+        id: third-party
+        uses: actions/cache/restore@v4
+        with:
+          path: third-party
+          key: third-party-${{ hashFiles('tools/fetch-third-party.sh') }}
+
+      # Any older set will do: Buildroot checks each download against its hash.
+      - name: Restore Buildroot's downloads
+        id: downloads
+        uses: actions/cache/restore@v4
+        with:
+          path: build/downloads
+          key: downloads-${{ steps.buildroot.outputs.version }}-${{ hashFiles('system/configs/brick_defconfig') }}
+          restore-keys: downloads-
+
+      # Only an exact match: Buildroot doesn't rebuild a package whose options changed. The rootfs
+      # overlay and post-build.sh are not in the key: Buildroot applies them on every run.
+      - name: Restore Buildroot's output
+        id: buildroot-output
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/buildroot
+            build/buildroot-${{ steps.buildroot.outputs.version }}
+          key: buildroot-${{ steps.buildroot.outputs.version }}-${{ hashFiles('system/configs/brick_defconfig', 'system/Config.in', 'system/external.*', 'system/package/**', 'system/patches/**', 'system/board/brick/busybox.fragment') }}
+
+      - name: Fetch the third-party inputs
+        env:
+          TRIMUI_FW_URL: ${{ vars.TRIMUI_FW_URL }}
+        run: tools/fetch-third-party.sh
+
+      - name: Build
+        run: make system sd-card RELEASE=1
+
+      # The PC tests (DEVELOPMENT.md, "Testing"): all but test-exfat, which takes too long.
+      - name: Test the installer
+        run: make test-installer
+
+      - name: Test the low-battery guard
+        run: make test-battery-guard
+
+      - name: Test mounting the data card
+        run: make test-mount-card
+
+      - name: Test setting the time zone
+        run: make test-timezone
+
+      - name: Test starting Bluetooth
+        run: make test-xr829-attach
+
+      - name: Test the kernel's device-tree edits
+        run: make test-dt-edits
+
+      # Files are named by the tag, or by the system version on a run by hand.
+      - name: Collect the results
+        run: |
+          V=$(readlink -f build/system/latest)
+          jq -e '.release and (.commit | endswith("-dirty") | not)' "$V/manifest.json" >/dev/null ||
+            { echo "::error::not a release build of a clean checkout:"; cat "$V/manifest.json"; exit 1; }
+          name=${TAG:-${V##*/}}
+          mkdir -p "out/system/${V##*/}"
+          cp "$V"/{boot.img,rootfs.squashfs,manifest.json} "out/system/${V##*/}/"
+          xz -T0 -c build/sd-card.img >"out/crystaline-$name-sd-card.img.xz"
+          ls -lR out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: out/
+          retention-days: 30 # as long as an approval of the release environment can wait
+          compression-level: 0 # all compressed already
+          if-no-files-found: error
+
+      - name: Save third-party/
+        if: github.ref == 'refs/heads/main' && steps.third-party.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: third-party
+          key: ${{ steps.third-party.outputs.cache-primary-key }}
+
+      - name: Save Buildroot's downloads
+        if: github.ref == 'refs/heads/main' && steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/downloads
+          key: ${{ steps.downloads.outputs.cache-primary-key }}
+
+      - name: Save Buildroot's output
+        if: github.ref == 'refs/heads/main' && steps.buildroot-output.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/buildroot
+            build/buildroot-${{ steps.buildroot.outputs.version }}
+          key: ${{ steps.buildroot-output.outputs.cache-primary-key }}
+
+  # Separate from the build, so the signing key is never on a machine that runs build code, and is
+  # asked for only after the build has passed its tests.
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: out
+
+      - name: Sign the update file
+        env:
+          KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          [ -n "$KEY" ] || { echo "::error::the release environment has no UPDATE_SIGNING_KEY secret"; exit 1; }
+          umask 077
+          key=$RUNNER_TEMP/key.pem
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$KEY" >"$key"
+          # The key must be the one devices trust, whose public half is in release.pub.
+          pub=$(tools/system/sign-update.sh --public-key "$key")
+          [ "$pub" = "$(cat system/board/brick/update-keys/release.pub)" ] ||
+            { echo "::error::UPDATE_SIGNING_KEY is not the key of system/board/brick/update-keys/release.pub (its public key is $pub)"; exit 1; }
+          tools/system/sign-update.sh out/system/* "$key" "out/crystaline-$TAG.update"
+
+      - name: Make the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out
+          sha256sum "crystaline-$TAG-sd-card.img.xz" "crystaline-$TAG.update" >SHA256SUMS
+          jq -r '"System version: \(.version)\n\nCommit: \(.commit)\n\nBuilt: \(.built)"' system/*/manifest.json >notes.md
+          gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes-file notes.md \
+            "crystaline-$TAG-sd-card.img.xz" "crystaline-$TAG.update" SHA256SUMS

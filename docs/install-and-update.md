@@ -25,8 +25,9 @@ How a system version is named, checked, switched to and kept; update files; how 
 - **Getting back to TrimUI's system starts from the installed system** (2026-10-18): Settings → Internal storage → Restore writes the card's erased first-stage loader back (an install leaves the card's system partition and backups untouched), restarts from the card, and the restore continues there. The card's system asks before restoring (Restore, Not now, Cancel), so a forgotten marker never erases the eMMC unattended. Rejected: restoring the eMMC in place from a system running off it (the system would first have to move into memory: complex and riskier); copying the backup off, reflashing the card and copying it back by hand; restoring automatically at start-up.
 - **After a restore the card stays able to start the device** (2026-10-18), and DONE says to remove it: it stays a working recovery card. Rejected: erasing its first-stage loader at the end, so TrimUI's system starts with the card in.
 - **An exFAT card is a data partition like a FAT32 one, for backups and logs too** (2026-10-18; exFAT support: [storage.md](storage.md)). Rejected: going without a data partition (no backups or logs) on exFAT cards, the stopgap before exFAT was supported.
-- **An update file is a version folder exactly as `make update-device` copies it (boot image, root filesystem, manifest) plus a signature over the manifest, packed as one file** (2026-10-18). It is signed with an Ed25519 key the maintainer keeps offline, and the public key is built into the system; the key moves to a CI secret once GitHub Actions builds releases for over-the-air updates. Rejected: keeping the key in CI from the start; no signing.
+- **An update file is a version folder exactly as `make update-device` copies it (boot image, root filesystem, manifest) plus a signature over the manifest, packed as one file** (2026-10-18). It is signed with an Ed25519 release key, whose public half is built into the system. The key is made offline and kept as a secret of a protected GitHub environment. Only the release workflow's signing job can read it, once a reviewer approves; that job runs on a machine that runs no build code. Rejected: no signing; signing by hand on the maintainer's PC (a manual step in every release).
 - **The update file is a plain ustar tar, signed with OpenSSL on the PC and checked in Rust on the device** (2026-10-18). Any PC can open a tar, GNU tar writes it reproducibly, and the manifest and signature come first, so nothing is trusted before the signature is checked. The device's reader is strict (exact names, order and types) rather than a general tar library, which would accept far more than we write. It isn't compressed: the root filesystem already is. Development images also trust the checkout's own key (`build/ssh-host-keys/update_key.pem`), so development builds install the same way. Rejected: signify or minisign (not on PCs by default); `ssh-keygen -Y` (its format needs a parser on the device); OpenSSL on the device (about 3 MB).
+- **Releases are built by GitHub Actions from a tag `v<major>.<YYYY>.<MM>.<DD>`, with `.2`, `.3`… for further releases the same day, and published by hand from a draft** (2026-10-18). `<major>` is 0 for V0 releases and 1 for V1 ones (ROADMAP.md). A release holds a ready-to-flash SD card image (`.img.xz`), the signed update file and `SHA256SUMS`. The card image includes files from TrimUI's firmware (bootloaders, GPU libraries, WiFi/Bluetooth and GPU firmware), as other handheld projects' images do. The tag names the release; the system version (build time and commit, in the notes) names what it installs. A date tag says when a release was made and sorts in release order; the suffix is only needed on a rare second release in a day. Rejected: numbered tags (`v0.N`); publishing only the update file and having users build the card from their own TrimUI download (much harder for them).
 
 ## Design
 
@@ -94,6 +95,17 @@ Switching U-Boot's settings, with P the copy U-Boot uses now (its rule: [boot.md
 ```
 
 Only neighbouring flag values ever meet, so U-Boot's 255/0 wrap is always read right; both copies end up the same. Every change to the settings, the installer's included, starts from the copy U-Boot uses, never just from `env`.
+
+### Release (`.github/workflows/release.yml`)
+
+```
+build    (no secrets)    check the tag → fetch-third-party.sh → make system sd-card RELEASE=1 → the PC tests
+                         → kept with the run: system/<version>/, crystaline-<tag>-sd-card.img.xz
+                           (crystaline-<version>-… on a run by hand)
+release  (tags only; environment "release", after a reviewer approves)
+                         UPDATE_SIGNING_KEY must match update-keys/release.pub
+                         → sign-update.sh → crystaline-<tag>.update, SHA256SUMS → draft release
+```
 
 ### Layouts
 

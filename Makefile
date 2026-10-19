@@ -1,6 +1,6 @@
 # Top-level build for the TrimUI Brick firmware. `make help` lists the targets.
 # Everything is built into build/. Third-party inputs (cross compiler, GPU driver source, TrimUI's
-# stock firmware, dufs) are set in tools/env.sh.
+# stock firmware, dufs) are set in tools/env.sh and fetched by tools/fetch-third-party.sh.
 
 ROOT := $(CURDIR)
 B := $(ROOT)/build
@@ -122,10 +122,11 @@ specular:
 
 # The installer (userspace/brick-install), into $(B)/installer. Always run: cargo decides what is
 # out of date. CC_aarch64_unknown_linux_gnu: the cross C compiler for crates that build C code,
-# which would otherwise use the PC's.
+# which would otherwise use the PC's. Run from its directory, where rustup finds its pinned toolchain.
 installer:
-	CARGO_TARGET_DIR=$(B)/installer CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(CC) CC_aarch64_unknown_linux_gnu=$(CC) \
-		cargo build --release --target aarch64-unknown-linux-gnu --manifest-path userspace/brick-install/Cargo.toml
+	cd userspace/brick-install && \
+		CARGO_TARGET_DIR=$(B)/installer CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(CC) CC_aarch64_unknown_linux_gnu=$(CC) \
+		cargo build --release --target aarch64-unknown-linux-gnu
 
 # --- Development tools that run on the device -----------------------------------------------
 DEVICE_TOOLS := dispctl glspin rumble i2creg memreg status blkro
