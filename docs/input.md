@@ -53,7 +53,7 @@ struct mapping {
 };
 /* Virtual gamepad: "TRIMUI Player1", bus USB, 045e:028e, version 0x0114 (Xbox 360).
  * It also declares ABS_RX/ABS_RY and KEY_F1/KEY_F2, as trimui_inputd does, but never sends them.
- * EV_FF/FF_RUMBLE (16 effects) only if a motor device exists when padbridge starts. */
+ * It always declares EV_FF/FF_RUMBLE (16 effects), whether or not the motor's device exists. */
 ```
 
 Runtime switch files. These are trimui_inputd's own, kept for software written for stock. Specular doesn't use them.
@@ -67,7 +67,7 @@ Runtime switch files. These are trimui_inputd's own, kept for software written f
 
 Behaviour worth knowing:
 - padbridge sends the gamepad's full state whenever anything changes, and the kernel passes on only the values that changed. After the kernel reports dropped events (`SYN_DROPPED`), it reads the buttons' state again.
-- On any error, such as "brick-keys" disappearing, it exits. The service supervisor (`/etc/sv/padbridge`) then restarts it.
+- On any error, such as "brick-keys" disappearing, it exits. The service supervisor (`/etc/sv/padbridge`) then restarts it. Rumble errors are the exception: a missing motor only makes rumble fail ([leds-and-rumble.md](leds-and-rumble.md)).
 - The power key is a separate device. Specular reads both "TRIMUI Player1" and "axp2202-pek". The power chip turns the device off by itself if the key is held for 10 s.
 
 ## Findings

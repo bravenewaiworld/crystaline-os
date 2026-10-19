@@ -20,12 +20,11 @@
  *   F1/F2 buttons BTN_THUMBL/BTN_THUMBR;  SELECT/START/MENU (BTN_MODE) and volume keys unchanged
  *   FN slider     switch SW_TABLET_MODE, unchanged
  *   rumble        FF_RUMBLE effects are forwarded to the vibration motor's input device (see
- *                 handle_rumble); declared only if an input device that can rumble exists
- *                 when padbridge starts
+ *                 handle_rumble)
  *
  * Options: trimui_inputd's option files in /tmp/trimui_inputd/, which NextUI creates and deletes;
  * an option is on while its file exists, and they are re-read every second:
- *   turbo_{a,b,x,y,l,r,l2,r2}   auto-fire that button while held (Nintendo labels: a = right)
+ *   turbo_{a,b,x,y,l,r,l2,r2}   auto-fire that button while held (the Brick's labels: a = right)
  *   input_no_dpad               don't report the D-pad
  *   input_dpad_to_joystick      report the D-pad as the left stick (ABS_X/ABS_Y) instead
  *
@@ -52,6 +51,8 @@
  * BTN_X/BTN_Y, are aliases of BTN_NORTH/BTN_WEST (top/left), the opposite positions. */
 #define XBOX_X		0x133
 #define XBOX_Y		0x134
+#define MOTOR_NAME	"regulator-haptic"	/* the vibration motor's input device */
+#define MOTOR_RETRY_MS	1000	/* how often a missing motor device is looked for */
 #define MAX_EFFECTS	16	/* rumble effects a game can upload at once */
 
 /* What a gpio-keys code becomes on the virtual pad. */
@@ -94,8 +95,11 @@ static int turbo_on[NMAP];	/* auto-fire enabled by option file */
 static int turbo_phase;		/* auto-fire buttons read as pressed while this is 1 */
 static int no_dpad, dpad_to_stick;
 static int fn_switch;		/* FN slider position */
-static int rumble_fd = -1;	/* the vibration motor's input device, if any */
-/* motor_id[i]: the motor device's id for the virtual pad's effect i; -1 if not uploaded */
+static int motor_fd = -1;	/* the motor's input device; -1 while not open (see motor()) */
+/* Both indexed by the pad's effect id. effects[i]: the game's last successful upload (type 0:
+ * none). motor_id[i]: its id on motor_fd, or -1 if it isn't uploaded there (so all are -1 while
+ * motor_fd is; main() sets them to -1 at start). */
+static struct ff_effect effects[MAX_EFFECTS];
 static int motor_id[MAX_EFFECTS];
 
 static long now_ms(void)
@@ -175,38 +179,26 @@ static void read_state(int in_fd)
 	fn_switch = BIT_SET(sw, SW_TABLET_MODE);
 }
 
-static int is_keys(int fd)
-{
-	char name[64] = "";
-
-	return ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0 && !strcmp(name, KEYS_NAME);
-}
-
-static int can_rumble(int fd)
-{
-	unsigned char ff[FF_MAX / 8 + 1] = { 0 };
-
-	return ioctl(fd, EVIOCGBIT(EV_FF, sizeof(ff)), ff) >= 0 && BIT_SET(ff, FF_RUMBLE);
-}
-
-/* Open the first input device for which match() is true; -1 if there is none. */
-static int open_input(int (*match)(int fd))
+/* Open the input device with this name; -1 if there is none. */
+static int open_input(const char *name)
 {
 	DIR *d = opendir("/dev/input");
 	struct dirent *e;
 	int fd = -1;
 
 	while (d && (e = readdir(d))) {
-		char path[300];
+		char path[300], found[64] = "";
 
 		if (strncmp(e->d_name, "event", 5))
 			continue;
 		snprintf(path, sizeof(path), "/dev/input/%s", e->d_name);
-		fd = open(path, O_RDWR | O_NONBLOCK);	/* the main loop reads until EAGAIN */
-		if (fd >= 0 && match(fd))
+		/* non-blocking: the main loop reads the buttons until EAGAIN */
+		fd = open(path, O_RDWR | O_NONBLOCK);
+		if (fd < 0)
+			continue;
+		if (ioctl(fd, EVIOCGNAME(sizeof(found)), found) >= 0 && !strcmp(found, name))
 			break;
-		if (fd >= 0)
-			close(fd);
+		close(fd);
 		fd = -1;
 	}
 	if (d)
@@ -218,42 +210,108 @@ static int open_input(int (*match)(int fd))
  * Rumble: games upload effects to the virtual pad and play them; uinput passes those requests to
  * us as events on out_fd. Each upload is passed on to the motor's device (motor_id maps the pad's
  * effect ids to the motor's), and play/stop requests are forwarded with the mapped id.
+ *
+ * The pad always offers rumble; the motor's device is opened on the first request and again after
+ * it disappears. The kernel erases a fd's effects when it is closed, so padbridge keeps the game's
+ * copy of each effect and uploads it again the first time it is played on the new fd. While the
+ * motor is missing, uploads fail with EIO: games treat any failed upload as "no rumble now",
+ * whereas ENODEV (what the motor's own device returns once gone) tells SDL the gamepad is gone.
  */
+
+/* The motor's device, opened if needed; -1 if it is missing. A missing device is looked for
+ * again at most every MOTOR_RETRY_MS; it is logged once when missing and once when found again. */
+static int motor(void)
+{
+	static long next_try;
+	static int missing;	/* reported missing since last found */
+	long t = now_ms();
+
+	if (motor_fd >= 0 || t < next_try)
+		return motor_fd;
+	next_try = t + MOTOR_RETRY_MS;
+	motor_fd = open_input(MOTOR_NAME);
+	if (motor_fd < 0 && !missing)
+		fprintf(stderr, "padbridge: no \"%s\" input device; rumble fails until found\n",
+			MOTOR_NAME);
+	else if (motor_fd >= 0 && missing)
+		fprintf(stderr, "padbridge: \"%s\" found\n", MOTOR_NAME);
+	missing = motor_fd < 0;
+	return motor_fd;
+}
+
+/* Call right after a request to the motor's device failed (reads errno). If the device is gone,
+ * closes it and forgets the effects uploaded to it, so the next request reopens it and uploads
+ * them again. Returns the error to give the game (-errno, or -EIO if gone). */
+static int motor_failed(void)
+{
+	int err = errno;
+
+	perror("padbridge: rumble");
+	if (err != ENODEV)
+		return -err;
+	close(motor_fd);
+	motor_fd = -1;
+	memset(motor_id, -1, sizeof(motor_id));
+	return -EIO;
+}
+
+/* Upload effect to the motor as the pad's effect i; returns 0 or the error to give the game. */
+static int send_effect(int i, const struct ff_effect *effect)
+{
+	struct ff_effect e = *effect;
+
+	if (motor() < 0)
+		return -EIO;
+	e.id = motor_id[i];	/* -1 uploads a new effect */
+	if (ioctl(motor_fd, EVIOCSFF, &e) < 0)
+		return motor_failed();
+	motor_id[i] = e.id;
+	return 0;
+}
+
+/* Handle one event read from the virtual pad: an effect upload or erase, or a play/stop. */
 static void handle_rumble(const struct input_event *ev)
 {
 	if (ev->type == EV_UINPUT && ev->code == UI_FF_UPLOAD) {
 		struct uinput_ff_upload up = { .request_id = ev->value };
+		int i;
 
 		if (ioctl(out_fd, UI_BEGIN_FF_UPLOAD, &up) < 0)
 			return;
+		i = up.effect.id;	/* the pad's id for it */
 		up.retval = -EINVAL;
-		if (up.effect.id >= 0 && up.effect.id < MAX_EFFECTS) {
-			struct ff_effect effect = up.effect;
-
-			effect.id = motor_id[up.effect.id];	/* -1 uploads a new effect */
-			up.retval = ioctl(rumble_fd, EVIOCSFF, &effect) < 0 ? -errno : 0;
+		if (i >= 0 && i < MAX_EFFECTS) {
+			up.retval = send_effect(i, &up.effect);
 			if (!up.retval)
-				motor_id[up.effect.id] = effect.id;
+				effects[i] = up.effect;
 		}
 		ioctl(out_fd, UI_END_FF_UPLOAD, &up);
 	} else if (ev->type == EV_UINPUT && ev->code == UI_FF_ERASE) {
 		struct uinput_ff_erase er = { .request_id = ev->value };
+		unsigned int i;
 
 		if (ioctl(out_fd, UI_BEGIN_FF_ERASE, &er) < 0)
 			return;
+		i = er.effect_id;
 		er.retval = 0;
-		if (er.effect_id < MAX_EFFECTS && motor_id[er.effect_id] >= 0) {
-			ioctl(rumble_fd, EVIOCRMFF, motor_id[er.effect_id]);
-			motor_id[er.effect_id] = -1;
+		if (i < MAX_EFFECTS) {
+			if (motor_id[i] >= 0 && ioctl(motor_fd, EVIOCRMFF, motor_id[i]) < 0)
+				motor_failed();
+			motor_id[i] = -1;
+			effects[i].type = 0;
 		}
 		ioctl(out_fd, UI_END_FF_ERASE, &er);
-	} else if (ev->type == EV_FF && ev->code < MAX_EFFECTS && motor_id[ev->code] >= 0) {
+	} else if (ev->type == EV_FF && ev->code < MAX_EFFECTS && effects[ev->code].type) {
 		/* play (value = repeat count) or stop (value 0) */
-		struct input_event play = { .type = EV_FF, .code = motor_id[ev->code],
-					    .value = ev->value };
+		struct input_event play = { .type = EV_FF, .value = ev->value };
+		int i = ev->code;
 
-		if (write(rumble_fd, &play, sizeof(play)) < 0)
-			perror("padbridge: rumble");
+		/* not on the motor yet: it was reopened since the game's upload */
+		if (motor_id[i] < 0 && send_effect(i, &effects[i]) < 0)
+			return;
+		play.code = motor_id[i];
+		if (write(motor_fd, &play, sizeof(play)) < 0)
+			motor_failed();
 	}
 }
 
@@ -289,12 +347,10 @@ static int create_pad(void)
 		dev.absmax[axes[i].code] = axes[i].max;
 	}
 	ioctl(fd, UI_SET_SWBIT, SW_TABLET_MODE);
-	/* Rumble, if the device has a vibration motor (trimui_inputd has none). */
-	if (rumble_fd >= 0) {
-		ioctl(fd, UI_SET_EVBIT, EV_FF);
-		ioctl(fd, UI_SET_FFBIT, FF_RUMBLE);
-		dev.ff_effects_max = MAX_EFFECTS;
-	}
+	/* Rumble (trimui_inputd has none) */
+	ioctl(fd, UI_SET_EVBIT, EV_FF);
+	ioctl(fd, UI_SET_FFBIT, FF_RUMBLE);
+	dev.ff_effects_max = MAX_EFFECTS;
 	if (write(fd, &dev, sizeof(dev)) != sizeof(dev) || ioctl(fd, UI_DEV_CREATE) < 0) {
 		close(fd);
 		return -1;
@@ -306,7 +362,7 @@ static int create_pad(void)
 int main(void)
 {
 	long next_options = 0, next_turbo = 0;	/* the first pass reads options and syncs */
-	int in_fd = open_input(is_keys);
+	int in_fd = open_input(KEYS_NAME);
 
 	if (in_fd < 0) {
 		fprintf(stderr, "padbridge: no \"%s\" input device\n", KEYS_NAME);
@@ -318,7 +374,6 @@ int main(void)
 	}
 	read_state(in_fd);
 	memset(motor_id, -1, sizeof(motor_id));
-	rumble_fd = open_input(can_rumble);
 	if (create_pad() < 0) {
 		perror("padbridge: create virtual pad");
 		return 1;
