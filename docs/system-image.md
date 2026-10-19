@@ -14,7 +14,9 @@ The system that runs on the Brick: how it is built, what it contains, how it sta
 - **The system log is kept in memory and in a file on the system partition** (2026-10-18): `logread` reads the memory copy (512 KiB), and `/system/logs/messages` keeps what happened before a reboot, a crash or a freeze. The file is rotated at 512 KiB with one older file kept, so it takes at most 1 MiB; ext4 writes out every 5 s, so log lines reach storage in batches. BusyBox's `syslogd` does either one; our patch makes it do both (`system/patches/busybox`). Start-up has its own logs on disk (below). Rejected: memory only (2026-10-14, so logging never wore storage; but nothing survived a reboot).
 - **The kernel's messages go into the system log too** (BusyBox `klogd`) (2026-10-18), so that they are kept with what the services logged at the time, across reboots, rather than only in the kernel's small buffer (`dmesg`). It leaves the console's level alone (warnings only).
 - **User data lives on the SD card's data partition, also when the system is installed on the eMMC** (2026-10-11). For portability and accessibility: the card is what users move between PC and device, any PC reads FAT32, and the system can be replaced without touching games and saves. Filesystem (FAT32, or also exFAT with the system on the eMMC): [storage.md](storage.md).
-- **File transfer: WebDAV first, then our own browser page; no MTP** (2026-10-11). `dufs` serves the data partition on port 80, both as WebDAV (mountable in PC file managers) and as a basic browser page, over WiFi or the USB network link. Rejected for now: MTP and USB mass storage. Either lets a PC write the card while the device may also be writing it, which corrupts the filesystem ([Knulli's warning](https://knulli.org/play/add-games/accessing-via-usb/)); they come once there is a safe way to hand the card over ([usb.md](usb.md)).
+- **File transfer: WebDAV and our own browser page, both served by `dufs`; no MTP** (2026-10-11; our page 2026-10-18). `dufs` serves the data partition on port 80, both as WebDAV (mountable in PC file managers) and as a browser page, over WiFi or the USB network link. Rejected for now: MTP and USB mass storage. Either lets a PC write the card while the device may also be writing it, which corrupts the filesystem ([Knulli's warning](https://knulli.org/play/add-games/accessing-via-usb/)); they come once there is a safe way to hand the card over ([usb.md](usb.md)).
+- **The browser page is static files that `dufs` serves instead of its own page (`--assets`), using only dufs's HTTP interface** (2026-10-18). No other program runs on the device for it, and the page works on a network without internet (no outside scripts or fonts). Rejected: dufs's own page (a general file browser, with no views for games, saves and BIOS files, and uploads written straight to their final name); a server of our own (more code exposed to the network).
+- **Uploads are written to `<name>.uploading` and renamed once the card holds all of the file** (2026-10-18), so a cut upload never leaves part of a game or save under its real name, where Specular would list it. dufs writes an upload straight to the name it is given and, when one is cut, deletes the part only if it is under 20 MB. A failed upload continues from the part already on the card when retried, but only while the page stays open: the browser must still hold the same file.
 - **WiFi is down at start-up; Specular brings it up and down** as its setting says, unloading the driver when off (2026-10-14). Networks are saved by `wpa_supplicant` itself in the state area ([wireless.md](wireless.md)).
 - **The frontend falls back to the hardware status screen after 3 starts within a minute**, until the next boot (2026-10-13), so a crashing Specular still leaves a device that shows its battery, sleeps and can be reached over SSH.
 - **Development access: SSH with keys only; serial console as root without a password** (2026-10-14). The SSH host keys and the login key are made once per checkout (`build/ssh-host-keys`, kept across `make clean`), so every image from that checkout has the same identity and a reflash doesn't trigger the PC's changed-host-key warning. Caveat: anyone holding a checkout's key has root on every image built from it.
@@ -31,8 +33,8 @@ The system that runs on the Brick: how it is built, what it contains, how it sta
 ```
 make system
   Buildroot (system/configs/brick_defconfig)  → rootfs.tar (base)
-  + kernel modules, GPU modules, padbridge, xr829-attach, brick-install, device tools, dufs,
-    Specular + cores + fonts, frontend-run
+  + kernel modules, GPU modules, padbridge, xr829-attach, brick-install, device tools, dufs and
+    our page for it, Specular + cores + fonts, frontend-run
   + TrimUI's: GPU libraries (EGL, GLESv2, NULL window system, …), rgx.* and *xr829* firmware
   + dev SSH host keys, root's authorized_keys (RELEASE=1: links into the state area, for keys
     made or imported on the device, and no root password), /etc/brick-version
@@ -115,13 +117,42 @@ Specular (not yet done): an "SSH" on/off setting and an "Import SSH keys from th
 
 ### File transfer
 
-`chpst -u www-data dufs -A -p 80 /mnt/SDCARD`, while Specular's File transfer screen is open: uploads, deletes and search allowed, no login. The planned browser page for games and saves sits on top of it.
+`chpst -u www-data dufs -A --assets /usr/share/brick-web -p 80 /mnt/SDCARD`, while Specular's File transfer screen is open: uploads, deletes and search allowed, no login. Its browser page is ours (below).
+
+#### Browser page
+
+`system/board/brick/webui/` (`index.html`, `app.js`, `app.css`), installed to `/usr/share/brick-web/` and given to dufs with `--assets`. dufs serves `index.html` for every folder, so the page lives at `/` and keeps its place in the part of the address after `#`: `#<view>/<folder below the view's folder>`. A folder opened by its own address (`/roms/gba/`) shows in "All files".
+
+| View | Folder | Besides listing, uploading, deleting, new folders and downloading a folder as a zip |
+|---|---|---|
+| Games | `roms/` | Specular's system folder names offered for new folders, and shown with the system's name |
+| Saves | `saves/` | every `.states` folder under `roms/` (save states), each as a zip |
+| BIOS | `bios/` | |
+| All files | the card | hidden entries shown (the other views leave out names starting with `.`, as Specular does) |
+
+dufs's interface, as the page uses it:
+
+```
+GET    <folder>/?json            {paths: [{path_type: "Dir"|"File"|…, name, mtime (ms), size}], …}
+                                 (a folder's size is its entry count, up to 1000; a missing folder lists as empty)
+GET    <folder>/?json&q=<text>   entries below the folder whose names contain <text>, at any depth
+GET    <folder>/?zip             the folder as a zip, made while it downloads (hidden files included)
+HEAD   <path>                    whether a file or folder is there (any letter case), and a file's size
+PUT    <path>.uploading          upload (replaces; makes missing folders)
+PATCH  <path>.uploading          with X-Update-Range: append: continue an upload
+MOVE   <path>.uploading          Destination: <path>; replaces an existing file
+DELETE <path>                    a file, or a folder with everything in it
+MKCOL  <folder>/                 make a folder
+```
+
+Uploads run one at a time. A file is sent straight from disk (the browser never holds it in memory), its size on the card is checked before the rename, and an error shows dufs's status and text. Before anything is sent, the page refuses names FAT32 can't hold (`" * : < > ? \ |`, or a trailing dot or space) and files over 4 GB, skips the files operating systems leave beside the user's (`.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`), and asks once before replacing files already on the card (HEAD finds them whatever the letter case of their names, because FAT32 ignores case). Leftover `.uploading` files are marked "Unfinished upload". Free space isn't shown: dufs doesn't report it.
 
 ## Findings
 
 - (2026-10-10, stock) TrimUI's system is Tina Linux 1.1.1 (OpenWrt base, `procd`); its launcher exits immediately without a genuine anti-clone chip, and its button daemon reads the GPIO controller through `/dev/mem`. Source: stock rootfs, `MainUI` and `trimui_inputd` disassembly.
 - (2026-10-11, device) TrimUI's `adbd` kills a session's processes when the session ends, and sometimes comes up without the USB network link. Source: test card.
 - (2026-10-14, device) A freshly written card got its data partition (28 GB) on the first start, with WebDAV up. Source: device check after commit 8f03615.
+- (2026-10-18, upstream) dufs 0.46.0: files under its asset prefix (`/__dufs_v0.46.0__/`) are sent to browsers as kept forever, so the page's script and style addresses carry the system version (`build-system.sh`); only GET serves them (HEAD gives 404). It reads `index.html` once, at start, so a changed page needs dufs restarted. A request that fails inside dufs (a full card, a name the filesystem refuses) gets a 500 with no text. Source: dufs `src/server.rs`.
 - (2026-10-18, upstream) BusyBox 1.37's `syslogd -C` logs only to the memory buffer and ignores `-O FILE`. Source: `sysklogd/syslogd.c`, `process_line`'s end.
 - (2026-10-18, device) `sqfstar` gives the image's root directory the building user's owner and mode 777 unless told otherwise (`-root-uid`, `-root-gid`, `-root-mode`), as the tar has no entry for `/`. `sshd` checks the owner and mode of every directory above a key file outside the home directory, up to `/`, so release images' `/var/state/ssh/authorized_keys` (really `/system/state/ssh/`) needs `/` to be root's and not writable by others. Source: `ls -ld /` on 20261017-231308-c07c480-dirty (uid 1000, `drwxrwxrwx`); OpenSSH `misc.c` (`safe_path`).
 - (2026-10-18, upstream) OpenSSH (without PAM) refuses every login, keys too, to an account whose password field starts with `!`; `*` only means no password matches. Source: OpenSSH 10.2 `platform.c` (`platform_locked_account`), `LOCKED_PASSWD_PREFIX` in its Linux build's `config.h`.

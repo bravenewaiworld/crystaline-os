@@ -1,0 +1,120 @@
+:root {
+	--bg: #f6f6f4;
+	--panel: #fff;
+	--text: #1d1d1f;
+	--muted: #6b6b70;
+	--line: #deded9;
+	--accent: #2f5fd0;
+	--danger: #b3261e;
+	--ok: #2e7d32;
+	color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #18181a;
+		--panel: #232326;
+		--text: #ececee;
+		--muted: #9a9aa0;
+		--line: #38383c;
+		--accent: #7aa2ff;
+		--danger: #ff8a80;
+		--ok: #81c784;
+	}
+}
+
+* { box-sizing: border-box; }
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font: 16px/1.4 system-ui, sans-serif;
+}
+a { color: var(--accent); }
+
+header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 24px;
+	padding: 12px 16px;
+	background: var(--panel);
+	border-bottom: 1px solid var(--line);
+}
+h1 { margin: 0; font-size: 20px; }
+h2 { font-size: 17px; margin: 24px 0 8px; display: flex; align-items: center; gap: 12px; }
+#tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+#tabs a {
+	padding: 8px 12px;
+	border-radius: 8px;
+	text-decoration: none;
+	color: var(--text);
+}
+#tabs a.active { background: var(--accent); color: var(--panel); }
+
+main { max-width: 960px; margin: 0 auto; padding: 12px 16px 48px; }
+#crumbs { font-size: 18px; margin: 4px 0 8px; overflow-wrap: anywhere; }
+#hint, #status, #states p { color: var(--muted); margin: 8px 0; }
+
+#actions, #mkdir { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+button, .button {
+	min-height: 40px;
+	padding: 8px 14px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--panel);
+	color: var(--text);
+	font: inherit;
+	text-decoration: none;
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+}
+button:hover, .button:hover { border-color: var(--accent); }
+h2 button { min-height: 32px; padding: 4px 10px; font-size: 14px; font-weight: normal; }
+input {
+	min-height: 40px;
+	padding: 8px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--panel);
+	color: var(--text);
+	font: inherit;
+	flex: 1 1 200px;
+}
+
+ul { list-style: none; margin: 0; padding: 0; }
+li {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 12px;
+	padding: 8px 12px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-top: none;
+}
+li:first-child { border-top: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+li:last-child { border-radius: 0 0 8px 8px; }
+li:only-child { border-radius: 8px; }
+li .name { flex: 1 1 240px; overflow-wrap: anywhere; }
+li.dir .name { font-weight: 600; }
+li .info { color: var(--muted); font-size: 14px; }
+li button.delete { color: var(--danger); }
+li.partial .info, li.failed .info { color: var(--danger); }
+li.done .info { color: var(--ok); }
+li progress { flex: 1 1 100%; height: 8px; accent-color: var(--accent); }
+
+#drop {
+	position: fixed;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: color-mix(in srgb, var(--accent) 25%, transparent);
+	border: 4px dashed var(--accent);
+	font-size: 24px;
+	font-weight: 600;
+	pointer-events: none;
+}
+/* Otherwise the display rules above would show hidden elements. */
+[hidden] { display: none !important; }

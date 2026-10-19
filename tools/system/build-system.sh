@@ -69,6 +69,10 @@ for f in "$B"/tools/* "$ROOT/tools/device/powertest" "$ROOT/tools/device/sleepno
 	put "$f" "/usr/bin/${f##*/}" 755
 done
 put "$DUFS" /usr/bin/dufs 755
+# Our browser page for dufs (--assets in etc/sv/webdav/run). dufs tells browsers to keep the page's
+# script and style forever, so index.html asks for them with the version in their addresses.
+for f in "$BOARD"/webui/*; do put "$f" "/usr/share/brick-web/${f##*/}" 644; done
+sed -i "s/@VERSION@/$VERSION/g" "$R/usr/share/brick-web/index.html"
 # Specular, its cores and fonts, as its own Makefile installed them (SPECULAR_STAGE in the Makefile).
 cp -R "$B/specular-install/." "$R/"
 

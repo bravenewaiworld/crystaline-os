@@ -28,6 +28,7 @@
   - `make deploy-specular` replaces Specular through the developer layer and restarts it.
   - `make run-specular` runs a build once in the foreground with its output on your terminal, and puts the installed one back afterwards.
 - **Boot logo:** edit `system/board/brick/logo/make-logo.py` and regenerate the committed BMP (needs Pillow): `python3 system/board/brick/logo/make-logo.py specular/assets/fonts/Geist.ttf system/board/brick/logo/bootlogo.bmp /tmp/logo.png` (the PNG is a preview). It lives in the bootloader partition, which updates don't touch: it reaches a device only on a new SD card (`make sd-card`), and an install copies it from the card.
+- **The browser file page** (`system/board/brick/webui/`) can be tried on the PC with a PC build of the same dufs (`cargo install dufs@0.46.0`): `dufs -A --assets system/board/brick/webui <a folder laid out like the card>`, then open `http://127.0.0.1:5000/`. Its script and style addresses don't change between edits there, so reload without the cache (Ctrl+Shift+R). On the device, dufs reads `index.html` once, when it starts.
 - **Services** are supervised and restarted when they exit. They can be stopped, started and restarted individually (`sv`). After 3 failures within a minute, the frontend falls back to a hardware status screen until the next boot.
 
 ## Seeing what happened

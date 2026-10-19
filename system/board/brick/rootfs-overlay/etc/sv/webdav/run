@@ -6,8 +6,9 @@
 # write the card.
 # It runs as www-data, not root: the card's mount options let that group write it (mount-card),
 # and /usr/bin/dufs carries the right to listen on port 80 (a file capability, cap_net_bind_service,
-# set by tools/system/tar-with-owners.py). -A: allow uploads, deletes and search.
+# set by tools/system/tar-with-owners.py). -A: allow uploads, deletes and search. --assets: our
+# own browser page (system/board/brick/webui) instead of dufs's.
 exec 2>&1
 # No data card: stay down rather than retry every second.
 mountpoint -q /mnt/SDCARD || { sv down webdav; exit 0; }
-exec chpst -u www-data /usr/bin/dufs -A -p 80 /mnt/SDCARD
+exec chpst -u www-data /usr/bin/dufs -A --assets /usr/share/brick-web -p 80 /mnt/SDCARD

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<!-- Served by dufs (--assets) at every folder's address. dufs replaces __ASSETS_PREFIX__ with the
+     address it serves app.js and app.css from. build-system.sh replaces @VERSION@ with the system's
+     version: dufs tells browsers to keep those files forever, so each version needs new addresses. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brick</title>
+<link rel="icon" href="data:,"><!-- none, so browsers don't ask the card for favicon.ico -->
+<link rel="stylesheet" href="__ASSETS_PREFIX__app.css?v=@VERSION@">
+<script src="__ASSETS_PREFIX__app.js?v=@VERSION@" defer></script>
+</head>
+<body>
+<header>
+	<h1>Brick</h1>
+	<nav id="tabs">
+		<a href="#games/" data-view="games">Games</a>
+		<a href="#saves/" data-view="saves">Saves</a>
+		<a href="#bios/" data-view="bios">BIOS</a>
+		<a href="#files/" data-view="files">All files</a>
+	</nav>
+</header>
+<main>
+	<nav id="crumbs"></nav>
+	<p id="hint"></p>
+	<div id="actions">
+		<label class="button">Upload files<input type="file" id="pick-files" multiple hidden></label>
+		<label class="button">Upload a folder<input type="file" id="pick-folder" webkitdirectory hidden></label>
+		<button type="button" id="new-folder">New folder</button>
+		<a class="button" id="zip" download>Download as zip</a>
+	</div>
+	<form id="mkdir" hidden>
+		<input id="mkdir-name" list="folder-names" placeholder="Folder name" autocomplete="off" required>
+		<datalist id="folder-names"></datalist>
+		<button>Create</button>
+	</form>
+	<section id="uploads" hidden>
+		<h2>Uploads <button type="button" id="clear-uploads">Clear finished</button></h2>
+		<ul id="upload-list"></ul>
+	</section>
+	<p id="status"></p>
+	<ul id="list"></ul>
+	<section id="states" hidden>
+		<h2>Save states</h2>
+		<p>Specular keeps save states in a hidden <code>.states</code> folder in each games folder.</p>
+		<ul id="states-list"></ul>
+	</section>
+</main>
+<div id="drop" hidden>Drop to upload here</div>
+</body>
+</html>
