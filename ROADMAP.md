@@ -216,6 +216,7 @@ Built, to test on the device:
 - Guide files on the card (`README.txt` at its root, in `updates/` and in `backups/`), rewritten only when an update changes them
 - The status screen Specular falls back to explains itself (what happened, what to do, where the log is)
 - Specular's output copied to `logs/specular.log` on the card, batched (at most once a minute, and when Specular restarts)
+- Loopback (`lo`) up at start-up: it was left down, so Specular's file transfer screen, which checks the server at 127.0.0.1, stopped it after 5 s
 
 TODO (No Manuals gaps found in the 2026-10-19 audit, not yet decided):
 - `wpa_supplicant.conf` on the card is imported once, silently, and stays readable on the card (passwords): report the result, or drop the feature

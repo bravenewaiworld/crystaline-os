@@ -14,6 +14,9 @@ mkdir -p /dev/pts /dev/shm
 mount -t devpts devpts /dev/pts
 mount -t tmpfs -o nosuid,nodev tmpfs /dev/shm
 hostname -F /etc/hostname
+# Loopback: the kernel leaves it down, and local services rely on 127.0.0.1 (Specular checks the
+# file transfer server is up by connecting to it).
+ip link set lo up
 # How the last run ended (/run/brick/last-shutdown, for Specular), and this run marked as running.
 /usr/libexec/brick/last-shutdown start
 # The outcome of the kernel's device-tree edits, and its log lines about them (docs/boot.md).
