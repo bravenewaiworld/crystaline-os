@@ -1,0 +1,24 @@
+dc_sunxi: three buffers, so swapchains get three images
+
+The driver retires a buffer as soon as the framebuffer pan that replaces it returns; the
+sunxi pan waits for the next vsync tick, which can come a refresh before the display engine
+latches the new address. With two buffers the next frame is then drawn into the buffer still
+on the panel: tearing, seen on the TrimUI Brick in GPU programs. With three buffers the buffer
+handed back left the panel two flips ago. The kernel allocates the third framebuffer
+(fb0_buffer_num = 3 in the device tree, system/board/brick/dt-tweaks.sh). 2026-10-20.
+
+--- a/services/3rdparty/dc_sunxi/Kbuild.mk
++++ b/services/3rdparty/dc_sunxi/Kbuild.mk
+@@ -24,6 +24,12 @@
+ # non-zero word-count proven to render 150 frames clean). (tsp-cv7.4.3)
+ ccflags-y += -DDC_SUNXI_FORCE_XRGB8888
+ 
++# DC_SUNXI_NUM_PREFERRED_BUFFERS: three framebuffers (the kernel allocates them: fb0_buffer_num
++# in the device tree, system/board/brick/dt-tweaks.sh), so swapchains get three images. The
++# driver retires a buffer when the pan replacing it returns, which can be a refresh before the
++# display engine switches; with two buffers the next frame then lands on the buffer still shown.
++ccflags-y += -DDC_SUNXI_NUM_PREFERRED_BUFFERS=3
++
+ ccflags-y += \
+  -I$(DDK_SRC)/services/3rdparty/dc_sunxi \
+  -I$(DDK_SRC)/services/include \

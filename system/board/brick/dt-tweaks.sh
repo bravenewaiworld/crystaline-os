@@ -140,6 +140,15 @@ fdtput "$DTB" $LED5V enable-active-high
 fdtput -t u "$DTB" $LED5V startup-delay-us 10000
 fdtput -t s "$DTB" $LEDC led_regulator led-5v
 
+# Three framebuffers instead of two, so that the GPU driver's swapchains get three images. Its
+# display-class driver hands a buffer back as soon as the framebuffer pan that replaces it
+# returns, and that pan waits for the next vsync tick, which can come a refresh before the
+# display engine latches the new address: with two buffers the next frame is then drawn into the
+# buffer still on the panel (tearing). With three, the buffer handed back left the panel two
+# flips ago. Costs one frame of display latency and a third 3 MiB framebuffer; the driver's
+# preferred count is raised to match (tools/gpu-patches/0005-dc_sunxi-three-buffers.patch).
+fdtput -t u "$DTB" /soc@03000000/disp@06000000 fb0_buffer_num 3
+
 # Headphone jack: its detect signal is the opposite polarity from the vendor tree's setting
 # (0 reported headphones with the jack empty).
 fdtput -t u "$DTB" /soc@03000000/sound@0 hp_detect_case 1
