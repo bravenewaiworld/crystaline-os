@@ -18,6 +18,7 @@ The TrimUI Brick's chip and board, which Linux kernel we run and why, what TrimU
 - **The kernel configuration starts from TrimUI's own** (`/proc/config.gz` of stock v1.1.1) (2026-10-10), minus what this tree can't build (`BT_HCIUART_LL`, `BT_HCIUART_3WIRE`) or the Brick lacks (`SUNXI_NAND`). Deep sleep through Allwinner's firmware works with it unchanged ([power.md](power.md)).
 - **The kernel is built with the Sonic Pad SDK's cross compiler (GCC 6.4)**, made for the same chip family and vendor kernel (2026-10-10). Userspace uses Buildroot's own toolchain ([system-image.md](system-image.md)).
 - **From TrimUI's firmware we take only what has no open replacement** (2026-10-14): the first-stage loader, U-Boot and the rest of the boot package ([boot.md](boot.md)), the GPU libraries and firmware ([gpu.md](gpu.md)), and the XR829's firmware ([wireless.md](wireless.md)).
+- **DRAM at 744 MHz, up from TrimUI's 672** (2026-10-20). The clock is a parameter of the first-stage loader, which derives its timings from it and trains the memory at start; `tools/sdboot/boot0-dram.py` sets it when a card image is built (`DRAM_CLK` overrides; 672 is stock), and an install copies the card's loader to the internal storage. Measured with the GameCube race: about 5 % more frames per second at 744, the same at 756; 768 and 792 don't start (the loader hangs in memory training, with the screen dark; the device starts from the internal storage with the card out). Memory tests at 756 ran clean for half an hour, so 744 keeps a step of margin below the edge. Rejected: 756 (no measurable gain for the margin given up); changing the clock from Linux (the vendor DRAM-frequency driver has no A133 support, and the controller's timings are the loader's).
 
 ## Design
 
@@ -26,7 +27,7 @@ The TrimUI Brick's chip and board, which Linux kernel we run and why, what TrimU
 | Part | What it is | Doc |
 |---|---|---|
 | SoC | Allwinner A133P (sun50iw10p1), 4× Cortex-A53, 408–2000 MHz | [power.md](power.md) |
-| RAM | 1 GiB LPDDR3 at 672 MHz | |
+| RAM | 1 GiB LPDDR3, 744 MHz on our cards (672 stock) | |
 | GPU | PowerVR GE8300 (BVNC 22.102.54.38) | [gpu.md](gpu.md) |
 | Power | AXP2202 power chip (= X-Powers AXP717), TCS4838 CPU regulator | [power.md](power.md) |
 | Display | 1024×768 MIPI DSI panel, one of five controller chips | [display.md](display.md) |

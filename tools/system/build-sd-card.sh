@@ -22,6 +22,11 @@ UUID=$(python3 -I -c 'import uuid; print(uuid.uuid4())')
 # Our boot logo (system/board/brick/logo) in place of TrimUI's.
 python3 -I "$ROOT/tools/sdboot/replace-bootlogo.py" "$FW/boot-resource.fex" \
 	"$ROOT/system/board/brick/logo/bootlogo.bmp" "$TMP/bootres.fat"
+# TrimUI's first-stage loader with the DRAM clock raised from 672 to 744 MHz (DRAM_CLK overrides;
+# 672 is stock): about 5 % more frames per second in the GameCube race, memory tests clean for
+# half an hour; 756 starts too and 768 doesn't, so 744 keeps a step of margin (docs/platform.md).
+# An install copies the card's loader to the internal storage, so installed systems get it too.
+python3 -I "$ROOT/tools/sdboot/boot0-dram.py" "$FW/boot0_sdcard.fex" "$TMP/boot0.fex" --clk "${DRAM_CLK:-744}" >/dev/null
 ROOT_NAME=system ROOT_REF=UUID=$UUID "$ROOT/tools/sdboot/build_sd_image.sh" "$OUT" \
-	"$FW/boot0_sdcard.fex" "$FW/boot_package.fex" "$FW/env.fex" "$V/boot.img" \
+	"$TMP/boot0.fex" "$FW/boot_package.fex" "$FW/env.fex" "$V/boot.img" \
 	"$TMP/bootres.fat" "$TMP/system.ext4"
