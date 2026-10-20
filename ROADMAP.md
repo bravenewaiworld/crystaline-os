@@ -21,6 +21,7 @@ Completed:
 
 Built, to test on the device:
 - Brightness no longer runs backwards after deep sleep (the backlight PWM's polarity is rewritten on resume)
+- Three framebuffers, so GPU programs' swapchains get three images and no longer tear (seen in the GameCube recompiler); costs one frame of display latency for every GPU program, Specular included. On the device: the third buffer is allocated; to check that the tearing is gone
 
 TODO:
 - Stop the display's 60-per-second interrupt while nothing is drawn (designed: masked after 3 idle frames, unmasked on any display change or vsync wait, a 110 µs wake-latency limit while on, a kill switch): first the device experiment in the design, then build. Only saves power once Specular stops presenting still screens
@@ -50,10 +51,11 @@ TODO:
 Completed:
 - Frequency scaling 408–2000 MHz with the chip's speed-bin voltages, all governors
 - `ondemand` governor by default (`schedutil` held higher speeds at idle)
+- DRAM at 744 MHz (TrimUI: 672), set in the card's first-stage loader: about 5 % more frames per second in a memory-bound game (the GameCube race); 756 gains nothing more, 768 and up don't start. Reaches a device only through a newly written card, which an install copies to the internal storage
 
 Built, to test on the device:
 - Profiles through `brick-power profile performance|balanced|saver` (1200–2000 / 408–2000 / 408–1200 MHz); the governor now checks every 50 ms instead of every 2 s. Gate: idle power must not rise
-- A minimum CPU speed Specular raises during a game: `brick-power cpu-min <MHz>|default` (PS1 games settled near 1.2 GHz and fell short of full speed)
+- A minimum CPU speed Specular raises during a game: `brick-power cpu-min <MHz>|default` (PS1 games settled near 1.2 GHz and fell short of full speed). Specular's side is checked on the device; left: the battery cost of the minimum
 
 TODO:
 - Decide whether to keep the 2.0 GHz step, by a long full-load run at 2.0 GHz with temperature logging; keep it if stable
@@ -192,7 +194,7 @@ Completed:
 - Installable to internal storage
 
 Built, to test on the device (needs a newly written card: the layout changed):
-- Two boot slots (A/B), switched through U-Boot's two settings copies, so a power cut during an update never leaves the device unbootable
+- Two boot slots (A/B), switched through U-Boot's two settings copies, so a power cut during an update never leaves the device unbootable. `make update-device` into the other slot works on the device; left: updates from the card, the battery refusal, an update cut short, the previous version, restore
 - Signed update files (Ed25519), installed from the SD card (`brick-install update`) or the recovery menu; older versions allowed with a warning; previous version kept and startable
 - Restore TrimUI's system from the installed system (prepared there, finished from the card); restore now checks the battery
 - GitHub Actions release workflow (tags `v0.YYYY.MM.DD`): SD-card image, signed update file and checksums in a draft release
@@ -207,6 +209,7 @@ Completed:
 - `brick-install`: install to internal storage, with an optional backup of TrimUI's system to the card, and restore; an install or restore cut short is recognised and can simply be run again
 - Service manager restarts any service that exits; the frontend falls back to a status screen after 3 failures within a minute
 - Services: SSH, USB network link, WebDAV file server, WiFi, Bluetooth and Bluetooth audio, network time, system log
+- Loopback (`lo`) up at start-up (Specular's file transfer screen checks its server at 127.0.0.1)
 - WiFi networks imported once from a `wpa_supplicant.conf` on the card
 
 Built, to test on the device:
@@ -216,7 +219,6 @@ Built, to test on the device:
 - Guide files on the card (`README.txt` at its root, in `updates/` and in `backups/`), rewritten only when an update changes them
 - The status screen Specular falls back to explains itself (what happened, what to do, where the log is)
 - Specular's output copied to `logs/specular.log` on the card, batched (at most once a minute, and when Specular restarts)
-- Loopback (`lo`) up at start-up: it was left down, so Specular's file transfer screen, which checks the server at 127.0.0.1, stopped it after 5 s
 
 TODO (No Manuals gaps found in the 2026-10-19 audit, not yet decided):
 - `wpa_supplicant.conf` on the card is imported once, silently, and stays readable on the card (passwords): report the result, or drop the feature
@@ -244,6 +246,7 @@ Completed:
 
 Built, to test on the device:
 - `perf`, `gdbserver` and `strace` in development images; `make debug-running-release` copies them (and the hardware test tools) into a running release image's memory
+- Memory bus monitor (`sunxi_nsi`): DRAM traffic per bus master (CPU, GPU, SD card…) through sysfs; present on the device, not yet used by any tool
 - System log kept across reboots (`/system/logs/messages`, 1 MiB at most), with kernel messages
 - Release images (`make system RELEASE=1`): no development key, no serial login, per-device host keys, SSH off unless switched on with keys imported on the device (`brick-ssh`)
 
