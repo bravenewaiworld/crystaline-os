@@ -22,6 +22,7 @@ poweroff_if_empty() {
 	b=$(/usr/libexec/brick/battery-guard state)
 	[ "${b%% *}" = empty ] || return 0
 	logger -s -t sleepnow "battery $b: powering off instead of sleeping"
+	/usr/libexec/brick/last-shutdown reason battery-empty
 	exec poweroff
 }
 poweroff_if_empty

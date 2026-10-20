@@ -1,2 +1,4 @@
 #!/bin/sh
-exec logger -t frontend
+# Specular's output: to the system log as "frontend", and batched into logs/specular.log on the SD
+# card (tools/device/cardlog.c).
+exec cardlog frontend /run/card/state /mnt/SDCARD/logs/specular.log

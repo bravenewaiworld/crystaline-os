@@ -177,9 +177,11 @@ Built, to test on the device:
 - Device-tree changes applied by our kernel itself, so they ship with each version; TrimUI's boot package unmodified
 - Crystaline OS boot logo
 - Recovery menu: hold MENU at power-on (or after a failed start): start the previous version, install an update from the card, power off
+- How the last run ended (`/run/brick/last-shutdown`: `unexpected` or `battery-empty`), for Specular to tell the user once
 - Crash records (pstore) on the SD card or eMMC, whichever the system runs from, saved to `/system/logs/crash-*/` at the next start
 
 TODO:
+- Show "Hold MENU for recovery" while the Brick starts. The boot logo can't carry it legibly: it must stay a 396×66 picture (it overwrites TrimUI's in place), where such a hint would be under half a millimetre tall on the 400 ppi screen. Options: a bigger logo file (written into the bootloader partition's FAT with mtools; check U-Boot's size limit and the 3 MiB logo memory first), or the initramfs drawing the hint and waiting a moment before checking MENU (costs start-up time)
 - After the crash-record device test: hang detection (soft lockup panic, 10 s threshold) so hangs leave records too
 
 ### Updates
@@ -211,6 +213,17 @@ Built, to test on the device:
 - WebDAV runs only while Specular's file-transfer screen is open, as an unprivileged user
 - Fixed: the file server couldn't listen as that user (the vendor kernel let only root and an Android group create network sockets; that restriction is now off)
 - Our own browser page for uploading and downloading games, saves and BIOS (uploads go to a temporary name first)
+- Guide files on the card (`README.txt` at its root, in `updates/` and in `backups/`), rewritten only when an update changes them
+- The status screen Specular falls back to explains itself (what happened, what to do, where the log is)
+- Specular's output copied to `logs/specular.log` on the card, batched (at most once a minute, and when Specular restarts)
+
+TODO (No Manuals gaps found in the 2026-10-19 audit, not yet decided):
+- `wpa_supplicant.conf` on the card is imported once, silently, and stays readable on the card (passwords): report the result, or drop the feature
+- The USB network link is always on: a PC grows an unexplained "Brick" network adapter. Give it a descriptive name, and show its address on Specular's File transfer screen (or limit it to developer mode)
+- The recovery menu lists older and unsigned update files without warning; build its list from `brick-install offer`
+- Before its first start the card has no partition a PC can read, so the PC offers to format it: a small FAT partition with a "don't format: put this card in the Brick" note, remade on the first start
+- Device-tree edits that fail leave no buttons, and say so only in `rcS.log`
+- An update that finds the system partition full can only say to rewrite the card: prune old logs or offer to drop the developer layer
 
 ### Development and Debugging
 
@@ -226,6 +239,7 @@ Completed:
 - Kernel: perf events, debugfs, magic SysRq, kernel config at `/proc/config.gz`, symbols, `/dev/mem`, I2C device files
 - Kernel slab, mutex and VM debugging off by default
 - PC test harnesses: installer and updates (with simulated power cuts), SD card mounting, battery guard, time zone, Bluetooth start-up (simulated chip), device-tree edits, exFAT (virtual machine)
+- PC tests for the record of how the last run ended and for Specular's card log
 
 Built, to test on the device:
 - `perf`, `gdbserver` and `strace` in development images; `make debug-running-release` copies them (and the hardware test tools) into a running release image's memory

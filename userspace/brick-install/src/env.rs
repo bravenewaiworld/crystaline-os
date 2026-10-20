@@ -11,7 +11,7 @@
 
 use crate::cut;
 use crate::disk::{self, Disk, Part};
-use crate::report::{Report, Result, SEE_LOG, fail};
+use crate::report::{REWRITE_CARD, Report, Result, SEE_LOG, fail};
 
 /// U-Boot's settings size on the Brick.
 pub const SIZE: usize = 0x20000;
@@ -103,7 +103,7 @@ fn picked(disk: &Disk, parts: &[Part]) -> Result<(Placed, Placed, String)> {
         Some(Which::Env) => Ok((env, redund, state)),
         Some(Which::Redund) => Ok((redund, env, state)),
         None => fail(format!("both copies of the start-up settings on {} are damaged", disk.path.display()),
-                     "This disk can't start: start the device from another SD card, and write a fresh card or install again."),
+                     format!("This storage can't start. If it is the SD card: {REWRITE_CARD} If it is the internal storage, start from a newly written SD card and install again.")),
     }
 }
 

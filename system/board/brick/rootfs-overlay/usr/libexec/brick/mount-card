@@ -14,7 +14,7 @@
 # unmount, or by /system).
 # Debugging: touch /run/card/trace to have each run's commands traced (sh -x) into it.
 R=${MOUNT_CARD_ROOT-}	# a fake root for tools/system/test-mount-card.sh; empty on the device
-MNT=$R/mnt/SDCARD RUN=$R/run/card
+MNT=$R/mnt/SDCARD RUN=$R/run/card GUIDES=$R/usr/share/brick/card-guides
 log() { logger -s -t mount-card "$*"; }
 
 # The helpers below work on the card's disk in $disk and /system's device number in $sys, both set
@@ -71,8 +71,12 @@ message() {
 		echo "This SD card has no FAT32 or exFAT partition that can be read, so its files can't be used. Use a card formatted as FAT32 or exFAT (formatting it on a PC erases it)." ;;
 	"failed mount")
 		echo "This SD card's files can't be read: its filesystem is damaged or not supported. $pc_repair, or format it as FAT32 or exFAT (this erases it)." ;;
+	"failed not-set-up")
+		echo "This SD card has Crystaline OS written to it, but it hasn't been set up yet. Restart the Brick with this card in to finish setting it up." ;;
 	"failed partition")
-		echo "The SD card couldn't be set up for games. Restart the Brick to try again; if it fails again, write the system to the card again." ;;
+		echo "The SD card couldn't be set up for games. Restart the Brick to try again; if it fails again, write Crystaline OS to the card again (this erases the card, which holds no games yet)." ;;
+	"failed too-small")
+		echo "This SD card is too small for Crystaline OS, which needs a card of at least 2 GB. Write Crystaline OS to a bigger card." ;;
 	"failed system-card-removed")
 		echo "The SD card holding the system was removed, so the Brick turned off. Insert the card and turn the Brick on again." ;;
 	esac
@@ -140,12 +144,12 @@ named() {
 # partition other than our boot pictures' ("bootloader"), or the whole card when it has no
 # partitions. Formatting happens only on the card holding /system, and only to an "sdcard"
 # partition with no filesystem (one this script added). Returns 1 if there is none, 2 if making it
-# failed.
+# failed, 3 if the card has too little room left for it.
 data_partition() {
 	p=$(named sdcard)
 	[ -n "$p" ] && usable $p && { echo $p; return; }
 	if holds_system; then
-		[ -n "$p" ] || { p=$(add_partition) || return 2; }
+		[ -n "$p" ] || { p=$(add_partition) || return $(($? == 3 ? 3 : 2)); }
 		# No filesystem: a first start was cut short after adding the partition, so format it. But
 		# if the backup boot sector (sector 6; its type at byte 82: 6*512+82 = 3154) says FAT32, it
 		# was formatted and only its main boot sector is damaged: left alone (no-partition, to be
@@ -165,15 +169,24 @@ data_partition() {
 	return 1
 }
 
+# The smallest data partition made, in MiB. The card image is about 1.2 GB, so a card too small for
+# this is under 2 GB, the size that "failed too-small" in message() and README.md ask for.
+MIN_DATA_MiB=64
+
 # add_partition: adds the "sdcard" partition over the card's free space and prints its name.
+# Returns 3, changing only where the backup partition table is, if that space is under
+# MIN_DATA_MiB.
 add_partition() {
 	log "adding the data partition to $disk"
 	# The image's backup partition table sits at the image's end, not the card's: move it there.
 	# (--no-reread --no-tell-kernel: the kernel can't re-read the table of a card in use; partx
 	# below tells it about the one new partition.)
-	sfdisk --quiet --relocate gpt-bak-std --no-reread --no-tell-kernel $R/dev/$disk &&
-		# From the first free sector to the end; Microsoft basic data, the usual type for FAT.
-		echo 'size=+, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, name=sdcard' |
+	sfdisk --quiet --relocate gpt-bak-std --no-reread --no-tell-kernel $R/dev/$disk || return
+	# The free space after the last partition: the last row of the free-space list (in sectors).
+	free=$(sfdisk --list-free $R/dev/$disk | awk '$1 ~ /^[0-9]+$/ { s = $3 } END { print s + 0 }')
+	[ $free -ge $((MIN_DATA_MiB * 2048)) ] || { log "only $free sectors free for the data partition"; return 3; }
+	# From the first free sector to the end; Microsoft basic data, the usual type for FAT.
+	echo 'size=+, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, name=sdcard' |
 		sfdisk --quiet --append --no-reread --no-tell-kernel $R/dev/$disk || return
 	# The new partition's number, from its line in the table (e.g. "/dev/mmcblk1p8 : …").
 	n=$(sfdisk --dump $R/dev/$disk | sed -n 's|^[^ ]*[^0-9]\([0-9]*\) : .*name="sdcard".*|\1|p')
@@ -195,6 +208,20 @@ card_log() {
 	mkdir -p $MNT/logs
 	[ ! -f $f ] || [ $(wc -c <$f) -lt 1048576 ] || mv $f $f.old
 	{ echo "== $(date '+%Y-%m-%d %H:%M:%S') $part ($type): $check"; cat $RUN/check.log; } >>$f
+}
+
+# guides: copies the guide files the image ships (GUIDES: README.txt at the card's root and in some
+# of its folders, saying what each is for) onto the card. Each goes only into a folder that exists:
+# sync_card makes updates/, since that is where the user puts update files; backups/ exists only
+# once a backup has been made. A guide is written only when it differs from the card's copy, to spare the card a
+# write on every start. Specular writes the guides of the folders it owns (roms/, bios/, …).
+# A copy cut short (the card pulled) differs, so the next mount writes it again.
+guides() {
+	for g in $GUIDES/README.txt $GUIDES/*/README.txt; do
+		f=$MNT/${g#$GUIDES/}
+		[ -d "${f%/*}" ] && ! cmp -s $g "$f" || continue
+		cp $g "$f" && log "wrote ${f#$MNT/}"
+	done
 }
 
 # sync_card: makes the mount match the card in the slot and reports the state.
@@ -226,7 +253,11 @@ sync_card() {
 	case $? in
 	0)	;;
 	2)	failed partition; return ;;
-	*)	failed no-partition; return ;;
+	3)	failed too-small; return ;;
+	# Our card, written but never started from: only its own system adds the data partition.
+	*)	if [ -n "$(named system)" ] && [ -z "$(named sdcard)" ]; then failed not-set-up
+		else failed no-partition; fi
+		return ;;
 	esac
 	type=$(fs_type $part)
 	if [ "$(cat $R/sys/block/$disk/ro)" = 1 ]; then
@@ -240,7 +271,8 @@ sync_card() {
 	log "mounting $part ($type) with $opts"
 	mount -t $type -o $opts $R/dev/$part $MNT || { failed mount; return; }
 	[ -n "$ro" ] && { report read-only $ro; return; }
-	mkdir -p $MNT/roms $MNT/bios $MNT/saves
+	mkdir -p $MNT/roms $MNT/bios $MNT/saves $MNT/updates
+	guides
 	[ $check = clean ] || card_log
 	report mounted
 }

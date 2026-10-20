@@ -170,8 +170,10 @@ impl Paths {
             (given("--target"), given("--source"), given("--running"), given("--system"), given("--data"), given("--version"));
         let (slot, keys, power) = (given("--slot"), given("--keys"), given("--power-supply"));
         let path = |p: Option<String>, default: &str| PathBuf::from(p.unwrap_or_else(|| default.into()));
-        let internal = target.map(PathBuf::from).or_else(|| disk_on("sdc2")).map_or_else(|| fail("this device's internal storage isn't available",
-            "This system can't reach the internal storage: its device tree must enable it (system/board/brick/dt-tweaks.sh)."), Ok);
+        let internal = target.map(PathBuf::from).or_else(|| disk_on("sdc2")).ok_or_else(|| report::Failure {
+            message: "this device's internal storage isn't available".into(),
+            hint: format!("This version of Crystaline OS can't use the internal storage. Install a newer version from {}.", report::RELEASES),
+            detail: "no disk on the eMMC controller (sdc2): the device tree must enable it (system/board/brick/dt-tweaks.sh)".into() });
         let card = source.map(PathBuf::from).or_else(|| disk_on("sdc0")).map_or_else(|| fail("there is no SD card in the device", "Insert the SD card, then try again."), Ok);
         let running = match running {
             Some(r) => PathBuf::from(r),
@@ -188,7 +190,7 @@ impl Paths {
         let version = match version {
             Some(v) => v,
             None => std::fs::read_to_string("/etc/brick-version").map(|v| v.trim().to_string())
-                .map_err(|e| report::Failure { message: format!("reading /etc/brick-version: {e}"), hint: "The system is damaged: write a fresh SD card.".into() })?,
+                .map_err(|e| report::Failure { message: format!("reading /etc/brick-version: {e}"), hint: format!("The system is damaged. {}", report::REWRITE_CARD), ..Default::default() })?,
         };
         Ok(Self { internal, card, running, system: path(system, "/system"), data: path(data, "/mnt/SDCARD"), version, slot,
                   keys: path(keys, "/etc/brick/update-keys"), power: path(power, "/sys/class/power_supply") })

@@ -90,7 +90,7 @@ wrap fsck.exfat '[ ! -s $TEST_DIR/fsck-exit ] || exit $(cat $TEST_DIR/fsck-exit)
 if command -v busybox >/dev/null; then
 	SH="busybox sh" P=$T/bin:$T/bb:$PATH
 	mkdir $T/bb
-	for a in awk cat cut date dd grep head ls mkdir mv rm sed sleep sort wc; do ln -s "$(command -v busybox)" $T/bb/$a; done
+	for a in awk cat cmp cp cut date dd grep head ls mkdir mv rm sed sleep sort wc; do ln -s "$(command -v busybox)" $T/bb/$a; done
 else
 	echo "no BusyBox on the PATH: testing with the PC's shell and tools" >&2
 	SH=sh P=$T/bin:$PATH
@@ -107,6 +107,8 @@ new_root() {
 	# The eMMC's disk and partition 5, so that an eMMC system's /system (179:5) exists.
 	for d in mmcblk0:0 mmcblk0p5:5; do mkdir $R/sys/class/block/${d%:*}; echo 179:${d#*:} >$R/sys/class/block/${d%:*}/dev; done
 	: >$R/dev/kmsg
+	# The guide texts mount-card copies onto the card.
+	mkdir -p $R/usr/share/brick && cp -r $ROOT/system/board/brick/rootfs-overlay/usr/share/brick/card-guides $R/usr/share/brick/
 	echo "17 1 $1 / $R/system rw,noatime - ext4 /dev/system rw" >$R/proc/self/mountinfo
 	: >$T/calls
 }
@@ -217,7 +219,7 @@ called 'partx --add --nr 8 /dev/mmcblk1'
 called 'mkfs.fat -F 32 -n BRICK /dev/mmcblk1p8'
 called 'mount -t vfat -o rw,noatime,flush,iocharset=iso8859-1,utf8,errors=remount-ro,gid=33,umask=0002 /dev/mmcblk1p8 /mnt/SDCARD'
 [ "$(mounted_at)" = 179:40 ] || fail "mounted $(mounted_at), expected 179:40"
-for d in roms bios saves; do [ -d $R/mnt/SDCARD/$d ] || fail "no $d/"; done
+for d in roms bios saves updates; do [ -d $R/mnt/SDCARD/$d ] || fail "no $d/"; done
 sfdisk --dump $T/cards/sys/disk.img | grep -q 'img8 : .*name="sdcard"' || fail "no sdcard partition in the table"
 sfdisk --verify $T/cards/sys/disk.img >/dev/null 2>&1 || fail "partition table doesn't verify"
 
@@ -247,12 +249,13 @@ run start
 state "failed mount"
 rm $T/mount-fails
 
-case_ "5. our written card with the system on the eMMC: no data partition, nothing changed"
+case_ "5. our written card with the system on the eMMC: not set up yet, nothing changed"
 system_card written
 before=$(sum $T/cards/written/disk.img)
 new_root 179:5; insert written 32
 run start
-state "failed no-partition"
+state "failed not-set-up"
+message_has "Restart the Brick with this card in"
 not_called sfdisk; not_called mkfs.fat; not_called mount
 [ "$(sum $T/cards/written/disk.img)" = "$before" ] || fail "card changed"
 
@@ -288,7 +291,7 @@ run start
 state "read-only write-protected" check=not-run
 called 'mount -t vfat -o .*,ro /dev/mmcblk1p1'
 not_called fsck.fat
-[ ! -e $R/mnt/SDCARD/roms ] || fail "folders made on a read-only card"
+[ ! -e $R/mnt/SDCARD/roms ] && [ ! -e $R/mnt/SDCARD/README.txt ] || fail "folders or guides made on a read-only card"
 
 if [ -n "$EXFAT" ]; then
 	case_ "9. exFAT: mounted, or read-only when the check leaves errors or can't run"
@@ -359,7 +362,7 @@ grep -q 'holding the system was removed' $R/dev/kmsg || fail "nothing in kmsg"
 not_called sfdisk; not_called partx; not_called mkfs.fat; not_called fsck.fat; not_called mount
 [ "$(sum $T/cards/stranger/disk.img)" = "$before" ] || fail "stranger's card changed"
 
-case_ "14. a first start cut short before formatting: formatted; a damaged one isn't; making it fails"
+case_ "14. a first start cut short before formatting: formatted; a damaged one isn't; making it fails, or the card is too small"
 system_card cut
 printf 'size=+, name=sdcard\n' | sfdisk --quiet --append $T/cards/cut/disk.img	# no filesystem yet
 new_root 179:39; insert cut 32
@@ -379,6 +382,12 @@ new_root 179:39; insert fails 32
 run start
 state "failed partition"
 rm $T/partx-fails
+system_card tiny 150	# 20 MiB after the system partition
+new_root 179:39; insert tiny 32
+run start
+state "failed too-small"
+message_has "at least 2 GB"
+not_called partx; not_called mkfs.fat
 
 case_ "15. two runs at once, the card pulled during the check: they take turns, absent"
 new_root 179:5; insert mbr 32
@@ -394,5 +403,26 @@ not_called mount
 # Without the lock, both runs would begin a check before the pull: "begin begin".
 [ -z "$(uniq -d $T/fsck-trace)" ] || fail "checks overlapped: $(paste -sd' ' $T/fsck-trace)"
 
-case_ "16. no state.new left behind: checked after every run above"
+case_ "16. guide files: written where their folder exists, rewritten only when they differ"
+G=$R/usr/share/brick/card-guides
+fat_card guide mbr
+new_root 179:5; insert guide 32
+run start
+state mounted
+cmp -s $G/README.txt $R/mnt/SDCARD/README.txt || fail "README.txt not written"
+cmp -s $G/updates/README.txt $R/mnt/SDCARD/updates/README.txt || fail "updates/README.txt not written"
+[ ! -e $R/mnt/SDCARD/backups ] || fail "backups/ made"
+grep -q "wrote README.txt" $T/log || fail "writing not logged"
+# Unmounted and mounted again (no argument: make the mount match the slot). The fake mount leaves
+# the folder's files, which stand in for the card's copies: nothing is rewritten. Then backups/
+# appears, and an outdated root guide is replaced.
+run stop; : >$T/log; run
+state mounted
+! grep -q "wrote" $T/log || fail "guides rewritten unchanged: $(grep wrote $T/log)"
+mkdir $R/mnt/SDCARD/backups; echo old >$R/mnt/SDCARD/README.txt
+run stop; run
+cmp -s $G/README.txt $R/mnt/SDCARD/README.txt || fail "outdated README.txt not replaced"
+cmp -s $G/backups/README.txt $R/mnt/SDCARD/backups/README.txt || fail "backups/README.txt not written"
+
+case_ "17. no state.new left behind: checked after every run above"
 echo PASS

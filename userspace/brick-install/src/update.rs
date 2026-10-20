@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use crate::Paths;
 use crate::disk::{self, Disk};
 use crate::install;
-use crate::report::{Context, Report, Result, fail, hex};
+use crate::report::{Context, RELEASES, REWRITE_CARD, Report, Result, fail, hex};
 use crate::slots;
 
 /// The largest manifest.json accepted.
@@ -30,7 +30,6 @@ const MANIFEST_MAX: u64 = 64 << 10;
 /// Room left free on the system partition after an update's files.
 const SPARE: u64 = 16 << 20;
 const DAMAGED: &str = "Download the update file again.";
-const UNSIGNED: &str = "Use an update file made for this system.";
 
 /// An update file whose head (manifest and signature) has been checked.
 pub struct Update {
@@ -59,7 +58,8 @@ pub fn open(path: &Path, keys: &Path) -> Result<Update> {
     if sig_m.1 != 64 { return damaged("manifest.sig isn't 64 bytes"); }
     let (manifest, sig) = (file.read_at(m.0, m.1 as usize)?, file.read_at(sig_m.0, 64)?);
     let Some(key) = verify(keys, &manifest, &sig) else {
-        return fail(format!("{} isn't signed for this system", path.display()), UNSIGNED);
+        // (A development image also trusts its checkout's key: its own update files pass.)
+        return fail(format!("{} isn't signed for this system", path.display()), format!("Download the update file from {RELEASES}."));
     };
     let json: serde_json::Value = serde_json::from_slice(&manifest).ctx("reading the update's manifest")?;
     let version = json["version"].as_str().unwrap_or_default().to_string();
@@ -167,7 +167,10 @@ pub fn apply(p: &Paths, path: &Path, report: &mut Report) -> Result<String> {
     report.log(&format!("system partition: {free} bytes free (counting copies cut short), {need} needed"));
     let have = complete(&images.join(&u.version), &u, report);
     if !have && free < need {
-        return fail(format!("the system partition has {} MB free; this update needs {} MB", free >> 20, need >> 20), "Delete the developer layer (overlay/) or old logs (logs/) on the system partition, then try again.");
+        // Only two versions are kept, so this takes a developer layer (overlay/) or an image built
+        // bigger than the storage was made for; neither is something a user can clear.
+        return fail(format!("the system storage has {} MB free; this update needs {} MB", free >> 20, need >> 20),
+                    format!("There's no room for it here. To use this version, start from an SD card with it: {REWRITE_CARD}"));
     }
     install::battery_ok(&p.power, report)?;
 

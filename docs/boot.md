@@ -104,7 +104,7 @@ Written twice, in `env` and `env-redund`, in U-Boot's redundant format: CRC-32 o
 
 ### Initramfs
 
-`/init` does, in order: mount `/proc`, `/sys`, `/dev`; start the watchdog daemon; note whether MENU is held (`status --held MENU`) and log the boot slot from `brick.boot=`; find the system partition by UUID (retrying 5 s); start copying its log, `dmesg` and `ps` to `brick-log/` on the bootloader partition every second; run `e2fsck -p` (exit 2: reboot; 4 or more: fail); mount the system partition; show the recovery menu if MENU was held; loop-mount `images/<version>/rootfs.squashfs`; put a developer layer over it if `overlay/<version>/` exists ([system-image.md](system-image.md)); save the log to `/system/logs/init.log`; move `/system`, `/dev`, `/proc`, `/sys` and `switch_root`. It holds only BusyBox, `e2fsck`, `status`, `brick-install`, their libraries, the update keys (`/etc/brick/update-keys/`, as in the system) and the SD card's mount options.
+`/init` does, in order: mount `/proc`, `/sys`, `/dev`; start the watchdog daemon; note whether MENU is held (`status --held MENU`) and log the boot slot from `brick.boot=`; find the system partition by UUID (retrying 5 s); start copying its log, `dmesg` and `ps` to `brick-log/` on the bootloader partition every second; run `e2fsck -p` (exit 2: reboot; 4 or more: fail; past 2 s a message says the storage is being checked after a power-off); mount the system partition; show the recovery menu if MENU was held; loop-mount `images/<version>/rootfs.squashfs`; put a developer layer over it if `overlay/<version>/` exists ([system-image.md](system-image.md)); save the log to `/system/logs/init.log`; move `/system`, `/dev`, `/proc`, `/sys` and `switch_root`. It holds only BusyBox, `e2fsck`, `status`, `brick-install`, their libraries, the update keys (`/etc/brick/update-keys/`, as in the system) and the SD card's mount options.
 
 ### Recovery menu
 
@@ -117,10 +117,11 @@ No SD card | The SD card has no FAT32 or exFAT partition | No update files in up
   Start the previous version <P>           (brick-install slots names a "previous" slot)
   Install an update from the SD card       → updates/*.update, newest first by name, 10 at most
   Power off
-D-pad: choose   A: select   B: back           (B on this menu shows it again, looking at the card again)
+Turns off after 10 minutes without a button press
+D-pad: choose   A: select   B: check the SD card again   (shows this menu again; "B: back" on the update list)
 ```
 
-- **When:** MENU held at power-on, or any failure after the system partition is mounted (`fail()`). MENU is checked once, right after the watchdog starts, so it must be down then; nothing confirms it until the menu appears, once the system partition is checked and mounted. An earlier failure shows only its message.
+- **When:** MENU held at power-on, or any failure after the system partition is mounted (`fail()`). MENU is checked once, right after the watchdog starts, so it must be down then; "Opening the recovery menu..." confirms it at once, and the menu follows once the system partition is checked and mounted. An earlier failure shows only its message.
 - **SD card:** its data partition is mounted at `/card` with the options `mount-card` uses, from the file both read (`/usr/libexec/brick/card-options`; www-data's group number is written into the initramfs at build time, since it has no user database): the partition named `sdcard`, otherwise the first one other than `bootloader` that mounts as FAT32 or exFAT, otherwise the whole card (one formatted without partitions). Nothing is made or formatted. It is unmounted again before "Continue starting", since the system mounts it itself.
 - **Actions** run `brick-install update <file>` or `activate <P>` with `--system /system --data /card --status /brick-install.status`, piped into `status --task`, which draws its progress and waits for A. Once A is pressed after DONE the device restarts; after FAIL (e.g. a low battery) the menu returns.
 - **Logs:** the menu's log lines (the card's partition, `brick-install slots`, each choice) and the actions' output go to the start-up log (and so to `brick-log/`) and to `/system/logs/recovery-<time>.log` (the newest 10 are kept), which starts with the start-up log so far. brick-install's own log goes to `logs/` on the card; with no card it is lost (it goes to memory), but its output is still in the recovery log.

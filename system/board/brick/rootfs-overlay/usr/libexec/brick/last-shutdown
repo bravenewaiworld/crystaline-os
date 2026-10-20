@@ -1,0 +1,48 @@
+#!/bin/sh
+# Tells the next start how the system's last run ended, so that Specular can explain a Brick that
+# turned off by itself (the file /run/brick/last-shutdown; contract: docs/system-image.md).
+#   last-shutdown start           start-up (rcS): writes /run/brick/last-shutdown from the marks
+#                                 below, then marks this run as running
+#   last-shutdown stop            an orderly power-off or restart (rcK): clears the running mark
+#   last-shutdown reason WORD     just before an orderly power-off whose cause the user should
+#                                 hear about (battery-guard and sleepnow: battery-empty)
+# The marks live in /system/state, on the system partition, which may be on the SD card: a pulled
+# card ends the run without "stop", and so reads as unexpected, which it was.
+# Each decision is written to the kernel log (/dev/kmsg), because the system log isn't running yet
+# at start-up; klogd later copies it into the system log.
+R=${LAST_SHUTDOWN_ROOT-}	# a fake root for tools/system/test-last-shutdown.sh; empty on the device
+STATE=$R/system/state OUT=$R/run/brick
+RUNNING=$STATE/running REASON=$STATE/shutdown-reason
+log() { echo "<5>last-shutdown: $*" >$R/dev/kmsg; }
+
+case $1 in
+start)
+	mkdir -p $STATE $OUT
+	why=
+	# A recorded reason stands even though the shutdown then finished in order: the user didn't
+	# ask for it either.
+	if [ -s $REASON ]; then why=$(cat $REASON)
+	elif [ -e $RUNNING ]; then why=unexpected
+	fi
+	if [ -n "$why" ]; then
+		echo $why >$OUT/last-shutdown
+		log "the last run ended: $why"
+	else
+		log "the last run ended in order (or there was none)"
+	fi
+	# Synced at once: a run that ends before the next sync must still read as unexpected.
+	: >$RUNNING && rm -f $REASON && sync
+	;;
+stop)
+	rm -f $RUNNING && sync
+	log "orderly shutdown"
+	;;
+reason)
+	echo "$2" >$REASON && sync
+	log "shutting down: $2"
+	;;
+*)
+	echo "usage: last-shutdown start | stop | reason WORD" >&2
+	exit 2
+	;;
+esac

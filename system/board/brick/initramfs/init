@@ -54,18 +54,41 @@ LOG=/run-init.log
 # on the system partition ($RLOG) as well.
 log() { echo "brick-init: $*" >/dev/kmsg; echo "$*" >>$LOG; [ -z "$RLOG" ] || echo "$*" >>$RLOG; }
 # Checked once, here, so MENU must be down now; the menu itself waits for the system partition.
-status --held MENU 2>>$LOG &&
-	{ WANT_MENU=1; log "MENU held: recovery menu once the system partition is mounted"; }
+if status --held MENU 2>>$LOG; then
+	WANT_MENU=1
+	log "MENU held: recovery menu once the system partition is mounted"
+	status --message "Opening the recovery menu..." >/dev/kmsg 2>&1
+fi
 
-# fail TITLE [LINE]...: report why the system can't start, then wait for good (the watchdog daemon
+# card_disk: the disk (e.g. mmcblk1) on the SD card's controller (sdc0), if a card is in.
+card_disk() {
+	set -- /sys/bus/platform/devices/sdc0/mmc_host/mmc*/mmc*:*/block/mmcblk*
+	[ -e "$1" ] && echo ${1##*/}
+}
+
+# on_card: whether the system being started is on the SD card: whether $disk, the disk holding the
+# system partition, is the card's. Before that is found, a guess: whether the card in the slot has
+# a bootloader partition (it is one of ours, and the device starts from the card when it can).
+on_card() {
+	c=$(card_disk) || return 1
+	if [ -n "$disk" ]; then [ "$disk" = "$c" ]; else grep -qs '^PARTNAME=bootloader$' /sys/block/$c/${c}p*/uevent; fi
+}
+
+# fail TITLE [DETAIL]: report why the system can't start, then wait for good (the watchdog daemon
 # keeps the device from resetting). Once the system partition is mounted, the report is the
-# recovery menu, which returns only if it can't be shown; before that, or then, it is a message.
+# recovery menu; before that, or if the menu can't be shown, it is a message saying what to do,
+# with DETAIL (for a developer) under it.
 fail() {
 	log "failed: $*"
 	! grep -q ' /system ' /proc/mounts || recovery "$*"
 	progress $((0xEE00 | STAGE))
-	status --message "$@" "" "Version $VERSION" "To recover: insert a recovery SD card and restart" \
-		"(hold the power button to turn off)" >/dev/kmsg 2>&1
+	if on_card; then
+		fix="Copy your games, saves and backups/ off this card on a PC, then write Crystaline OS to it again."
+	else
+		fix="Insert an SD card with Crystaline OS written to it and restart."
+	fi
+	status --message "$1" "" "$fix" "(hold the power button to turn off)" "" \
+		${2:+-d "Details: $2"} -d "Version $VERSION" >/dev/kmsg 2>&1
 	while :; do sleep 3600; done
 }
 
@@ -98,9 +121,7 @@ finish() {
 # exFAT one other than "bootloader". Without one, prints why (shown as a note) and fails.
 mount_card() {
 	grep -q ' /card ' /proc/mounts && return
-	set -- /sys/bus/platform/devices/sdc0/mmc_host/mmc*/mmc*:*/block/mmcblk*
-	[ -e "$1" ] || { echo "No SD card"; return 1; }
-	c=${1##*/}
+	c=$(card_disk) || { echo "No SD card"; return 1; }
 	# Last, the whole card, for a card formatted without partitions.
 	for p in $(grep -l '^PARTNAME=sdcard$' /sys/block/$c/${c}p*/uevent 2>/dev/null |
 		sed 's|.*/\(.*\)/uevent|\1|') $(ls /sys/block/$c | sed -n "s/^${c}p//p" | sort -n |
@@ -115,8 +136,8 @@ mount_card() {
 	return 1
 }
 
-# menu TITLE [-n NOTE]... ITEM...: show a menu (status --menu) and set $chosen to the item chosen.
-# Returns 1 for B (back), 3 if it can't be shown; powers off after 10 minutes without a press.
+# menu TITLE [-n NOTE | -b B-TEXT]... ITEM...: show a menu (status --menu) and set $chosen to the
+# item chosen. Returns 1 for B, 3 if it can't be shown; powers off after 10 minutes without a press.
 menu() {
 	i=$(status --menu "$@" 2>>$LOG)
 	case $? in
@@ -126,7 +147,7 @@ menu() {
 	*) log "can't show the recovery menu"; return 3 ;;
 	esac
 	shift
-	while [ "$1" = -n ]; do shift 2; done
+	while [ "$1" = -n ] || [ "$1" = -b ]; do shift 2; done
 	[ "$i" -ge 0 ] 2>/dev/null && [ "$i" -lt $# ] || { log "status --menu printed '$i'"; return 3; }
 	shift $i
 	chosen=$1
@@ -188,7 +209,7 @@ recovery() {
 			note="No update files in updates/ on the SD card"
 		fi
 		set -- "$@" "Power off"
-		menu "Crystaline OS recovery" -n "Version $VERSION (${slot:-slot unknown})" \
+		menu "Crystaline OS recovery" -b "check the SD card again" -n "Version $VERSION (${slot:-slot unknown})" \
 			${reason:+-n "Couldn't start: $reason"} ${note:+-n "$note"} "$@"
 		case $? in
 		0) ;;
@@ -236,7 +257,15 @@ fi
 e2fsck -p $dev >>$LOG 2>&1 &
 checker=$!
 n=0
-while kill -0 $checker 2>/dev/null; do progress $((0x300 + (n < 255 ? n : 255))); n=$((n + 1)); sleep 1; done
+while kill -0 $checker 2>/dev/null; do
+	progress $((0x300 + (n < 255 ? n : 255)))
+	# A clean check takes well under a second; a long one follows a power loss (the filesystem
+	# wasn't unmounted) and goes on silently otherwise.
+	[ $n -ne 2 ] || status --message "Checking the system storage after an unexpected power-off" \
+		"This can take a minute; don't turn the device off." >/dev/kmsg 2>&1
+	n=$((n + 1))
+	sleep 1
+done
 wait $checker
 rc=$?
 log "e2fsck $dev: $rc"

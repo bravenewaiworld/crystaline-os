@@ -17,7 +17,7 @@ use crate::cut;
 use crate::disk::{self, Disk, Part};
 use crate::env;
 use crate::install;
-use crate::report::{Context, Report, Result, SEE_LOG, fail, hex};
+use crate::report::{Context, REWRITE_CARD, Report, Result, SEE_LOG, fail, hex};
 
 /// The boot slots' partition names, as U-Boot's `boot_partition` and `brick.boot=` give them.
 pub const SLOTS: [&str; 2] = ["boot_a", "boot_b"];
@@ -68,7 +68,8 @@ pub fn running(p: &Paths, held: &Holdings) -> Result<usize> {
     let slot = p.slot.clone().or_else(|| std::fs::read_to_string("/proc/cmdline").unwrap_or_default().split_whitespace()
         .find_map(|a| a.strip_prefix("brick.boot=").map(str::to_string)));
     let Some(slot) = slot else {
-        return fail("the start-up settings don't say which boot slot started", "They were made for an older layout: write a fresh SD card, or install again from one.");
+        return fail("the start-up settings don't say which boot slot started",
+                    format!("They are from an older version of Crystaline OS. If the system is on the SD card: {REWRITE_CARD} If it is on the internal storage, start from a newly written SD card and install again."));
     };
     let Some(i) = SLOTS.iter().position(|s| *s == slot) else { return fail(format!("unknown boot slot {slot}"), SEE_LOG) };
     if held[i].1.as_deref() != Some(p.version.as_str()) {

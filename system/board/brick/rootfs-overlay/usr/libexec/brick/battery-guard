@@ -104,7 +104,7 @@ step() {
 	r=; for x in "$S1" "$S2" "$S3" "$S4"; do [ -z "$x" ] || r="${r:+$r | }$x"; done
 	echo "battery empty: powering off; last samples: $r"
 	if [ "${DRY_RUN:-}" ]; then echo "dry run: not powering off"
-	else poweroff || echo "error: poweroff failed"
+	else /usr/libexec/brick/last-shutdown reason battery-empty; poweroff || echo "error: poweroff failed"
 	fi
 }
 

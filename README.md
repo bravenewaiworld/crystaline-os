@@ -13,6 +13,9 @@ A simple, polished, handheld gaming experience.
 3. First-class Debugging and Development.
    Developing for hardware is hard enough. Development tools, flags, and features are to be weighted as importantly as all other user-facing features. In-place updates, fast builds, no SD Card Swapping.
 
+4. No Manuals.
+   All features, errors, configurations, menus, etc. that the user is exposed to or needs to make a decision or act on are either very obvious, or are explained directly in the UI where they are presented (or in an adjacent file, e.g. a schema file for file-based interfaces such as configs and cores).
+
 
 ## Installing on your device
 
@@ -27,7 +30,7 @@ A simple, polished, handheld gaming experience.
 Crystaline OS runs from a microSD card. TrimUI's own system stays on the device untouched until you choose to install to internal storage.
 
 You need:
-- A microSD card. **Everything on it will be erased.**
+- A microSD card of at least 2 GB. **Everything on it will be erased.**
 - A card reader for your computer.
 - [balenaEtcher](https://etcher.balena.io/), which runs on Windows, macOS and Linux.
 

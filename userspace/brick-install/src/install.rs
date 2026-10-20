@@ -22,7 +22,7 @@ use crate::Paths;
 use crate::backup;
 use crate::disk::{self, Disk, SECTOR};
 use crate::env;
-use crate::report::{Context, Report, Result, SEE_LOG, fail, gb, hex, read_json};
+use crate::report::{Context, REWRITE_CARD, Report, Result, SEE_LOG, fail, gb, hex, read_json};
 
 /// The internal storage's partitions, in sectors (start, size; None: the rest of the disk).
 /// TrimUI's first four stay exactly where its own eMMC layout has them (its "boot" is our boot_a):
@@ -245,8 +245,8 @@ fn write_system(p: &Paths, target: &Disk, (start, _): (u64, u64), uuid: &str, re
 /// every device.
 pub fn require_dt_edits(manifest: &serde_json::Value) -> Result<()> {
     if manifest["dt_edits"] == true { return Ok(()); }
-    fail(format!("version {} is too old: its kernel doesn't make the device-tree changes itself",
-                 manifest["version"].as_str().unwrap_or("(unnamed)")), "Choose a newer version.")
+    fail(format!("version {} is too old to run on this system", manifest["version"].as_str().unwrap_or("(unnamed)")),
+         "Choose a newer version.")
 }
 
 /// Checks a version's files (in `dir`, images/<version>/) against its manifest; returns the
@@ -260,7 +260,7 @@ pub fn check_images(dir: &Path, report: &mut Report) -> Result<serde_json::Value
         file.each_chunk(0, file.size, |_, c| { sha.update(c); Ok(()) })?;
         if hex(&sha.finalize()) != f["sha256"].as_str().unwrap_or_default() {
             return fail(format!("{name} of version {} doesn't match its manifest", dir.file_name().unwrap_or_default().to_string_lossy()),
-                        "The system partition is damaged: write a fresh SD card.");
+                        format!("The system's files are damaged. {REWRITE_CARD}"));
         }
         report.log(&format!("{name}: matches the manifest"));
     }

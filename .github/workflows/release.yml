@@ -141,6 +141,12 @@ jobs:
       - name: Test setting the time zone
         run: make test-timezone
 
+      - name: Test the record of how the last run ended
+        run: make test-last-shutdown
+
+      - name: Test copying Specular's log to the card
+        run: make test-cardlog
+
       - name: Test starting Bluetooth
         run: make test-xr829-attach
 
@@ -233,6 +239,12 @@ jobs:
         run: |
           cd out
           sha256sum "crystaline-$TAG-sd-card.img.xz" "crystaline-$TAG.update" >SHA256SUMS
-          jq -r '"System version: \(.version)\n\nCommit: \(.commit)\n\nBuilt: \(.built)"' system/*/manifest.json >notes.md
+          {
+            echo "- **New install:** write \`crystaline-$TAG-sd-card.img.xz\` to a microSD card with [balenaEtcher](https://etcher.balena.io/) (this erases the card). If your computer then asks to format the card, click **Cancel**."
+            echo "- **Update:** copy \`crystaline-$TAG.update\` into the \`updates\` folder on the card, then install it from **Settings** on the Brick."
+            echo "- **SHA256SUMS:** optional, to check that the downloads are intact."
+            echo
+            jq -r '"System version: \(.version)\n\nCommit: \(.commit)\n\nBuilt: \(.built)"' system/*/manifest.json
+          } >notes.md
           gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes-file notes.md \
             "crystaline-$TAG-sd-card.img.xz" "crystaline-$TAG.update" SHA256SUMS

@@ -4,5 +4,10 @@
 # klogd, which feeds it the kernel's messages) keeps running, so it records the others stopping;
 # init's sync after it ends the remaining processes saves the end of /system/logs/messages.
 sv -w 10 force-stop $(ls -d /etc/service/* | grep -v -e '/syslogd$' -e '/klogd$') >/dev/null 2>&1
+# Specular's log service writes the lines it holds to the card when stopped; it must stop before
+# the card is unmounted (the line above stops services, not their log services).
+sv -w 3 force-stop /etc/service/frontend/log >/dev/null 2>&1
 sync
 /usr/libexec/brick/mount-card stop
+# This run ended in order (poweroff, reboot, battery-guard, sleepnow all end here, through init).
+/usr/libexec/brick/last-shutdown stop

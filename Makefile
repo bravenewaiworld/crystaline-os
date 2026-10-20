@@ -20,7 +20,7 @@ STATIC := -static $(if $(DEBUG),,-s) -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--
 
 .PHONY: help all kernel gpu userspace specular installer device-tools buildroot system \
 	sd-card update-file update-device debug-running-release deploy-specular run-specular test-installer test-battery-guard \
-	test-mount-card test-xr829-attach test-timezone test-dt-edits test-exfat stock-fw install-image clean
+	test-mount-card test-last-shutdown test-cardlog test-xr829-attach test-timezone test-dt-edits test-exfat stock-fw install-image clean
 
 help:
 	@echo 'Our system:'
@@ -44,7 +44,9 @@ help:
 	@echo '  test-battery-guard  test the low-battery guard'"'"'s decisions on the PC'
 	@echo '  test-mount-card  test the SD card mounting script on the PC against image files'
 	@echo '  test-timezone    test brick-timezone on the PC'
-	@echo '                   (these three with the device'"'"'s BusyBox once buildroot has built it)'
+	@echo '  test-last-shutdown  test the record of how the last run ended, on the PC'
+	@echo '                   (these four with the device'"'"'s BusyBox once buildroot has built it)'
+	@echo '  test-cardlog     test the log service that copies Specular'"'"'s log to the SD card, on the PC'
 	@echo '  test-xr829-attach  test the Bluetooth start-up program on the PC against a fake chip'
 	@echo '  test-dt-edits    test the kernel'"'"'s built-in device-tree edits on the PC'
 	@echo '  test-exfat       test the kernel'"'"'s exFAT driver in QEMU, with power cuts (after'
@@ -131,7 +133,8 @@ installer:
 		cargo build --release --target aarch64-unknown-linux-gnu
 
 # --- Development tools that run on the device -----------------------------------------------
-DEVICE_TOOLS := dispctl glspin rumble i2creg memreg status blkro
+# Also status and cardlog (Specular's log service), which the system itself uses; all go to /usr/bin.
+DEVICE_TOOLS := dispctl glspin rumble i2creg memreg status blkro cardlog
 device-tools: $(addprefix $(B)/tools/,$(DEVICE_TOOLS))
 
 # status: a plain screen of the device's state, which frontend-run falls back to when Specular keeps
@@ -203,7 +206,7 @@ run-specular: specular
 test-installer:
 	tools/system/test-installer.sh
 
-# These three run their script under a PC build of the device's BusyBox (build/pc-busybox) once
+# These four run their script under a PC build of the device's BusyBox (build/pc-busybox) once
 # Buildroot has built it, and under the PC's shell and tools before then.
 WITH_PC_BUSYBOX = bb=$$(tools/system/pc-busybox.sh $(B)/pc-busybox) && PATH="$${bb:+$$bb:}$$PATH"
 test-battery-guard:
@@ -214,6 +217,12 @@ test-mount-card:
 
 test-timezone:
 	$(WITH_PC_BUSYBOX) tools/system/test-timezone.sh
+
+test-last-shutdown:
+	$(WITH_PC_BUSYBOX) tools/system/test-last-shutdown.sh
+
+test-cardlog:
+	tools/system/test-cardlog.sh
 
 test-xr829-attach:
 	tools/system/test-xr829-attach.sh

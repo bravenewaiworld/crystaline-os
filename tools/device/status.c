@@ -3,6 +3,10 @@
  * status: placeholder frontend that shows the device's hardware state (battery, CPU, temperatures,
  * memory, network, buttons, headphone jack, sleep statistics) until the real frontend exists. The
  * power button puts the device to sleep; pressing it again wakes it.
+ *   status --banner TITLE [[-d] LINE]...
+ *                                       the status screen under TITLE (red) and the lines, drawn as
+ *                                       --message draws them; frontend-run says with it why this
+ *                                       screen shows instead of Specular
  *
  * Draws text straight into the framebuffer (/dev/fb0), so it needs neither the GPU nor SDL. The
  * framebuffer has two screen-sized pages: each frame is drawn into the hidden one, then shown by
@@ -11,15 +15,18 @@
  *
  * The other modes serve the boot image's start-up program (initramfs; its recovery menu is in
  * docs/boot.md):
- *   status --message TITLE [LINE]...    show TITLE (in red) and the lines, then exit, leaving them
- *                                       on screen (why the system couldn't start)
+ *   status --message TITLE [[-d] LINE]...
+ *                                       show TITLE (in red) and the lines, then exit, leaving them
+ *                                       on screen (why the system couldn't start); a line after
+ *                                       -d is a detail, in grey
  *   status --held BUTTON                exit 0 if BUTTON (a label printed on the Brick, e.g. MENU)
  *                                       is held now, 1 if not
- *   status --menu TITLE [-n NOTE]... ITEM...
+ *   status --menu TITLE [-n NOTE | -b B-TEXT]... ITEM...
  *                                       a list to choose from with the D-pad; A prints the chosen
  *                                       item's index (from 0) and exits 0, leaving "ITEM..." on
  *                                       screen; B exits 1; 10 minutes without a press exits 2. The
- *                                       notes appear under the title. Nothing scrolls: rows past
+ *                                       notes appear under the title; B-TEXT is what the footer
+ *                                       says B does (default "back"). Nothing scrolls: rows past
  *                                       the screen's 24 aren't shown, so keep lists short.
  *   status --task TITLE                 show brick-install's progress lines (LOG-FILE, STEP,
  *                                       PROGRESS, DONE, FAIL; docs/install-and-update.md) read
@@ -406,6 +413,26 @@ static void show_sleep(void)
 	line(WHITE, "Sleep    %s", text[0] ? text : "(no statistics)");
 }
 
+/* --banner's TITLE and lines; nbanner is 0 without --banner. */
+static char **banner;
+static int nbanner;
+
+/* Print @n lines as --message describes them: a line after "-d" in grey, the others in white. */
+static void message_lines(char **lines, int n)
+{
+	int i;
+
+	for (i = 0; i < n; i++) {
+		int detail = !strcmp(lines[i], "-d") && i + 1 < n;
+
+		i += detail;
+		if (lines[i][0])
+			wrapped(detail ? GREY : WHITE, lines[i]);
+		else
+			row++;	/* wrapped() draws nothing for "", which callers use as a gap */
+	}
+}
+
 static void draw(int pad_fd, int jack_fd)
 {
 	static long next_slow;
@@ -413,6 +440,13 @@ static void draw(int pad_fd, int jack_fd)
 	int i;
 
 	begin_frame();
+	/* The screen has 24 rows: a banner of up to 4 rows after wrapping, plus the blank row after
+	 * it, leaves room for the rest; a longer one pushes the last lines down under the footer. */
+	if (nbanner) {
+		line(RED, "%s", banner[0]);
+		message_lines(banner + 1, nbanner - 1);
+		row++;
+	}
 	clock_gettime(CLOCK_BOOTTIME, &up);
 	line(GREEN, "Brick status          up %ld:%02ld:%02ld", up.tv_sec / 3600,
 	     up.tv_sec / 60 % 60, up.tv_sec % 60);
@@ -440,8 +474,7 @@ static void draw(int pad_fd, int jack_fd)
 	show_audio(jack_fd);
 	row++;
 	show_sleep();
-	row++;
-	line(GREY, "POWER: sleep / wake");
+	footer("POWER: sleep / wake");
 	show_frame();
 }
 
@@ -512,14 +545,11 @@ static int open_inputs(struct pollfd *fds, int *pad, int *jack)
 	return n;
 }
 
-/* Show @n lines, the first in red. */
+/* --message: show TITLE in red, then the lines. */
 static void show_message(char **lines, int n)
 {
-	int i;
-
 	begin_titled(RED, lines[0]);
-	for (i = 1; i < n; i++)
-		line(WHITE, "%s", lines[i]);
+	message_lines(lines + 1, n - 1);
 	show_frame();
 }
 
@@ -607,29 +637,41 @@ static int held(const char *name)
 	return TEST(bits, buttons[i].code) ? 0 : 1;
 }
 
-/* --menu: @argv is TITLE [-n NOTE]... ITEM... */
+/* --menu: @argv is TITLE [-n NOTE | -b B-TEXT]... ITEM... */
 static int menu(int argc, char **argv)
 {
-	int first = 1, sel = 0, n, fd, code, i;
+	const char *b_text = "back";
+	char foot[128];
+	int first = 1, notes = 0, sel = 0, n, fd, code, i;
 
-	while (first + 1 < argc && !strcmp(argv[first], "-n"))
+	while (first + 1 < argc && (!strcmp(argv[first], "-n") || !strcmp(argv[first], "-b"))) {
+		if (argv[first][1] == 'b')
+			b_text = argv[first + 1];
+		else
+			notes++;
 		first += 2;
+	}
+	snprintf(foot, sizeof(foot), "D-pad: choose   A: select   B: %s", b_text);
 	n = argc - first;
 	if (n < 1)
 		cant_run("--menu needs at least one item");
 	fd = open_keys();
 	for (;;) {
 		begin_titled(GREEN, argv[0]);
-		for (i = 2; i < first; i += 2)
-			wrapped(YELLOW, argv[i]);
-		if (first > 1)
+		for (i = 1; i < first; i += 2)
+			if (argv[i][1] == 'n')
+				wrapped(YELLOW, argv[i + 1]);
+		if (notes)
 			row++;
 		for (i = 0; i < n; i++) {
 			if (i == sel)
 				fill_row(SELECTED);
 			line(WHITE, "%c %s", i == sel ? '>' : ' ', argv[first + i]);
 		}
-		footer("D-pad: choose   A: select   B: back");
+		/* Above the footer: the caller powers off when status gives up (IDLE). */
+		row = var.yres / CELL_H - 2;
+		line(GREY, "Turns off after %d minutes without a button press", IDLE_MS / 60000);
+		footer(foot);
 		show_frame();
 
 		code = next_press(fd);
@@ -669,7 +711,12 @@ static void task_line(const char *s)
 	int i, n, at = 0;
 
 	if (!strncmp(s, "LOG-FILE ", 9)) {
-		snprintf(t.log, sizeof(t.log), "Log: %s", s + 9);
+		const char *path = s + 9, *card = "/card/";	/* the initramfs's mount of the SD card */
+
+		if (!strncmp(path, card, strlen(card)))
+			snprintf(t.log, sizeof(t.log), "Log: %s on the SD card", path + strlen(card));
+		else
+			snprintf(t.log, sizeof(t.log), "Log: %s", path);
 	} else if (sscanf(s, "STEP %d/%d %n", &i, &n, &at) == 2 && at) {
 		if (i >= 1 && i <= MAX_STEPS)
 			snprintf(t.steps[i - 1], sizeof(t.steps[0]), "%s", s + at);
@@ -775,9 +822,13 @@ int main(int argc, char **argv)
 		return menu(argc - 2, argv + 2);
 	if (argc > 2 && !strcmp(argv[1], "--task"))
 		return task(argv[2]);
-	if (argc > 1)
-		cant_run("usage: status [--message TITLE [LINE]... | --held BUTTON | --menu TITLE "
-			 "[-n NOTE]... ITEM... | --task TITLE]");
+	if (argc > 2 && !strcmp(argv[1], "--banner")) {
+		banner = argv + 2;
+		nbanner = argc - 2;
+	} else if (argc > 1) {
+		cant_run("usage: status [--banner TITLE [[-d] LINE]... | --message TITLE [[-d] LINE]... | "
+			 "--held BUTTON | --menu TITLE [-n NOTE | -b B-TEXT]... ITEM... | --task TITLE]");
+	}
 	nfds = open_inputs(fds, &pad, &jack);
 
 	for (;;) {

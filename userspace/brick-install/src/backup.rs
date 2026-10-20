@@ -27,7 +27,7 @@ use sha2::{Digest, Sha256};
 use crate::Paths;
 use crate::disk::{self, CHUNK, Disk};
 use crate::install::{self, CARD_BOOT0, RESTORING};
-use crate::report::{Context, Report, Result, fail, gb, hex, read_json, timestamp};
+use crate::report::{Context, REWRITE_CARD, Report, Result, fail, gb, hex, read_json, timestamp};
 
 /// How much of the disk each piece holds.
 const PIECE: u64 = 1 << 30;
@@ -220,15 +220,15 @@ fn can_prepare(internal: &Disk, card: &Disk) -> Result<()> {
     if install::holds(internal) != "this-system" {
         return fail(format!("the internal storage holds {}, not this system", install::holds(internal)), "Restore from the SD card's system instead.");
     }
-    const REWRITE: &str = "Copy backups/ off the SD card to a PC, write a fresh card with this system, copy backups/ back, then try again.";
+    let rewrite = format!("{REWRITE_CARD} Then try again.");
     let parts = card.partitions()?;
     if let Some(missing) = CARD_PARTS.iter().find(|n| disk::named(&parts, n, &card.path).is_err()) {
-        return fail(format!("the SD card has no {missing} partition: it wasn't made for this version of the system"), REWRITE);
+        return fail(format!("the SD card has no {missing} partition: it wasn't made for this version of the system"), rewrite);
     }
     let (settings, _) = crate::env::current(card, &parts)?;
     let slot = crate::env::get(&settings.pairs, "boot_partition").unwrap_or_default();
     if !disk::named(&parts, slot, &card.path).and_then(|s| card.read_at(s.start, 8)).is_ok_and(|b| b == b"ANDROID!") {
-        return fail(format!("the SD card's boot slot {slot:?} holds no system"), REWRITE);
+        return fail(format!("the SD card's boot slot {slot:?} holds no system"), rewrite);
     }
     Ok(())
 }

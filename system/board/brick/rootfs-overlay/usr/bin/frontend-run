@@ -3,21 +3,32 @@
 # service (/etc/sv/frontend/run); runit starts it again whenever Specular exits. If Specular has
 # already been started 3 times in the last minute (it keeps failing), runs the status screen
 # instead, until the next boot, so the device still shows its battery and sleeps, and can be fixed
-# over SSH. The script replaces itself with Specular (exec), so `sv stop frontend` signals Specular
-# itself, which then saves and quits.
+# over SSH; a banner on it tells the user what happened and what to do. The script replaces itself
+# with Specular (exec), so `sv stop frontend` signals Specular itself, which then saves and quits.
 STARTS=/tmp/frontend-starts
 # File transfer runs only while Specular's screen for it is open; a Specular that crashed with it
 # open can't stop it, so it is stopped before every start (also before the status screen).
 sv down webdav 2>/dev/null
+# The log service writes what it holds of the previous run to the card now, so the last lines
+# before a crash are there to read.
+sv hup /etc/service/frontend/log >/dev/null 2>&1
 FALLBACK=/tmp/frontend-fallback
-[ -e $FALLBACK ] && exec /usr/bin/status
+# fallback: replaces this script with the status screen and its banner. The banner says the
+# recovery menu "can" start the previous version: it offers that only when one is installed
+# (docs/boot.md).
+fallback() {
+	exec /usr/bin/status --banner "The game menu stopped working" \
+		"Restart the Brick. If it keeps happening, hold MENU while turning it on: the recovery menu can start the previous version." \
+		-d "Log: logs/specular.log on the SD card."
+}
+[ -e $FALLBACK ] && fallback
 now=$(date +%s)
 echo "$now" >>$STARTS
 recent=$(awk -v since=$((now - 60)) '$1 >= since { n++ } END { print n + 0 }' $STARTS)
 if [ "$recent" -gt 3 ]; then
 	echo "frontend: Specular started $((recent - 1)) times within a minute; running status" >&2
 	touch $FALLBACK
-	exec /usr/bin/status
+	fallback
 fi
 # Where the Makefile installs Specular (SPECULAR_PREFIX).
 exec /usr/lib/specular/specular /mnt/SDCARD

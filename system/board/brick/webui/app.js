@@ -21,7 +21,8 @@ const VIEWS = {
 		hint: "Battery saves, named after their games and in matching folders: roms/gba/Golden Sun.gba saves to saves/gba/Golden Sun.srm." },
 	bios: { title: "BIOS", root: "bios/",
 		hint: "BIOS files. Emulators look for them by exact file name, so keep the names they expect." },
-	files: { title: "All files", root: "", hint: "", showHidden: true },
+	files: { title: "All files", root: "", showHidden: true,
+		hint: "Everything on the card. backups/, made when installing to internal storage, holds the copy of TrimUI's system: your way back to it, so don't delete it. updates/ is where Crystaline OS update files (.update) go. logs/ has reports of installs, updates and card repairs. config/ holds your settings. cache/ holds box art and game lists, and is safe to delete." },
 };
 
 /** The largest file FAT32 can hold. */

@@ -1,6 +1,6 @@
 # Storage
 
-Status: In progress · Updated: 2026-10-18
+Status: In progress · Updated: 2026-10-19
 
 The Brick's two disks, the microSD card and the 8 GB internal eMMC: how they are driven, how our code tells them apart, and the filesystem of the card's data partition, where all user data lives ([system-image.md](system-image.md)). The SD card is also the game library's read path, so its speed matters, and the data partition must stay readable by any PC.
 
@@ -50,7 +50,7 @@ Each run, under `flock /run/card/lock`:
 
 1. If `/system`'s device number is gone from `/sys/class/block/*/dev`, the system's card was pulled: a line to `/dev/kmsg`, `failed system-card-removed`, 3 s later `poweroff -f`. Nothing else.
 2. If something is mounted at `/mnt/SDCARD` and its device number is one of the card's (`/sys/block/<disk>/{,<partition>/}dev`), it is kept; if the kernel has since made it read-only (`ro` in mountinfo's last field) and the state is `mounted`, the state becomes `read-only damaged`. Otherwise the old card is released: `umount -l`, `sv down webdav`.
-3. No card: `absent`. Else `checking`; choose the data partition (below); check it (not if the card reports itself read-only); if it was pulled meanwhile, `absent`; mount it (read-only after `errors-left`, `not-run`, or for a write-protected card); if read-write, make `roms/ bios/ saves/` and log a check that wasn't `clean` on the card.
+3. No card: `absent`. Else `checking`; choose the data partition (below); check it (not if the card reports itself read-only); if it was pulled meanwhile, `absent`; mount it (read-only after `errors-left`, `not-run`, or for a write-protected card); if read-write, make `roms/ bios/ saves/ updates/`, copy the card's guide files where they differ ([system-image.md](system-image.md), "No manuals") and log a check that wasn't `clean` on the card.
 
 A run that changes nothing leaves the state file alone. If the card goes during a run, the run reports `absent`, not a failure (or, if it goes just after mounting, the removal's own run does). Every run logs why it ran.
 
@@ -65,8 +65,12 @@ card holds /system, "sdcard" with no filesystem  → format it (a first start cu
                                                    (so, with no other, failed no-partition)
 otherwise                                        → lowest-numbered FAT or exFAT partition not named
                                                    "bootloader"; the whole card if it has no partitions
-none                                             → failed no-partition
+none                                             → failed not-set-up if the card has our "system"
+                                                   partition but no "sdcard" (written, never started
+                                                   from), else failed no-partition
 ```
+
+The data partition is made only with at least 64 MiB free after the system partition (`MIN_DATA_MiB`); otherwise `failed too-small`, and the card is left as it was but for its backup partition table, moved to the card's end.
 
 The card layout is in [boot.md](boot.md), the eMMC's after an install below.
 
@@ -101,9 +105,11 @@ card=<cid> partition=<name> type=<vfat|exfat> check=<result>  line 3: details; a
 | `read-only write-protected` | the card reports itself read-only | locked against writing: games play, nothing is saved; use a writable card | the library, the message above it, always visible |
 | `read-only damaged` | the check left errors (`check=errors-left`), or the kernel made the card read-only after an error | games play, nothing is saved; repair on a PC (errors left), or take the card out and insert it again to check it (the system's own card: restart) | as above; saving shows that it can't save instead of failing silently |
 | `read-only unchecked` | the check couldn't run (e.g. read errors) | games play, nothing is saved; insert again (restart) to retry; if it keeps happening, the card may be failing | as above |
-| `failed no-partition` | no readable FAT32 or exFAT partition (e.g. an NTFS card, or a card written with our system in a Brick running from the eMMC) | use a FAT32 or exFAT card | the message in place of the library |
+| `failed no-partition` | no readable FAT32 or exFAT partition (e.g. an NTFS card) | use a FAT32 or exFAT card | the message in place of the library |
+| `failed not-set-up` | our card, written but never started from (no `sdcard` partition), in a Brick running from the eMMC | restart with this card in to finish setting it up | as above |
 | `failed mount` | the kernel refused to mount it | damaged or not supported: repair on a PC or format | as above |
-| `failed partition` | the first start couldn't make the data partition | restart; if it fails again, write the system to the card again | as above |
+| `failed partition` | the first start couldn't make the data partition | restart; if it fails again, write Crystaline OS to the card again (this erases it; it holds no games yet) | as above |
+| `failed too-small` | the system's own card has under 64 MiB left for the data partition | too small: a card of at least 2 GB is needed | as above |
 | `failed system-card-removed` | the card holding `/system` was pulled | the Brick turned off; insert the card and turn it on | the message, for the 3 s before it turns off (if Specular still runs) |
 
 #### Specular's side (its own repository)

@@ -14,6 +14,8 @@ mkdir -p /dev/pts /dev/shm
 mount -t devpts devpts /dev/pts
 mount -t tmpfs -o nosuid,nodev tmpfs /dev/shm
 hostname -F /etc/hostname
+# How the last run ended (/run/brick/last-shutdown, for Specular), and this run marked as running.
+/usr/libexec/brick/last-shutdown start
 # The outcome of the kernel's device-tree edits, and its log lines about them (docs/boot.md).
 echo "device-tree edits: $(tr -d '\0' </proc/device-tree/chosen/crystaline,dt-edits 2>/dev/null || echo 'none (kernel without them)')"
 dmesg | grep dt-edits

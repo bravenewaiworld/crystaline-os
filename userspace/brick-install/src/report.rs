@@ -19,23 +19,29 @@ use std::time::Instant;
 
 /// The hint for failures whose cause only the log can tell.
 pub const SEE_LOG: &str = "Details are in the log on the SD card (logs/).";
+/// The fix for a damaged or outdated card: it says up front that writing a card erases it.
+pub const REWRITE_CARD: &str = "Copy your games, saves and backups/ off the SD card to a PC (writing a card erases it), \
+write the SD card image from github.com/bravenewaiworld/crystaline-os/releases to the card, then copy them back.";
+/// Where releases (SD card images and update files) are downloaded from.
+pub const RELEASES: &str = "github.com/bravenewaiworld/crystaline-os/releases";
 
-/// A failure the user can act on: what happened, and what to do about it.
-#[derive(Clone, Debug)]
-pub struct Failure { pub message: String, pub hint: String }
+/// A failure the user can act on: what happened, and what to do about it. `detail` is for the
+/// log only (e.g. which part of the build to look at); usually empty.
+#[derive(Clone, Debug, Default)]
+pub struct Failure { pub message: String, pub hint: String, pub detail: String }
 
 pub type Result<T> = std::result::Result<T, Failure>;
 
 /// A failure with a hint for the user.
 pub fn fail<T>(message: impl Into<String>, hint: impl Into<String>) -> Result<T> {
-    Err(Failure { message: message.into(), hint: hint.into() })
+    Err(Failure { message: message.into(), hint: hint.into(), ..Default::default() })
 }
 
 /// Turns any error into a `Failure` saying what was being done.
 pub trait Context<T> { fn ctx(self, doing: &str) -> Result<T>; }
 
 impl<T, E: std::fmt::Display> Context<T> for std::result::Result<T, E> {
-    fn ctx(self, doing: &str) -> Result<T> { self.map_err(|e| Failure { message: format!("{doing}: {e}"), hint: SEE_LOG.into() }) }
+    fn ctx(self, doing: &str) -> Result<T> { self.map_err(|e| Failure { message: format!("{doing}: {e}"), hint: SEE_LOG.into(), ..Default::default() }) }
 }
 
 /// One task's messages (the protocol above) and its log.
@@ -100,6 +106,7 @@ impl Report {
     /// The task failed: the FAIL line, which ends the report.
     pub fn failed(&mut self, f: &Failure) {
         self.log(&format!("== failed: {}\n   hint: {}", f.message, f.hint));
+        if !f.detail.is_empty() { self.log(&format!("   detail: {}", f.detail)); }
         self.flush_log();
         self.say(&format!("FAIL {}\t{}", f.message.replace(['\n', '\t'], " "), f.hint.replace(['\n', '\t'], " ")));
     }
