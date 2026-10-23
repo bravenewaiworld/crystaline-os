@@ -26,10 +26,12 @@ rsync -a --delete --exclude=.git \
 	--exclude=modules.order --exclude=Module.symvers --exclude=.tmp_versions \
 	"$GPU_SRC/" "$SRC/"
 # Our fixes to the driver (tools/gpu-patches), applied to the copy. rsync has just restored any
-# patched file to the original, so each applies cleanly every time.
+# patched file to the original, so each applies cleanly every time. The ceiling keeps git from
+# treating the copy as part of this repository, where it would read the patches' paths as relative
+# to the repository's top, skip them and still succeed.
 for p in "$ROOT"/tools/gpu-patches/*.patch; do
 	[ -e "$p" ] || continue	# no patches: the pattern stays unexpanded
-	(cd "$SRC" && git apply "$p")
+	(cd "$SRC" && GIT_CEILING_DIRECTORIES="$OUT" git apply "$p")
 done
 
 # CONFIG_DRM_IMG_ROGUE=m: the Kbuild file adds its modules to obj-$(CONFIG_DRM_IMG_ROGUE).

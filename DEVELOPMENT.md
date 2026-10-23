@@ -24,6 +24,7 @@
 - **Update files** (`make update-file`, `KEY=` as above): `build/updates/crystaline-<version>.update`, for Settings or the recovery menu (put it in `updates/` on the card's data partition). Development images accept files signed with this checkout's key or the release key; release images only the release key (`system/board/brick/update-keys/release.pub`, a placeholder until the release key exists: until then `RELEASE=1` doesn't build). `brick-install slots` (over SSH) shows what each boot slot holds and which starts next.
 - **Release images** (`RELEASE=1` with `make system`, `sd-card` or `update-device`) have no development access: no checkout keys, no login on the serial console, and no debugging or hardware test tools ("Debugging a release image", below). SSH is off, and accepts only login keys imported on the device: put an `authorized_keys` at the root of the SD card's data partition, then `brick-ssh import` and `brick-ssh on` on the device (Specular's developer settings will do this; until then a release image can't be reached over SSH). Each device makes its own host keys on its first start, so the PC warns once that the host key changed. A version's `manifest.json` says which kind it is (`"release"`). Once a device runs a release image, `make update-device` needs `KEY=<release key>` (or write a card).
 - **Developer layer.** A writable layer over the read-only system image. Create it with `mkdir /system/overlay/$(cat /etc/brick-version)`; it is used from the next boot. Changes in it persist across reboots until the next full update, which starts with an empty layer.
+- **GPU modules from a build, without installing** (`make gpu`: `build/gpu/*.ko`): copy them to `/tmp`, then `sv stop frontend; rmmod dc_sunxi pvrsrvkm; insmod /tmp/pvrsrvkm.ko; insmod /tmp/dc_sunxi.ko`. Back: `rmmod dc_sunxi pvrsrvkm; modprobe pvrsrvkm; modprobe dc_sunxi; sv start frontend`, or reboot. Unloading works only with modules that have `tools/gpu-patches/0006`; with an older one loaded, nothing can power the GPU afterwards until a reboot.
 - **Specular only:**
   - `make deploy-specular` replaces Specular through the developer layer and restarts it.
   - `make run-specular` runs a build once in the foreground with its output on your terminal, and puts the installed one back afterwards.
@@ -53,6 +54,7 @@
   - Kernel symbols.
   - `/dev/mem`.
   - I2C device files.
+- **Tearing and frame delivery:** `dispcap` saves what the display engine sends to the panel, which shows tearing a copy of a framebuffer would not; gcrecomp's `tools/tearing-check.sh` runs a Vulkan bar sweep, captures it with `dispcap` and checks the captures. While a Vulkan program runs, `/sys/kernel/debug/pvr/gpu00/debug_dump` has how long its presents waited for their frame to reach the screen ("Presents waited until on screen", [docs/gpu.md](docs/gpu.md)); `echo N > /sys/module/pvrsrvkm/parameters/dc_present_waits_for_flip` turns that wait off until the next start (Vulkan programs then tear).
 - **Expensive kernel debugging is off by default:** slab, mutex and VM checks. Slab checks cost a GPU-heavy game about 12 %.
 - **Kernel crash records:** after an oops or panic (the device resets within 16 s), the next start copies the kernel log saved at the time to `/system/logs/crash-<UTC time>/dmesg-pstore_blk-<n>`; the newest 10 are kept. `dmesg | grep pstore_blk` should show "attached mmcblkXpN"; otherwise nothing is recorded ([docs/boot.md](docs/boot.md)). To try it on a development build: `echo c > /proc/sysrq-trigger`.
 - **Device-tree edits:** the kernel makes our device-tree changes (`system/board/brick/dt-tweaks.sh`) itself at start-up ([docs/boot.md](docs/boot.md)). `cat /proc/device-tree/chosen/crystaline,dt-edits` says `ok <table>: <counts>` or why it failed (then none of the edits were applied, so the buttons don't work: reach the device over SSH); `dmesg | grep dt-edits` has the same and each value U-Boot had set first; rcS copies both into `/system/logs/rcS.log`. From the PC, `tools/system/dt-check.sh` checks that the device's tree is what this checkout's edits make of U-Boot's (`/sys/firmware/fdt-bootloader`) and saves both in `build/dt-samples/`. A change to `dt-tweaks.sh` is built into the kernel, so it reaches a device with `make update-device` like any other.
@@ -121,6 +123,7 @@ In development images. Release images have only `sleepnow`, `status` and `cardlo
 | Tool | What it does |
 |---|---|
 | `dispctl` | Backlight level and panel on/off |
+| `dispcap` | Save what the display engine sends to the panel (consecutive frames, PPM), e.g. to check for tearing |
 | `glspin` | GPU test that reports fps |
 | `rumble` | Rumble test |
 | `i2creg` | Read/write a register over I2C |

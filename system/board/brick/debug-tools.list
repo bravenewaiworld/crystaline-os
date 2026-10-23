@@ -17,6 +17,7 @@ usr/lib/libelf[.-]*
 usr/lib/libasm[.-]*
 # Our hardware test tools (tools/device; DEVELOPMENT.md, "On-device tools")
 usr/bin/dispctl
+usr/bin/dispcap
 usr/bin/glspin
 usr/bin/rumble
 usr/bin/i2creg

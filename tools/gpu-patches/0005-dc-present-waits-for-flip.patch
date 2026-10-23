@@ -1,0 +1,236 @@
+dc: a present without a release fence returns only once its frame is on screen
+
+TrimUI's Vulkan driver (libVK_IMG, VK_KHR_display, always two swapchain images) passes no
+release fence and takes the return of DCDisplayContextConfigure as the sign that its other
+image has left the screen. The call returned as soon as the configuration was queued, right
+after the previous flip, while that image stayed on screen until the next one; the next frame
+was drawn into it, so the top rows showed a frame two presents older than the rows below (seen
+on the TrimUI Brick in dispcap captures of the display engine's output).
+Configurations without a release fence now return once their frame is on screen, i.e. once
+every earlier configuration has retired (the display driver retires one when the display has
+taken the next), at most 100 ms. The GL window system passes a release fence and waits on it;
+it is unchanged. /sys/module/pvrsrvkm/parameters/dc_present_waits_for_flip (default Y) turns
+the wait off for measurements; /sys/kernel/debug/pvr/gpu00/debug_dump shows how long the
+presents of each running program waited. 2026-10-23.
+
+--- a/services/server/common/dc_server.c
++++ b/services/server/common/dc_server.c
+@@ -62,6 +62,20 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ #include "ri_server.h"
+ #endif
+ 
++/*
++	How long the present waits (_DCWaitUntilShown) of one display context took, for the debug dump.
++	Updated by the presenting thread without a lock: a client presenting from two threads at once
++	can lose counts.
++ */
++typedef struct _DC_PRESENT_WAITS_
++{
++	IMG_UINT32	ui32Count;
++	IMG_UINT32	aui32ByLength[4];		/* <1, 1-18, 18-35 ms, longer: about 0, 1, 2, more refreshes at 60 Hz */
++	IMG_UINT32	ui32Timeouts;
++	IMG_UINT64	ui64TotalUs;
++	IMG_UINT64	ui64LongestUs;
++} DC_PRESENT_WAITS;
++
+ struct _DC_DISPLAY_CONTEXT_
+ {
+ 	DC_DEVICE		*psDevice;
+@@ -83,8 +97,34 @@ struct _DC_DISPLAY_CONTEXT_
+ 
+ 	IMG_BOOL		bPauseMISR;
+ 	DLLIST_NODE		sListNode;
++
++	/* Signalled on every retire: wakes presents waiting for their frame to reach the screen. */
++	IMG_HANDLE		hRetiredEvent;
++	DC_PRESENT_WAITS	sPresentWaits;
+ };
+ 
++/*
++	A client that passes no release fence with a configuration (TrimUI's Vulkan driver) takes the
++	return of DCDisplayContextConfigure as the sign that its previous buffer has left the screen,
++	and starts drawing into it. The display switches to the new buffer only at its next refresh,
++	so the old one is still being scanned out for up to a refresh: the client's drawing shows as
++	tearing. Such configurations therefore return only once they are on screen
++	(_DCWaitUntilShown); their present call then takes about a refresh, at most two. Clients with a
++	release fence (the GL window system) wait on it and are left alone.
++ */
++#define DC_PRESENT_WAIT_TIMEOUT_US	100000
++
++#if defined(__linux__)
++#include <linux/moduleparam.h>
++
++static bool dc_present_waits_for_flip = true;
++module_param(dc_present_waits_for_flip, bool, 0644);
++MODULE_PARM_DESC(dc_present_waits_for_flip, "Configurations without a release fence return only "
++				 "once on screen (default Y; N for measurements: such clients then tear).");
++#else
++#define dc_present_waits_for_flip IMG_TRUE
++#endif
++
+ struct _DC_DEVICE_
+ {
+ 	PVRSRV_DEVICE_NODE			*psDevNode;
+@@ -274,6 +314,7 @@ static void _DCDisplayContextReleaseRef(DC_DISPLAY_CONTEXT *psDisplayContext)
+ 		SCPDestroy(psDisplayContext->psSCPContext);
+ 		psDevice->psFuncTable->pfnContextDestroy(psDisplayContext->hDisplayContext);
+ 		_DCDeviceReleaseRef(psDevice);
++		OSEventObjectDestroy(psDisplayContext->hRetiredEvent);
+ 		OSLockDestroy(psDisplayContext->hConfigureLock);
+ 		OSLockDestroy(psDisplayContext->hLock);
+ 		OSFreeMem(psDisplayContext);
+@@ -1018,7 +1059,16 @@ static void _DCDebugRequest(PVRSRV_DBGREQ_HANDLE hDebugRequestHandle,
+ {
+ 	DC_DISPLAY_CONTEXT	*psDisplayContext = (DC_DISPLAY_CONTEXT*) hDebugRequestHandle;
+ 
++	DC_PRESENT_WAITS *psWaits = &psDisplayContext->sPresentWaits;
++
+ 	PVR_DUMPDEBUG_LOG("Configs in-flight = %d", psDisplayContext->ui32ConfigsInFlight);
++	PVR_DUMPDEBUG_LOG("Presents waited until on screen = %u (<1 ms %u, 1-18 ms %u, 18-35 ms %u, "
++	                  "longer %u; average %" IMG_UINT64_FMTSPEC " us, longest %" IMG_UINT64_FMTSPEC
++	                  " us), timed out = %u",
++	                  psWaits->ui32Count, psWaits->aui32ByLength[0], psWaits->aui32ByLength[1],
++	                  psWaits->aui32ByLength[2], psWaits->aui32ByLength[3],
++	                  psWaits->ui32Count ? psWaits->ui64TotalUs / psWaits->ui32Count : 0,
++	                  psWaits->ui64LongestUs, psWaits->ui32Timeouts);
+ 
+ 	if (DD_VERB_LVL_ENABLED(ui32VerbLevel, DEBUG_REQUEST_VERBOSITY_MEDIUM))
+ 	{
+@@ -1378,6 +1428,7 @@ PVRSRV_ERROR DCDisplayContextCreate(DC_DEVICE *psDevice,
+ 	psDisplayContext->bIssuedNullFlip = IMG_FALSE;
+ 	psDisplayContext->hTimer = NULL;
+ 	psDisplayContext->bPauseMISR = IMG_FALSE;
++	OSCachedMemSet(&psDisplayContext->sPresentWaits, 0, sizeof(psDisplayContext->sPresentWaits));
+ 	OSAtomicWrite(&psDisplayContext->sRefCount, 1);
+ 
+ 	eError = OSLockCreate(&psDisplayContext->hLock);
+@@ -1390,6 +1441,11 @@ PVRSRV_ERROR DCDisplayContextCreate(DC_DEVICE *psDevice,
+ 	{
+ 		goto FailLock2;
+ 	}
++	eError = OSEventObjectCreate("DC_RETIRED", &psDisplayContext->hRetiredEvent);
++	if (eError != PVRSRV_OK)
++	{
++		goto FailEvent;
++	}
+ 
+ 	/* Create a Software Command Processor with 4K CCB size.
+ 	 * With the HWC it might be possible to reach the limit off the buffer.
+@@ -1463,6 +1519,8 @@ PVRSRV_ERROR DCDisplayContextCreate(DC_DEVICE *psDevice,
+ 	FailDCDeviceContext:
+ 	SCPDestroy(psDisplayContext->psSCPContext);
+ 	FailSCP:
++	OSEventObjectDestroy(psDisplayContext->hRetiredEvent);
++	FailEvent:
+ 	OSLockDestroy(psDisplayContext->hConfigureLock);
+ 	FailLock2:
+ 	OSLockDestroy(psDisplayContext->hLock);
+@@ -1643,6 +1701,69 @@ PVRSRV_ERROR DCDisplayContextFlush(void)
+ }
+ 
+ 
++/*
++	_DCWaitUntilShown
++
++	Returns once the configuration with ui32Token is on screen: every configuration before it has
++	retired, which the display driver does when the display has taken the next one. Also returns
++	after DC_PRESENT_WAIT_TIMEOUT_US (the first timeout of a display context is logged, the rest
++	only counted) and when a signal is pending for the calling thread.
++ */
++static void _DCWaitUntilShown(DC_DISPLAY_CONTEXT *psDisplayContext, IMG_UINT32 ui32Token)
++{
++	DC_PRESENT_WAITS *psWaits = &psDisplayContext->sPresentWaits;
++	IMG_UINT64 ui64Start = OSClockus64();
++	IMG_UINT64 ui64Waited;
++	IMG_HANDLE hEvent;
++
++	if (OSEventObjectOpen(psDisplayContext->hRetiredEvent, &hEvent) != PVRSRV_OK)
++	{
++		PVR_DPF((PVR_DBG_ERROR, "%s: can't open the retire event; the present returns at once "
++		         "(its client may draw into the buffer still shown)", __func__));
++		return;
++	}
++	for (;;)
++	{
++		IMG_UINT32 ui32Retired;
++
++		OSLockAcquire(psDisplayContext->hLock);
++		ui32Retired = psDisplayContext->ui32TokenIn;
++		OSLockRelease(psDisplayContext->hLock);
++		ui64Waited = OSClockus64() - ui64Start;
++		/* Tokens count configurations and wrap around, hence the signed difference. */
++		if ((IMG_INT32)(ui32Token - ui32Retired) <= 0)
++		{
++			break;
++		}
++		if (ui64Waited >= DC_PRESENT_WAIT_TIMEOUT_US)
++		{
++			if (psWaits->ui32Timeouts++ == 0)
++			{
++				PVR_DPF((PVR_DBG_ERROR, "%s: configuration %u not on screen after %" IMG_UINT64_FMTSPEC " us "
++				         "(%u retired so far, %u in flight); returning anyway (the client may draw "
++				         "into the buffer still shown). Later timeouts are counted in the debug "
++				         "dump.", __func__, ui32Token, ui64Waited,
++				         ui32Retired, psDisplayContext->ui32ConfigsInFlight));
++			}
++			break;
++		}
++		/* Waiting on through a pending signal would spin until the timeout. */
++		if (OSEventObjectWaitTimeout(hEvent, DC_PRESENT_WAIT_TIMEOUT_US - ui64Waited) == PVRSRV_ERROR_INTERRUPTED)
++		{
++			break;
++		}
++	}
++	OSEventObjectClose(hEvent);
++
++	psWaits->ui32Count++;
++	psWaits->ui64TotalUs += ui64Waited;
++	if (ui64Waited > psWaits->ui64LongestUs)
++	{
++		psWaits->ui64LongestUs = ui64Waited;
++	}
++	psWaits->aui32ByLength[ui64Waited < 1000 ? 0 : ui64Waited < 18000 ? 1 : ui64Waited < 35000 ? 2 : 3]++;
++}
++
+ PVRSRV_ERROR DCDisplayContextConfigure(DC_DISPLAY_CONTEXT *psDisplayContext,
+                                        IMG_UINT32 ui32ClientCacheOpSeqNum,
+                                        IMG_UINT32 ui32PipeCount,
+@@ -1666,6 +1787,7 @@ PVRSRV_ERROR DCDisplayContextConfigure(DC_DISPLAY_CONTEXT *psDisplayContext,
+ 	void *pvCompleteData;
+ 	DC_CMD_RDY_DATA *psReadyData;
+ 	DC_CMD_COMP_DATA *psCompleteData;
++	IMG_UINT32 ui32Token;
+ 
+ 	_DCDisplayContextAcquireRef(psDisplayContext);
+ 
+@@ -1791,7 +1913,8 @@ PVRSRV_ERROR DCDisplayContextConfigure(DC_DISPLAY_CONTEXT *psDisplayContext,
+ 	pvCompleteData = (IMG_PUINT8)pvCompleteData + sizeof(DC_CMD_COMP_DATA);
+ 
+ 	psCompleteData->psDisplayContext = psDisplayContext;
+-	psCompleteData->ui32Token = psDisplayContext->ui32TokenOut++;
++	ui32Token = psDisplayContext->ui32TokenOut++;
++	psCompleteData->ui32Token = ui32Token;
+ 	psCompleteData->ui32BufferCount = ui32PipeCount;
+ 	psCompleteData->bDirectNullFlip = IMG_FALSE;
+ 
+@@ -1826,6 +1949,12 @@ PVRSRV_ERROR DCDisplayContextConfigure(DC_DISPLAY_CONTEXT *psDisplayContext,
+ 		_DCDeviceBufferArrayDestroy(ahBuffers);
+ 	}
+ 
++	/* Null flips (no pipes, sent at teardown) have no buffer to protect. */
++	if (ui32PipeCount != 0 && iReleaseFenceTimeline == PVRSRV_NO_TIMELINE && dc_present_waits_for_flip)
++	{
++		_DCWaitUntilShown(psDisplayContext, ui32Token);
++	}
++
+ 	return PVRSRV_OK;
+ 
+ 	FailCommandAlloc:
+@@ -2297,6 +2426,7 @@ void DCDisplayConfigurationRetired(IMG_HANDLE hConfigData)
+ 
+ 	psDisplayContext->ui32ConfigsInFlight--;
+ 	OSLockRelease(psDisplayContext->hLock);
++	OSEventObjectSignal(psDisplayContext->hRetiredEvent);
+ 
+ 	for (i = 0; i < psData->ui32BufferCount; i++)
+ 	{
