@@ -77,9 +77,11 @@ sed -i "s/@VERSION@/$VERSION/g" "$R/usr/share/brick-web/index.html"
 cp -R "$B/specular-install/." "$R/"
 
 # TrimUI's GPU libraries (with their NULL window system, loaded by name) and firmware, and the
-# XR829's firmware. Only these come from TrimUI's system.
+# XR829's firmware. Only these come from TrimUI's system. The Vulkan driver (libVK_IMG, which
+# needs libufwriter, 36 MB) is the ICD of Buildroot's Vulkan loader (docs/gpu.md); TrimUI's own
+# minimal libvulkan is left out.
 for l in libEGL.so libEGL.so.1 libGLESv2.so libGLESv2.so.2 libIMGegl.so libsrv_um.so \
-	libglslcompiler.so libusc.so libpvrNULL_WSEGL.so; do
+	libglslcompiler.so libusc.so libpvrNULL_WSEGL.so libVK_IMG.so libVK_IMG.so.1 libufwriter.so; do
 	cp -P "$B/stock-root/usr/lib/$l" "$R/usr/lib/$l"
 done
 mkdir -p "$TMP/stock"

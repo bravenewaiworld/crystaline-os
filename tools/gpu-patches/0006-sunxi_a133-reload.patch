@@ -1,0 +1,22 @@
+sunxi_a133: the GPU module can be loaded again after it was unloaded
+
+pvr_drm_unload disables runtime PM, and sunxi_platform_term, called later in the same unload,
+disabled it again. Disables are counted and a load enables it once, so after `rmmod pvrsrvkm`
+every later load failed to power the GPU domain (pm_runtime_get_sync: -13) and the GPU was gone
+until a reboot. The teardown now disables runtime PM only if it is still enabled. 2026-10-23.
+
+--- a/services/system/rogue/sunxi_a133/sunxi_platform.c
++++ b/services/system/rogue/sunxi_a133/sunxi_platform.c
+@@ -915,7 +915,11 @@ void sunxi_platform_term(void)
+ 	clk_disable_unprepare(sunxi_data->clks.bus);
+ 	reset_control_assert(sunxi_data->clks.reset);
+ 
+-	pm_runtime_disable(sunxi_data->dev);
++	/* At unload pvr_drm_unload has already disabled runtime PM. Disables are counted, so a second
++	 * one would leave it disabled after the next load's one enable, and that load's
++	 * pm_runtime_get_sync() would fail with -EACCES (no GPU until a reboot). */
++	if (pm_runtime_enabled(sunxi_data->dev))
++		pm_runtime_disable(sunxi_data->dev);
+ 	if (sunxi_data->power_on) {
+ 		pm_runtime_put_noidle(sunxi_data->dev);
+ 		sunxi_data->power_on = 0;

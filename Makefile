@@ -134,7 +134,7 @@ installer:
 
 # --- Development tools that run on the device -----------------------------------------------
 # Also status and cardlog (Specular's log service), which the system itself uses; all go to /usr/bin.
-DEVICE_TOOLS := dispctl glspin rumble i2creg memreg status blkro cardlog
+DEVICE_TOOLS := dispctl dispcap glspin rumble i2creg memreg status blkro cardlog
 device-tools: $(addprefix $(B)/tools/,$(DEVICE_TOOLS))
 
 # status: a plain screen of the device's state, which frontend-run falls back to when Specular keeps

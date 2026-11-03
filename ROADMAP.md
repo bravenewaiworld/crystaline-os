@@ -17,11 +17,11 @@ Completed:
 - Panel off/on
 - `FBIO_WAITFORVSYNC` on `/dev/fb0` waits for the next frame
 - Colour (gamma): stock leaves the gamma table off and the colour matrix at identity at its default settings, as we do; nothing to change
+- Vulkan programs no longer tear (seen in the GameCube recompiler): the GPU driver returns their presents only once the frame is on screen (docs/gpu.md); checked on the device with `dispcap` captures of gx-vktest's bar sweep (gcrecomp `tools/tearing-check.sh`)
 - Spare display and video hardware (display layers and scaler, G2D blitter, video decoder): not worth using for now (little latency gain, and shaders, sharp scaling and rotation would be lost)
 
 Built, to test on the device:
 - Brightness no longer runs backwards after deep sleep (the backlight PWM's polarity is rewritten on resume)
-- Three framebuffers, so GPU programs' swapchains get three images and no longer tear (seen in the GameCube recompiler); costs one frame of display latency for every GPU program, Specular included. On the device: the third buffer is allocated; to check that the tearing is gone
 
 TODO:
 - Stop the display's 60-per-second interrupt while nothing is drawn (designed: masked after 3 idle frames, unmasked on any display change or vsync wait, a 110 µs wake-latency limit while on, a kill switch): first the device experiment in the design, then build. Only saves power once Specular stops presenting still screens
