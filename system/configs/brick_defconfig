@@ -44,6 +44,11 @@ BR2_PACKAGE_BLUEZ5_UTILS_CLIENT=y
 BR2_PACKAGE_BLUEZ_ALSA=y
 BR2_PACKAGE_DBUS=y
 
+# Vulkan, for the GameCube games (Tesseract): Khronos' loader, with TrimUI's driver as its one
+# ICD (tools/system/build-system.sh copies the driver; the overlay registers it in
+# /usr/share/vulkan/icd.d). No X11 or Wayland, so the loader has only VK_KHR_display.
+BR2_PACKAGE_VULKAN_LOADER=y
+
 # Networking: WiFi, SSH (OpenSSH: reads the development host keys as they are, and has the SFTP
 # server modern scp uses; ssh-keygen makes a release image's host keys on the device).
 BR2_PACKAGE_WPA_SUPPLICANT=y
