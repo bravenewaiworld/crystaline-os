@@ -8,7 +8,8 @@ kmake() { "$ROOT/tools/mainline/kmake.sh" "$KBUILD" "$@"; }
 # parts every family has: ARM's GPU kernel driver, outside the module index so that mdev never loads
 # it (the start-up hooks do, when it is chosen). The WiFi and Bluetooth firmware come from Buildroot
 # (linux-firmware), and Specular, the installer and the device tools aren't built for it yet
-# (until Specular is, the family's overlay keeps the frontend service down: etc/sv/frontend/down).
+# (until Specular is, the family's overlay keeps the frontend service and its log service, which
+# needs cardlog, down: etc/sv/frontend/down, etc/sv/frontend/log/down).
 add_parts() { put "$B/mali/mali_kbase.ko" /usr/lib/crystaline/mali_kbase.ko 644; }
 
 # The initramfs's programs besides BusyBox and e2fsck: none yet. Without the status screen its
