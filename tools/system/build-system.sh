@@ -127,7 +127,7 @@ if [ "$RELEASE" = 1 ]; then
 	sed -i 's/^root:[^:]*:/root:*:/' "$R/etc/shadow"
 else
 	"$ROOT/tools/system/dev-keys.sh"
-	KEYS=$B/ssh-host-keys
+	KEYS=$ROOT/build/ssh-host-keys
 	for t in rsa ecdsa ed25519; do
 		put "$KEYS/ssh_host_${t}_key" /etc/ssh/ssh_host_${t}_key 600
 		put "$KEYS/ssh_host_${t}_key.pub" /etc/ssh/ssh_host_${t}_key.pub 644
@@ -145,7 +145,7 @@ if is_key "$RELEASE_KEY"; then
 else
 	echo "warning: no release key yet ($RELEASE_KEY): only development update files will install" >&2
 fi
-[ "$RELEASE" = 1 ] || put "$B/ssh-host-keys/update_key.pub" /etc/crystaline/update-keys/dev.pub 644
+[ "$RELEASE" = 1 ] || put "$ROOT/build/ssh-host-keys/update_key.pub" /etc/crystaline/update-keys/dev.pub 644
 
 echo "$VERSION" >"$R/etc/crystaline-version"
 V=$OUT/$VERSION
