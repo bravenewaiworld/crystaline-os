@@ -1,5 +1,5 @@
-# The mainline family's part of build-system.sh, sourced by it (its variables: ROOT, B, R, TMP, V,
-# KBUILD, KERNEL_RELEASE; put). Each family's parts file defines the same names.
+# The mainline family's part of build-system.sh, sourced by it. Each family's parts file defines the
+# same names; tools/system/parts-brick.sh says what build-system.sh gives them.
 
 # kmake ARG...: make for this family's kernel, in $KBUILD.
 kmake() { "$ROOT/tools/mainline/kmake.sh" "$KBUILD" "$@"; }
@@ -16,19 +16,17 @@ INITRAMFS_PROGRAMS=
 
 # make_boot INITRAMFS: this version's boot files in $V, named in BOOT_FILES for the manifest: the
 # kernel, INITRAMFS, and the device tree of each board of the family. A card's boot partition holds
-# them in a slot folder (a/ or b/) that its extlinux.conf names (tools/mainline/build-card.sh).
+# them in a boot slot's folder (a/ or b/) that its extlinux.conf names (tools/mainline/build-card.sh).
 make_boot() {
 	cp "$KBUILD/arch/arm64/boot/Image" "$V/Image"
 	cp "$1" "$V/initramfs.cpio.gz"
 	BOOT_FILES="Image initramfs.cpio.gz"
-	for mk in "$ROOT"/system/board/*/board.mk; do
-		grep -qx 'FAMILY := mainline' "$mk" || continue
-		dtb=dtbs/$(sed -n 's/^DTB := //p' "$mk")
-		install -D -m 644 "$KBUILD/arch/arm64/boot/dts/${dtb#dtbs/}" "$V/$dtb"
-		BOOT_FILES="$BOOT_FILES $dtb"
+	for b in $("$ROOT/tools/system/family-boards.sh" mainline); do
+		dtb=$(sed -n 's/^DTB := //p' "$ROOT/system/board/$b/board.mk")
+		install -D -m 644 "$KBUILD/arch/arm64/boot/dts/$dtb" "$V/dtbs/$dtb"
+		BOOT_FILES="$BOOT_FILES dtbs/$dtb"
 	done
 }
 
-# manifest_extra: this family's fields in manifest.json: its name, so that the other family's
-# installer can tell an update file isn't for it.
-manifest_extra() { printf '"family": "mainline"'; }
+# manifest_extra: this family's fields in manifest.json: none.
+manifest_extra() { :; }

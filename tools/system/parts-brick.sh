@@ -1,15 +1,17 @@
-# The Brick family's part of build-system.sh, sourced by it (its variables: ROOT, B, R, TMP, V,
-# KBUILD, KERNEL_RELEASE; put). Each family's parts file defines the same names.
+# The Brick family's part of build-system.sh, sourced by it. Each family's parts file defines the
+# same names. From build-system.sh: ROOT the checkout, B the family's build folder, R the root
+# filesystem being assembled, TMP a scratch folder, V this version's output folder, KBUILD the
+# kernel's build folder, KERNEL_RELEASE its version; put SRC DEST MODE copies a file into R.
 
 # kmake ARG...: make for this family's kernel, in $KBUILD.
 kmake() { "$ROOT/tools/kmake.sh" "$KBUILD" "$@"; }
 
 # add_parts: what this family adds to the root filesystem besides the kernel's modules and the
-# parts every family has. The GPU driver's modules (extra/, before depmod), padbridge, xr829-attach,
-# the installer and the device tools. TrimUI's binaries come from its firmware: the GPU libraries
-# (with their NULL window system, loaded by name) and firmware, and the XR829's firmware. The Vulkan
-# driver (libVK_IMG, which needs libufwriter, 36 MB) is the ICD of Buildroot's Vulkan loader
-# (docs/gpu.md); TrimUI's own minimal libvulkan is left out.
+# parts every family has: the GPU driver's modules (in extra/; build-system.sh runs depmod after),
+# padbridge, xr829-attach, the installer, the device tools and Specular. TrimUI's binaries come from
+# its firmware: the GPU libraries (with their NULL window system, loaded by name) and firmware, and
+# the XR829's firmware. The Vulkan driver (libVK_IMG, which needs libufwriter, 36 MB) is the ICD (the
+# driver Buildroot's Vulkan loader loads; docs/gpu.md); TrimUI's own minimal libvulkan is left out.
 add_parts() {
 	for ko in "$B"/gpu/*.ko; do put "$ko" "/lib/modules/$KERNEL_RELEASE/extra/${ko##*/}" 644; done
 	put "$B/userspace/padbridge" /usr/bin/padbridge 755

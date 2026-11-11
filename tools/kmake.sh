@@ -1,5 +1,6 @@
 #!/bin/sh
-# Run make for our 4.9 kernel (Allwinner's vendor kernel, linux/) with the right cross compiler.
+# Run make for the Brick family's 4.9 kernel (Allwinner's vendor kernel, linux-brick/) with the
+# right cross compiler. The mainline family's is tools/mainline/kmake.sh.
 # Usage: kmake.sh <build-dir> [make args...]     KERNEL_SRC overrides the source tree.
 # Host flags for building the 2019-era host tools (dtc, kconfig) with a modern GCC:
 # -fcommon accepts dtc's duplicate global definitions; -std=gnu11 avoids the newer C23 default.

@@ -6,8 +6,9 @@
 #               boot ROM and that loader look for them
 #   16 MiB      "bootloader": FAT32, 256 MiB, the partition U-Boot reads (marked legacy-BIOS-
 #               bootable, which U-Boot's distro boot looks for): extlinux/extlinux.conf and a/ (this
-#               version's kernel, initramfs and device trees); b/ is the second slot, for updates
-#   then        "system": ext4, 1 GiB, as on the Brick:
+#               version's kernel, initramfs and device trees); b/, the second boot slot, is made
+#               by the first update
+#   then        "system": ext4, 1 GiB, as on the Brick (tools/system/build-sd-card.sh):
 #                 images/<version>/   that version's files (boot files, rootfs.squashfs, manifest)
 #                 state/  logs/       empty (see system/common/initramfs/init)
 # The initramfs finds the system partition by the filesystem UUID extlinux.conf passes it

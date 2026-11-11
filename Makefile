@@ -15,6 +15,17 @@ include system/board/$(DEVICE)/board.mk
 # inherit it from the command line.
 MAKEOVERRIDES := $(filter-out DEVICE=%,$(MAKEOVERRIDES))
 B := $(ROOT)/build/$(FAMILY)
+FAMILY_BOARDS := $(shell tools/system/family-boards.sh $(FAMILY))
+# Targets only the Brick family has so far: refused for other families, rather than built from the
+# Brick's inputs into the wrong folder.
+BRICK_ONLY := gpu userspace device-tools specular installer stock-fw deploy-specular run-specular \
+	update-file update-device debug-running-release test-installer test-xr829-attach test-dt-edits \
+	test-exfat
+ifneq ($(FAMILY),brick)
+ifneq ($(filter $(BRICK_ONLY),$(MAKECMDGOALS)),)
+$(error $(filter $(BRICK_ONLY),$(MAKECMDGOALS)): not available for DEVICE=$(DEVICE) ($(FAMILY) family) yet)
+endif
+endif
 # $(call env,NAME): NAME's value from tools/env.sh (which keeps any value set in the environment).
 env = $(shell ROOT='$(ROOT)' && . '$(ROOT)/tools/env.sh' && echo "$$$(1)")
 CROSS_COMPILE := $(call env,CROSS_COMPILE)
@@ -40,7 +51,8 @@ help:
 	@echo '                   rootfs.squashfs, manifest.json), also build/<family>/system/latest;'
 	@echo '                   RELEASE=1: a release image (no development SSH key, serial login,'
 	@echo '                   debugging or hardware test tools)'
-	@echo '  sd-card          build/<family>/sd-card.img: an SD card that runs the latest version'
+	@echo '  sd-card          an SD card image that runs the latest version: build/brick/sd-card.img,'
+	@echo '                   or build/<family>/sd-card-<board>.img for other families'
 	@echo '  update-file      build/<family>/updates/crystaline-<version>.update: the latest version as a'
 	@echo '                   signed update file (KEY=<key.pem>, default the development key)'
 	@echo '  update-device    build system, install it on a Brick running our system as an update,'
@@ -69,7 +81,7 @@ help:
 	@echo '  specular       Specular and its emulator cores (the specular/ submodule'"'"'s own build)'
 	@echo '  buildroot      the base system (C library, BusyBox, daemons) with Buildroot'
 	@echo '  stock-fw       TrimUI'"'"'s stock firmware, unpacked into build/brick/stock-fw'
-	@echo '  clean          remove build/<family>/ (build/brick/ for DEVICE=brick)'
+	@echo '  clean          remove build/<family>/'
 
 all: sd-card
 
@@ -117,12 +129,16 @@ $(BUILDROOT_SRC)/.done:
 	@touch $@
 
 # The configuration is regenerated every time from system/common/buildroot.config followed by
-# system/family/$(FAMILY)/buildroot.config, so those files are the only place to change it.
+# system/family/$(FAMILY)/buildroot.config, so those files are the only place to change it. The
+# root filesystem's overlays are added to it: common, the family's, and every board's of the
+# family (each board's names are picked at start-up, so all must be there).
+BR_OVERLAYS := $(foreach l,common family/$(FAMILY) $(addprefix board/,$(FAMILY_BOARDS)),$$(BR2_EXTERNAL_CRYSTALINE_PATH)/$(l)/rootfs-overlay)
 # Buildroot doesn't rebuild a package whose options changed; that needs
 # `make -C $(BUILDROOT_SRC) O=$(B)/buildroot <package>-dirclean` first.
 buildroot: $(BUILDROOT_SRC)/.done
 	@mkdir -p $(B)
 	cat system/common/buildroot.config system/family/$(FAMILY)/buildroot.config >$(B)/buildroot.defconfig
+	echo 'BR2_ROOTFS_OVERLAY="$(BR_OVERLAYS)"' >>$(B)/buildroot.defconfig
 	$(BR) -s BR2_DEFCONFIG=$(B)/buildroot.defconfig defconfig
 	$(BR)
 

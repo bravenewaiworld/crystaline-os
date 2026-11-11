@@ -2,12 +2,13 @@
 # First program the kernel runs (the boot image's initramfs). Mounts the system partition, then
 # this version's read-only system image from it, and hands over to that system's init.
 #
-# Which version runs is decided by the boot image alone, which U-Boot loads from the boot slot its
-# settings name (boot_a or boot_b, passed on as brick.boot=): each boot image carries its own
-# version (/etc/crystaline-version) and mounts images/<that version>/ from the system partition, so the
-# kernel and its modules always match. The system partition is found by its filesystem UUID,
-# which U-Boot's settings put on the command line as root=UUID=... (the same names exist on both
-# the SD card and the internal storage, so names can't tell them apart).
+# Which version runs is decided by the initramfs alone, which U-Boot loads from one of two boot
+# slots: on the Brick, the partition boot_a or boot_b its settings name (passed on as brick.boot=);
+# on mainline boards, the folder a/ or b/ that extlinux.conf names (crystaline.boot=). Each
+# initramfs carries its own version (/etc/crystaline-version) and mounts images/<that version>/
+# from the system partition, so the kernel and its modules always match. The system partition is
+# found by its filesystem UUID, which the kernel command line gives as root=UUID=... (the same
+# names exist on both the SD card and the Brick's internal storage, so names can't tell them apart).
 #
 # System partition (ext4):
 #   images/<version>/rootfs.squashfs   the root filesystem, mounted read-only
