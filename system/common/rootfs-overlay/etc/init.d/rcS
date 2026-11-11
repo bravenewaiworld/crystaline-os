@@ -5,10 +5,16 @@
 # All output of this start-up goes to /system/logs/rcS.log (replaced each boot). The system log
 # isn't running yet, so scripts run from here report on stderr (logger -s).
 exec >/system/logs/rcS.log 2>&1
-# Progress codes (see the initramfs's init).
-progress() { devmem 0x0700011C 32 $((0xB0070000 | $1)) 2>/dev/null; }
+# The family's start-up hooks: progress (codes: see the initramfs's init), start_hardware.
+. /usr/libexec/crystaline/family-hooks
 progress 0x10
 mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
+# The board's names, for the scripts that differ by board (see board-env). Without them those
+# scripts fail, but the services, SSH included, still start.
+mkdir -p /run/crystaline
+if b=$(/usr/libexec/crystaline/board-env); then
+	cp "$b" /run/crystaline/board.env && echo "board: $b"
+fi
 mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /tmp
 mkdir -p /dev/pts /dev/shm
 mount -t devpts devpts /dev/pts
@@ -19,20 +25,12 @@ hostname -F /etc/hostname
 ip link set lo up
 # How the last run ended (/run/crystaline/last-shutdown, for Specular), and this run marked as running.
 /usr/libexec/crystaline/last-shutdown start
-# The outcome of the kernel's device-tree edits, and its log lines about them (docs/boot.md).
-echo "device-tree edits: $(tr -d '\0' </proc/device-tree/chosen/crystaline,dt-edits 2>/dev/null || echo 'none (kernel without them)')"
-dmesg | grep dt-edits
 
 # Devices that appear from now on (USB drives, network interfaces) get their nodes from mdev.
 echo /sbin/mdev >/proc/sys/kernel/hotplug
 mdev -s
 
-# The GPU driver. Other modules are loaded by the services that use them (WiFi).
-modprobe pvrsrvkm
-modprobe dc_sunxi
-# The balanced CPU profile (the top USB port starts on by itself); Specular applies its own choices
-# when it starts.
-crystaline-power profile balanced
+start_hardware
 
 # The kernel's time zone offset, before the card is mounted: the FAT driver converts file times
 # with it (see crystaline-timezone).

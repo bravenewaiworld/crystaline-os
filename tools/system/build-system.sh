@@ -165,7 +165,7 @@ list=$TMP/initramfs.list
 {
 	for d in /dev /proc /sys /system /lower /newroot /bootlog /card /bin /sbin /etc /etc/crystaline \
 		/etc/crystaline/update-keys /lib /usr /usr/bin /usr/sbin /usr/lib /usr/libexec \
-		/usr/libexec/crystaline; do
+		/usr/libexec/crystaline /usr/share /usr/share/crystaline /usr/share/crystaline/boards; do
 		echo "dir $d 755 0 0"
 	done
 	# The recovery menu's crystaline-install checks update files against the same keys as the system
@@ -181,6 +181,12 @@ list=$TMP/initramfs.list
 	echo "nod /dev/console 600 0 0 c 5 1"
 	echo "file /init $COMMON/initramfs/init 755 0 0"
 	echo "file /etc/crystaline-version $R/etc/crystaline-version 644 0 0"
+	# The family's start-up hooks and the boards' names (see init).
+	echo "file /usr/libexec/crystaline/family-hooks $R/usr/libexec/crystaline/family-hooks 644 0 0"
+	echo "file /usr/libexec/crystaline/board-env $R/usr/libexec/crystaline/board-env 755 0 0"
+	for b in "$R"/usr/share/crystaline/boards/*.env; do
+		echo "file /usr/share/crystaline/boards/${b##*/} $b 644 0 0"
+	done
 	# The recovery menu mounts the SD card with mount-card's options, which name www-data's group:
 	# as a number, since the initramfs has no user database.
 	echo "file /usr/libexec/crystaline/card-options $R/usr/libexec/crystaline/card-options 644 0 0"
@@ -207,7 +213,7 @@ need /sbin/e2fsck
 need /usr/bin/status
 need /usr/sbin/crystaline-install
 for a in sh mount umount mkdir cat sed sleep findfs watchdog reboot poweroff switch_root cp echo ln \
-	devmem grep dmesg ps sync kill tee date ls sort head rm; do
+	devmem grep dmesg ps sync kill tee date ls sort head rm tr; do
 	echo "slink /bin/$a busybox 777 0 0" >>"$list"
 done
 "$KBUILD/usr/gen_init_cpio" "$list" >"$TMP/initramfs.cpio"

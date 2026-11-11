@@ -15,11 +15,12 @@
 # its log makes the same decisions.
 # Asleep, the power chip's low-battery interrupt wakes the device when the gauge drops to EMPTY %
 # (dt-tweaks.sh sets the chip's level to match), and sleepnow powers off.
-# For testing (tools/system/test-battery-guard.sh): PSU, the power-supply directory to read
-# instead of /sys/class/power_supply; DRY_RUN=1, log the power-off instead of doing it; INTERVAL,
-# the seconds between samples.
+# For testing (tools/system/test-battery-guard.sh): BOARD_ENV, the board's names to use; PSU, the
+# power-supply directory to read instead of /sys/class/power_supply; DRY_RUN=1, log the power-off
+# instead of doing it; INTERVAL, the seconds between samples.
 set -u
-BAT=${PSU:-/sys/class/power_supply}/axp2202-battery
+. "${BOARD_ENV:-/run/crystaline/board.env}"	# BOARD_BATTERY (board-env)
+BAT=${PSU:-/sys/class/power_supply}/$BOARD_BATTERY
 INTERVAL=${INTERVAL:-30}
 # Empty: the gauge at or below EMPTY % with the voltage at or below EMPTY_UV, or the voltage at or
 # below FLOOR_UV whatever the gauge says. The voltage check keeps a confused gauge (e.g. 0-1 % at

@@ -14,6 +14,7 @@
 # unmount, or by /system).
 # Debugging: touch /run/card/trace to have each run's commands traced (sh -x) into it.
 R=${MOUNT_CARD_ROOT-}	# a fake root for tools/system/test-mount-card.sh; empty on the device
+. "${BOARD_ENV:-/run/crystaline/board.env}"	# BOARD_*: this board's names (board-env)
 MNT=$R/mnt/SDCARD RUN=$R/run/card GUIDES=$R/usr/share/crystaline/card-guides
 log() { logger -s -t mount-card "$*"; }
 
@@ -31,9 +32,9 @@ holds_dev() {
 holds_system() { [ -n "$sys" ] && [ -n "$disk" ] && [ -n "$(holds_dev $sys)" ]; }
 # gone: whether the card has been removed since this run found it.
 gone() { [ ! -e $R/sys/block/$disk ]; }
-# card_disk: the disk (e.g. mmcblk1) on the SD card controller (sdc0), if a card is in.
+# card_disk: the disk (e.g. mmcblk1) on the SD card controller (BOARD_CARD_CONTROLLER), if a card is in.
 card_disk() {
-	set -- $R/sys/bus/platform/devices/sdc0/mmc_host/mmc*/mmc*:*/block/mmcblk*
+	set -- $R/sys/bus/platform/devices/$BOARD_CARD_CONTROLLER/mmc_host/mmc*/mmc*:*/block/mmcblk*
 	[ -e "$1" ] && echo ${1##*/}
 }
 # fs_type NAME: the filesystem on /dev/NAME (vfat, exfat, …; empty if none). -p reads the device
@@ -48,7 +49,7 @@ usable() { case $(fs_type $1) in vfat | exfat) ;; *) return 1 ;; esac; }
 # what still works, what to do.
 message() {
 	again="Take the card out and insert it again"
-	holds_system && again="Restart the Brick"	# pulling the system's own card turns it off
+	holds_system && again="Restart the $BOARD_NAME"	# pulling the system's own card turns it off
 	pc_repair="Repair the card on a PC (on Windows: the card's Properties, Tools, Check)"
 	case "$*" in
 	absent)	echo "No SD card. Insert the SD card with your games: games, saves and settings are all kept on it." ;;
@@ -72,13 +73,13 @@ message() {
 	"failed mount")
 		echo "This SD card's files can't be read: its filesystem is damaged or not supported. $pc_repair, or format it as FAT32 or exFAT (this erases it)." ;;
 	"failed not-set-up")
-		echo "This SD card has Crystaline OS written to it, but it hasn't been set up yet. Restart the Brick with this card in to finish setting it up." ;;
+		echo "This SD card has Crystaline OS written to it, but it hasn't been set up yet. Restart the $BOARD_NAME with this card in to finish setting it up." ;;
 	"failed partition")
-		echo "The SD card couldn't be set up for games. Restart the Brick to try again; if it fails again, write Crystaline OS to the card again (this erases the card, which holds no games yet)." ;;
+		echo "The SD card couldn't be set up for games. Restart the $BOARD_NAME to try again; if it fails again, write Crystaline OS to the card again (this erases the card, which holds no games yet)." ;;
 	"failed too-small")
 		echo "This SD card is too small for Crystaline OS, which needs a card of at least 2 GB. Write Crystaline OS to a bigger card." ;;
 	"failed system-card-removed")
-		echo "The SD card holding the system was removed, so the Brick turned off. Insert the card and turn the Brick on again." ;;
+		echo "The SD card holding the system was removed, so the $BOARD_NAME turned off. Insert the card and turn the $BOARD_NAME on again." ;;
 	esac
 }
 
@@ -156,7 +157,7 @@ data_partition() {
 		# repaired on a PC).
 		if [ -z "$(fs_type $p)" ] && [ "$(dd if=$R/dev/$p bs=1 skip=3154 count=5 2>/dev/null)" != FAT32 ]; then
 			log "formatting $p"
-			mkfs.fat -F 32 -n BRICK $R/dev/$p >/dev/null || return 2
+			mkfs.fat -F 32 -n $BOARD_CARD_LABEL $R/dev/$p >/dev/null || return 2
 			echo $p; return
 		fi
 	fi
@@ -229,7 +230,7 @@ sync_card() {
 	cid= part= type= check= disk=
 	sys=$(mounted_dev $R/system)
 	# The system's own card was pulled: nothing on it can be reached any more (the system log's
-	# file included), so the Brick turns off. Nothing is done to whatever card is in the slot now.
+	# file included), so the device turns off. Nothing is done to whatever card is in the slot now.
 	# <2>: the kernel log's "critical" level, so the line reaches the serial console.
 	if [ -n "$sys" ] && ! grep -qx "$sys" $R/sys/class/block/*/dev; then
 		echo "<2>mount-card: the SD card holding the system was removed; turning off" >$R/dev/kmsg
