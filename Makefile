@@ -40,7 +40,7 @@ CFLAGS := -O2 -Wall -Wextra $(if $(DEBUG),-g)
 # glibc also needs the unwinder (-lgcc_eh).
 STATIC := -static $(if $(DEBUG),,-s) -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 
-.PHONY: help all kernel gpu userspace specular installer device-tools buildroot system \
+.PHONY: help all kernel mali gpu userspace specular installer device-tools buildroot system \
 	sd-card update-file update-device debug-running-release deploy-specular run-specular test-installer test-battery-guard \
 	test-mount-card test-board-env test-last-shutdown test-cardlog test-xr829-attach test-timezone test-dt-edits test-exfat stock-fw install-image clean
 
@@ -96,6 +96,10 @@ ifeq ($(FAMILY),mainline)
 # (tools/mainline/kmake.sh).
 kernel:
 	tools/mainline/kmake.sh $(B)/kernel
+
+# ARM's Mali kernel driver, the optional alternative to Panfrost (tools/mainline/build-mali.sh).
+mali: kernel
+	tools/mainline/build-mali.sh
 else
 # The Brick's device-tree edits are made from the device tree in TrimUI's boot package
 # (tools/kmake.sh). The configuration is regenerated from trimui_brick_defconfig every time, as

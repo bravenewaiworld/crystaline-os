@@ -18,6 +18,10 @@
 # 16 MiB of a ROCKNIX 20260601 card for these boards (dd if=<card> bs=1M count=16), whose sectors 64
 # to 32767 hold them. No download address: put it in place by hand (it is checked).
 : "${RK3566_UBOOT:=$ROOT/third-party/rocknix-uboot-20260601/first16M.img}"
+# ARM's kernel driver for Mali Bifrost GPUs (mali_kbase), ROCKNIX's copy with its fixes for newer
+# kernels (github.com/rocknix/mali_kbase): the optional alternative to Panfrost on mainline boards,
+# for ARM's own GL ES and Vulkan libraries (tools/mainline/build-mali.sh).
+: "${MALI_KBASE_SRC:=$ROOT/third-party/mali-kbase}"
 # The OpenWrt gcc wrapper warns when this is unset; its value is unused.
 : "${STAGING_DIR:=/tmp}"
-export CROSS_COMPILE GPU_SRC DUFS STOCK_FW RK3566_UBOOT STAGING_DIR
+export CROSS_COMPILE GPU_SRC DUFS STOCK_FW RK3566_UBOOT MALI_KBASE_SRC STAGING_DIR
