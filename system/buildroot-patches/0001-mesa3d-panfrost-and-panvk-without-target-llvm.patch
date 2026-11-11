@@ -4,7 +4,8 @@ Buildroot's Panfrost option asks for Mesa's LLVM support, and its shader precomp
 selects OpenCL and the SPIR-V/LLVM translator for the target: LLVM, clang and libclc on the
 device, which Panfrost never uses. The precompiling runs on the build machine (host-mesa3d's
 mesa_clc and panfrost_compile), so the target needs only spirv-tools. Also adds an option for
-the Panfrost Vulkan driver (PanVK), which Buildroot doesn't offer.
+the Panfrost Vulkan driver (PanVK), which Buildroot doesn't offer, and builds the host Mesa with
+the same C++ RTTI setting as host-llvm (its configure refuses a mismatch).
 
 diff -ru a/package/mesa3d/Config.in b/package/mesa3d/Config.in
 --- a/package/mesa3d/Config.in	2026-11-11 15:20:31.638816344 -0500
@@ -57,7 +58,7 @@ diff -ru a/package/mesa3d/Config.in b/package/mesa3d/Config.in
  	depends on BR2_PACKAGE_MESA3D_LLVM
 diff -ru a/package/mesa3d/mesa3d.mk b/package/mesa3d/mesa3d.mk
 --- a/package/mesa3d/mesa3d.mk	2026-11-11 15:20:31.638880238 -0500
-+++ b/package/mesa3d/mesa3d.mk	2026-11-11 15:20:31.648324851 -0500
++++ b/package/mesa3d/mesa3d.mk	2026-11-11 15:55:51.061797509 -0500
 @@ -131,6 +131,7 @@
  MESA3D_VULKAN_DRIVERS-$(BR2_PACKAGE_MESA3D_VULKAN_DRIVER_BROADCOM) += broadcom
  MESA3D_VULKAN_DRIVERS-$(BR2_PACKAGE_MESA3D_VULKAN_DRIVER_IMAGINATION) += imagination
@@ -75,3 +76,25 @@ diff -ru a/package/mesa3d/mesa3d.mk b/package/mesa3d/mesa3d.mk
  endif
  
  ifeq ($(BR2_PACKAGE_MESA3D_VULKAN_DRIVER),)
+@@ -298,6 +299,13 @@
+ HOST_MESA3D_CONF_ENV = \
+ 	LLVM_CONFIG="$(HOST_DIR)/bin/llvm-config"
+ 
++# Mesa's C++ must match host-llvm's RTTI setting, or its configure refuses.
++ifeq ($(BR2_PACKAGE_LLVM_RTTI),y)
++HOST_MESA3D_CPP_RTTI = true
++else
++HOST_MESA3D_CPP_RTTI = false
++endif
++
+ HOST_MESA3D_CONF_OPTS = \
+ 	-Dglvnd=disabled \
+ 	-Dgallium-drivers=$(subst $(space),$(comma),$(HOST_MESA3D_GALLIUM_DRIVERS-y)) \
+@@ -308,6 +316,7 @@
+ 	-Dplatforms= \
+ 	-Dprecomp-compiler=enabled \
+ 	-Dglx=disabled \
++	-Dcpp_rtti=$(HOST_MESA3D_CPP_RTTI) \
+ 	-Dvulkan-drivers=""
+ 
+ HOST_MESA3D_DEPENDENCIES = \
