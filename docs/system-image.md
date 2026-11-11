@@ -35,7 +35,7 @@ The system that runs on the Brick: how it is built, what it contains, how it sta
 
 ```
 make system
-  Buildroot (system/configs/brick_defconfig)  → rootfs.tar (base)
+  Buildroot (system/*/buildroot.config)       → rootfs.tar (base)
   + kernel modules, GPU modules, padbridge, xr829-attach, crystaline-install, device tools, dufs and
     our page for it, Specular + cores + fonts, frontend-run
   + TrimUI's: GPU libraries (EGL, GLESv2, NULL window system, …), rgx.* and *xr829* firmware

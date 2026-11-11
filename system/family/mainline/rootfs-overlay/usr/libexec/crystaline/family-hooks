@@ -1,0 +1,21 @@
+# What start-up does differently in the mainline family. Sourced by the initramfs's init and by rcS,
+# which call these functions; every family defines all of them.
+
+# progress CODE: record how far start-up got (the codes are listed in the initramfs's init) as a
+# kernel log line. The kernel keeps its log in RAM across a warm reset (ramoops), so after a start
+# that failed without a message, the next start's /system/logs/crash-*/ or /sys/fs/pstore has it:
+# grep 'crystaline-progress'.
+progress() { printf 'crystaline-progress %04x\n' $(($1)) >/dev/kmsg 2>/dev/null; }
+
+# start_hardware: rcS, before the data card is mounted. Nothing yet: mdev loads the drivers the
+# device tree asks for (the GPU's among them).
+start_hardware() { :; }
+
+# rescue: the initramfs's start-up has failed for good (its message is on screen, and the recovery
+# menu, if it could be shown, was left). The board's status LED blinks, so a failure shows even
+# when the screen doesn't.
+rescue() {
+	for led in /sys/class/leds/*:status; do
+		[ -e "$led/trigger" ] && echo timer >"$led/trigger"
+	done
+}

@@ -15,7 +15,8 @@ on:
     # On main, what the cache keys below are made from (GitHub doesn't apply paths to tags). The
     # Makefile is here for BUILDROOT_VERSION, so any change to it builds once more.
     paths:
-      - system/configs/brick_defconfig
+      - system/common/buildroot.config
+      - system/family/brick/buildroot.config
       - system/Config.in
       - system/external.*
       - system/package/**
@@ -106,7 +107,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: build/downloads
-          key: downloads-${{ steps.buildroot.outputs.version }}-${{ hashFiles('system/configs/brick_defconfig') }}
+          key: downloads-${{ steps.buildroot.outputs.version }}-${{ hashFiles('system/common/buildroot.config', 'system/family/brick/buildroot.config') }}
           restore-keys: downloads-
 
       # Only an exact match: Buildroot doesn't rebuild a package whose options changed. The rootfs
@@ -118,7 +119,7 @@ jobs:
           path: |
             build/brick/buildroot
             build/buildroot-${{ steps.buildroot.outputs.version }}
-          key: buildroot-${{ steps.buildroot.outputs.version }}-${{ hashFiles('system/configs/brick_defconfig', 'system/Config.in', 'system/external.*', 'system/package/**', 'system/patches/**', 'system/common/busybox.fragment') }}
+          key: buildroot-${{ steps.buildroot.outputs.version }}-${{ hashFiles('system/common/buildroot.config', 'system/family/brick/buildroot.config', 'system/Config.in', 'system/external.*', 'system/package/**', 'system/patches/**', 'system/common/busybox.fragment') }}
 
       - name: Fetch the third-party inputs
         env:

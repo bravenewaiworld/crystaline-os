@@ -33,8 +33,9 @@ if pick >/dev/null; then fail "no compatible property: should fail"; fi
 # Every real board description: the names the scripts read, and a FAT label mkfs.fat accepts.
 for f in "$ROOT"/system/board/*/rootfs-overlay/usr/share/crystaline/boards/*.env; do
 	(
-		set +u
-		. "$f"
+		set +eu	# report every problem with this file, not stop at the first
+		. "$f" 2>$T/source.err
+		[ ! -s $T/source.err ] || echo "FAIL: ${f#$ROOT/}: sourcing it printed: $(cat $T/source.err)"
 		for v in BOARD_COMPATIBLE BOARD_NAME BOARD_CARD_CONTROLLER BOARD_CARD_LABEL BOARD_BATTERY; do
 			[ -n "${!v}" ] || echo "FAIL: ${f#$ROOT/}: $v is empty"
 		done

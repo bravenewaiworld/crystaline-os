@@ -15,7 +15,6 @@ include system/board/$(DEVICE)/board.mk
 # inherit it from the command line.
 MAKEOVERRIDES := $(filter-out DEVICE=%,$(MAKEOVERRIDES))
 B := $(ROOT)/build/$(FAMILY)
-BUILDROOT_DEFCONFIG := $(FAMILY)_defconfig
 # $(call env,NAME): NAME's value from tools/env.sh (which keeps any value set in the environment).
 env = $(shell ROOT='$(ROOT)' && . '$(ROOT)/tools/env.sh' && echo "$$$(1)")
 CROSS_COMPILE := $(call env,CROSS_COMPILE)
@@ -109,11 +108,14 @@ $(BUILDROOT_SRC)/.done:
 	tar xf $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz -C $(ROOT)/build
 	@touch $@
 
-# The configuration is regenerated from system/configs/$(BUILDROOT_DEFCONFIG) every time, so that
-# file is the only place to change it. Buildroot doesn't rebuild a package whose options changed;
-# that needs `make -C $(BUILDROOT_SRC) O=$(B)/buildroot <package>-dirclean` first.
+# The configuration is regenerated every time from system/common/buildroot.config followed by
+# system/family/$(FAMILY)/buildroot.config, so those files are the only place to change it.
+# Buildroot doesn't rebuild a package whose options changed; that needs
+# `make -C $(BUILDROOT_SRC) O=$(B)/buildroot <package>-dirclean` first.
 buildroot: $(BUILDROOT_SRC)/.done
-	$(BR) -s $(BUILDROOT_DEFCONFIG)
+	@mkdir -p $(B)
+	cat system/common/buildroot.config system/family/$(FAMILY)/buildroot.config >$(B)/buildroot.defconfig
+	$(BR) -s BR2_DEFCONFIG=$(B)/buildroot.defconfig defconfig
 	$(BR)
 
 # --- Userspace services -------------------------------------------------------------------
