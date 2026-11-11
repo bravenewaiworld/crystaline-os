@@ -229,7 +229,7 @@ $(B)/stock-root/.done: $(B)/stock-fw/rootfs.fex
 RELEASE ?= 0
 # What each family's system is made of (tools/system/parts-<family>.sh adds them to the image).
 SYSTEM_PARTS_brick := gpu userspace device-tools specular installer $(B)/stock-root/.done
-SYSTEM_PARTS_mainline :=
+SYSTEM_PARTS_mainline := mali
 system: buildroot kernel $(SYSTEM_PARTS_$(FAMILY))
 	FAMILY=$(FAMILY) RELEASE=$(RELEASE) tools/system/build-system.sh $(B)/system
 

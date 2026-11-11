@@ -5,10 +5,11 @@
 kmake() { "$ROOT/tools/mainline/kmake.sh" "$KBUILD" "$@"; }
 
 # add_parts: what this family adds to the root filesystem besides the kernel's modules and the
-# parts every family has. Nothing yet: the WiFi and Bluetooth firmware come from Buildroot
+# parts every family has: ARM's GPU kernel driver, outside the module index so that mdev never loads
+# it (the start-up hooks do, when it is chosen). The WiFi and Bluetooth firmware come from Buildroot
 # (linux-firmware), and Specular, the installer and the device tools aren't built for it yet
 # (until Specular is, the family's overlay keeps the frontend service down: etc/sv/frontend/down).
-add_parts() { :; }
+add_parts() { put "$B/mali/mali_kbase.ko" /usr/lib/crystaline/mali_kbase.ko 644; }
 
 # The initramfs's programs besides BusyBox and e2fsck: none yet. Without the status screen its
 # messages go only to the kernel log, and there is no recovery menu.

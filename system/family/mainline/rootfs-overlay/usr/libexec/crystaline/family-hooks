@@ -8,9 +8,22 @@
 # grep 'crystaline-progress'.
 progress() { printf 'crystaline-progress %04x\n' $(($1)) >/dev/kmsg 2>/dev/null; }
 
-# start_hardware: rcS, before the data card is mounted. Nothing yet: mdev loads the drivers the
-# device tree asks for (the GPU's among them).
-start_hardware() { :; }
+# start_hardware: rcS, before the data card is mounted. mdev has loaded the drivers the device tree
+# asks for, Mesa's GPU driver (panfrost) among them. When /system/state/gpu-driver says "mali"
+# (crystaline-gpu), ARM's driver replaces it: its kernel module (kept out of the module index, so
+# mdev never loads it), its libraries over Mesa's, and its Vulkan driver and window-system layer as
+# the only ones the Vulkan loader sees. Bind mounts, so nothing changes on disk; a failure on the
+# way leaves Mesa's driver in use.
+start_hardware() {
+	[ "$(cat /system/state/gpu-driver 2>/dev/null)" = mali ] || { echo "GPU driver: panfrost (Mesa)"; return; }
+	rmmod panfrost && insmod /usr/lib/crystaline/mali_kbase.ko ||
+		{ echo "GPU driver: can't switch to mali_kbase; panfrost stays"; modprobe panfrost; return; }
+	for l in /usr/lib/mali/lib*.so.*; do
+		[ -e "/usr/lib/${l##*/}" ] && mount --bind "$l" "/usr/lib/${l##*/}"
+	done
+	mount --bind /usr/share/crystaline/mali/vulkan /usr/share/vulkan
+	echo "GPU driver: mali (ARM's libmali)"
+}
 
 # rescue: the initramfs's start-up has failed for good; its message is already on screen. The last
 # chance to make the failure visible another way: the board's status LED blinks, so a failure shows
