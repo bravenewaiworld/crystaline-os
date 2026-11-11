@@ -86,6 +86,9 @@ git_source gpu-km-tsp https://github.com/pocketforge-os/gpu-km-tsp.git \
 	fbb38f3f712a9b151f7482450bafd939b8269ae8 . 07036e416a7556bde03b16432f8d841ffa8ab0d3
 download trimui-firmware-v1.1.1/trimui_tg3040.awimg "${TRIMUI_FW_URL:-}" \
 	d9189936b941c39160cd33f2993c1f3ab0e3648f87b203fb6290ec835f2f8d98
+# Taken from a ROCKNIX card by hand (tools/env.sh, RK3566_UBOOT); only checked.
+download rocknix-uboot-20260601/first16M.img "" \
+	460de5d70672a2d02a358061e192972d0755ee16dbdbcdbfcec8aed5a6a4f332
 
 DUFS_TAR=dufs-v0.46.0/dufs-v0.46.0-aarch64-unknown-linux-musl.tar.gz
 download $DUFS_TAR https://github.com/sigoden/dufs/releases/download/v0.46.0/${DUFS_TAR#*/} \

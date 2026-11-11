@@ -1,26 +1,26 @@
 #!/bin/sh
-# Assemble one version of the system: Buildroot's base root filesystem plus our parts, as
+# Assemble one version of the system for the family FAMILY (from the environment; default brick):
+# Buildroot's base root filesystem plus our parts, as
 #   $OUT/<version>/rootfs.squashfs   the root filesystem (zstd), mounted read-only on the device
-#   $OUT/<version>/boot.img          our kernel + initramfs (system/common/initramfs/init),
-#                                    written to a boot slot to run this version
-#   $OUT/<version>/manifest.json     version, git commit, build time, release or development,
-#                                    whether the kernel makes our device-tree changes (dt_edits),
-#                                    sizes and SHA-256 of both
+#   $OUT/<version>/<boot files>      our kernel + initramfs (system/common/initramfs/init) as the
+#                                    family's boot chain loads them (make_boot in parts-$FAMILY.sh)
+#   $OUT/<version>/manifest.json     version, git commit, build time, release or development, the
+#                                    family's own fields, sizes and SHA-256 of every file
 # and points $OUT/latest at it. Prints the version.
 #
 # Our parts are built by the top-level Makefile, never by Buildroot, so changing them needs no
-# Buildroot rebuild: the kernel and its modules, the GPU driver, Specular and its cores, padbridge,
-# xr829-attach, the device tools and the installer. TrimUI's binaries come from its firmware: the
-# GPU libraries and firmware, and the XR829's WiFi/Bluetooth firmware.
+# Buildroot rebuild. What differs by family (its kernel, its own programs and binaries, its boot
+# files) is in tools/system/parts-<family>.sh, sourced below.
 # RELEASE=1 (from the environment; `make system RELEASE=1`) builds a release image, without the
 # checkout's SSH keys, the serial-console login, and the debugging and hardware test tools a
 # development image (the default) has: see "Debugging tools" and "SSH and root" below.
 #
 # Runs without root rights: the base is unpacked as the current user, then packed from a tar
 # stream that restores Buildroot's owners (tar-with-owners.py; our files are root's).
-# Usage: [RELEASE=1] build-system.sh <out-dir>
+# Usage: [FAMILY=<family>] [RELEASE=1] build-system.sh <out-dir>
 set -eu
 OUT=$1
+FAMILY=${FAMILY:-brick}
 RELEASE=${RELEASE:-0}
 case $RELEASE in 0 | 1) ;; *) echo "RELEASE must be 0 or 1, not '$RELEASE'" >&2; exit 1 ;; esac
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -46,6 +46,8 @@ commit=$(git -C "$ROOT" rev-parse --short HEAD)
 VERSION=$(date -u +%Y%m%d-%H%M%S)-$commit$dirty
 KERNEL_RELEASE=$(cat "$KBUILD/include/config/kernel.release")
 R=$TMP/root
+V=$OUT/$VERSION
+. "$ROOT/tools/system/parts-$FAMILY.sh"
 
 # --- Base -------------------------------------------------------------------------------------
 mkdir -p "$R"
@@ -55,39 +57,18 @@ tar xf "$BR/images/rootfs.tar" -C "$R"
 # put SRC DEST MODE: copy a file into the root filesystem.
 put() { install -D -m "$3" "$1" "$R$2"; }
 
-# Kernel modules, the GPU driver's in extra/, and their dependency lists for modprobe.
-"$ROOT/tools/kmake.sh" "$KBUILD" modules_install INSTALL_MOD_PATH="$R" INSTALL_MOD_STRIP=1 \
-	DEPMOD=true >/dev/null
-for ko in "$B"/gpu/*.ko; do put "$ko" "/lib/modules/$KERNEL_RELEASE/extra/${ko##*/}" 644; done
+# Kernel modules, the family's parts (its own modules among them), and the modules' dependency
+# lists for modprobe.
+kmake modules_install INSTALL_MOD_PATH="$R" INSTALL_MOD_STRIP=1 DEPMOD=true >/dev/null
+add_parts
 rm -f "$R/lib/modules/$KERNEL_RELEASE/build" "$R/lib/modules/$KERNEL_RELEASE/source"
 "$HOST/depmod" -b "$R" "$KERNEL_RELEASE"
 
-put "$B/userspace/padbridge" /usr/bin/padbridge 755
-put "$B/userspace/xr829-attach" /usr/bin/xr829-attach 755
-put "$B/installer/aarch64-unknown-linux-gnu/release/crystaline-install" /usr/sbin/crystaline-install 755
-for f in "$B"/tools/* "$ROOT/tools/device/powertest" "$ROOT/tools/device/sleepnow"; do
-	put "$f" "/usr/bin/${f##*/}" 755
-done
 put "$DUFS" /usr/bin/dufs 755
 # Our browser page for dufs (--assets in etc/sv/webdav/run). dufs tells browsers to keep the page's
 # script and style forever, so index.html asks for them with the version in their addresses.
 for f in "$COMMON"/webui/*; do put "$f" "/usr/share/crystaline-web/${f##*/}" 644; done
 sed -i "s/@VERSION@/$VERSION/g" "$R/usr/share/crystaline-web/index.html"
-# Specular, its cores and fonts, as its own Makefile installed them (SPECULAR_STAGE in the Makefile).
-cp -R "$B/specular-install/." "$R/"
-
-# TrimUI's GPU libraries (with their NULL window system, loaded by name) and firmware, and the
-# XR829's firmware. Only these come from TrimUI's system. The Vulkan driver (libVK_IMG, which
-# needs libufwriter, 36 MB) is the ICD of Buildroot's Vulkan loader (docs/gpu.md); TrimUI's own
-# minimal libvulkan is left out.
-for l in libEGL.so libEGL.so.1 libGLESv2.so libGLESv2.so.2 libIMGegl.so libsrv_um.so \
-	libglslcompiler.so libusc.so libpvrNULL_WSEGL.so libVK_IMG.so libVK_IMG.so.1 libufwriter.so; do
-	cp -P "$B/stock-root/usr/lib/$l" "$R/usr/lib/$l"
-done
-mkdir -p "$TMP/stock"
-debugfs -R "rdump /lib/firmware $TMP/stock" "$B/stock-fw/rootfs.fex" 2>/dev/null
-mkdir -p "$R/lib/firmware"
-cp "$TMP"/stock/firmware/*xr829* "$TMP"/stock/firmware/rgx.* "$R/lib/firmware/"
 
 # --- Debugging tools --------------------------------------------------------------------------
 # Release images leave out the debugging and hardware test tools in debug-tools.list, which `make
@@ -148,7 +129,6 @@ fi
 [ "$RELEASE" = 1 ] || put "$ROOT/build/ssh-host-keys/update_key.pub" /etc/crystaline/update-keys/dev.pub 644
 
 echo "$VERSION" >"$R/etc/crystaline-version"
-V=$OUT/$VERSION
 mkdir -p "$V"
 # usr/bin/dufs: gets the right to listen on port 80, as it runs as a normal user (etc/sv/webdav).
 # -root-*: the tar has no entry for the root directory itself.
@@ -210,8 +190,7 @@ need() {
 }
 need /bin/busybox
 need /sbin/e2fsck
-need /usr/bin/status
-need /usr/sbin/crystaline-install
+for p in $INITRAMFS_PROGRAMS; do need "$p"; done
 for a in sh mount umount mkdir cat sed sleep findfs watchdog reboot poweroff switch_root cp echo ln \
 	devmem grep dmesg ps sync kill tee date ls sort head rm tr; do
 	echo "slink /bin/$a busybox 777 0 0" >>"$list"
@@ -219,25 +198,17 @@ done
 "$KBUILD/usr/gen_init_cpio" "$list" >"$TMP/initramfs.cpio"
 gzip -9 "$TMP/initramfs.cpio"
 
-# --- Boot image -------------------------------------------------------------------------------
-# Appended to U-Boot's boot arguments (for these, the last occurrence wins):
-# - rdinit=/init: TrimUI's U-Boot settings pass rdinit=/rdinit; this runs our initramfs's /init;
-# - a 1 MiB kernel log buffer (TrimUI's config has 16 KiB, which loses early messages);
-# - only warnings and worse on the serial console: at 115200 baud each line holds a CPU and the
-#   console lock for about 5 ms, which the GPU's display module needs on every flip.
-python3 -I "$ROOT/tools/sdboot/mkbootimg.py" --ramdisk "$TMP/initramfs.cpio.gz" "$B/stock-fw/boot.fex" \
-	"$KBUILD/arch/arm64/boot/Image" "$V/boot.img" "rdinit=/init log_buf_len=1M loglevel=4" >/dev/null
-
-# --- Manifest ---------------------------------------------------------------------------------
-# dt_edits: the kernel makes our device-tree changes itself (CONFIG_OF_EDITS), so this version runs
-# with TrimUI's boot package unchanged; crystaline-install refuses versions without it.
-DT_EDITS=$(grep -q '^CONFIG_OF_EDITS=y' "$KBUILD/.config" && echo true || echo false)
+# --- Boot files and manifest ------------------------------------------------------------------
+make_boot "$TMP/initramfs.cpio.gz"
 entry() { printf '"%s": { "size": %s, "sha256": "%s" }' "$1" "$(stat -c%s "$V/$1")" \
 	"$(sha256sum "$V/$1" | cut -d' ' -f1)"; }
+files=
+for f in $BOOT_FILES rootfs.squashfs; do files="$files${files:+, }$(entry "$f")"; done
+extra=$(manifest_extra)
 cat >"$V/manifest.json" <<EOF
 { "version": "$VERSION", "commit": "$commit$dirty", "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "kernel": "$KERNEL_RELEASE", "release": $([ "$RELEASE" = 1 ] && echo true || echo false), "dt_edits": $DT_EDITS,
-  "files": { $(entry boot.img), $(entry rootfs.squashfs) } }
+  "kernel": "$KERNEL_RELEASE", "release": $([ "$RELEASE" = 1 ] && echo true || echo false),${extra:+ $extra,}
+  "files": { $files } }
 EOF
 ln -sfn "$VERSION" "$OUT/latest"
 echo "$VERSION"

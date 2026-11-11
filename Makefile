@@ -201,11 +201,20 @@ $(B)/stock-root/.done: $(B)/stock-fw/rootfs.fex
 # Always run: each build is a new version (named by time and git commit). RELEASE=1 makes a
 # release image (build-system.sh says what differs); sd-card and update-device take it too.
 RELEASE ?= 0
-system: buildroot kernel gpu userspace device-tools specular installer $(B)/stock-root/.done
-	RELEASE=$(RELEASE) tools/system/build-system.sh $(B)/system
+# What each family's system is made of (tools/system/parts-<family>.sh adds them to the image).
+SYSTEM_PARTS_brick := gpu userspace device-tools specular installer $(B)/stock-root/.done
+SYSTEM_PARTS_mainline :=
+system: buildroot kernel $(SYSTEM_PARTS_$(FAMILY))
+	FAMILY=$(FAMILY) RELEASE=$(RELEASE) tools/system/build-system.sh $(B)/system
 
+# The card image for DEVICE: the Brick's own layout, or a mainline board's (its DTB from board.mk).
+ifeq ($(FAMILY),mainline)
+sd-card: system
+	tools/mainline/build-card.sh $(B)/system/latest $(DTB) $(B)/sd-card-$(DEVICE).img
+else
 sd-card: system
 	tools/system/build-sd-card.sh $(B)/system/latest $(B)/sd-card.img
+endif
 
 # KEY: the private key that signs update files (sign-update.sh); without it, this checkout's
 # development key, which only development systems trust.
