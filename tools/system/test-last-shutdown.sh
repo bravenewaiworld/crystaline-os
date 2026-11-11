@@ -1,12 +1,12 @@
 #!/bin/bash
-# Tests last-shutdown (system/board/brick/rootfs-overlay/usr/libexec/crystaline/last-shutdown) on the PC,
+# Tests last-shutdown (system/common/rootfs-overlay/usr/libexec/crystaline/last-shutdown) on the PC,
 # against a fake root (LAST_SHUTDOWN_ROOT): what each way a run can end leaves in
 # /run/crystaline/last-shutdown at the next start. Uses BusyBox's shell if busybox is on the PATH (make
 # test-last-shutdown puts the PC build of the device's BusyBox there), else the PC's. Prints PASS or the first failure.
 # Usage: test-last-shutdown.sh
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-CMD=$ROOT/system/board/brick/rootfs-overlay/usr/libexec/crystaline/last-shutdown
+CMD=$ROOT/system/common/rootfs-overlay/usr/libexec/crystaline/last-shutdown
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 SH=sh; command -v busybox >/dev/null && SH="busybox sh"
 export LAST_SHUTDOWN_ROOT=$T

@@ -36,7 +36,7 @@ index  position                        colour order
 
 - Each brightness write sends one frame, from LED 0 up to the LED written (the whole chain when the supply has just come on, since unpowered LEDs hold nothing). A single lock serialises the frames. After deep sleep the driver sends the stored colours again, because the controller and the LEDs lose them.
 - What Specular uses: it writes all 42 entries. The top bar shows its first accent colour, and F1/F2 and the shoulder LEDs show the second. Like stock, it limits brightness to about 40/255 (the LEDs are very bright at full power).
-- Device-tree properties (in `system/board/brick/dt-tweaks.sh`): `led_count 14`, `swap-rg-leds 0..9`, `reset_ns 300000`, and `led_regulator "led-5v"`, a `regulator-fixed` on PD11.
+- Device-tree properties (in `system/family/brick/dt-tweaks.sh`): `led_count 14`, `swap-rg-leds 0..9`, `reset_ns 300000`, and `led_regulator "led-5v"`, a `regulator-fixed` on PD11.
 
 Rumble:
 

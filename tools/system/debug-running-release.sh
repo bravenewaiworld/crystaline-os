@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copy the debugging tools a release image leaves out (system/board/brick/debug-tools.list) to a
+# Copy the debugging tools a release image leaves out (system/common/debug-tools.list) to a
 # Brick running a release image, over SSH, into /run/debug (in memory), so they are gone at the
 # next restart and nothing on the device's storage changes. They come from where build-system.sh
 # takes them (this checkout's Buildroot build, and our device tools) and use the device's C library
@@ -14,8 +14,8 @@
 set -eu
 . "$(dirname "$0")/ssh.sh"
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-T=$ROOT/build/buildroot/target
-READELF=$ROOT/build/buildroot/host/bin/aarch64-buildroot-linux-gnu-readelf
+T=$ROOT/build/brick/buildroot/target
+READELF=$ROOT/build/brick/buildroot/host/bin/aarch64-buildroot-linux-gnu-readelf
 D=/run/debug
 
 if [ -n "${SSH_KEY:-}" ] || ! on_device true 2>/dev/null; then
@@ -43,7 +43,7 @@ fi
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 # Our device tools, laid out as build-system.sh installs them.
 mkdir -p "$TMP/ours/usr/bin"
-cp "$ROOT"/build/tools/* "$ROOT/tools/device/powertest" "$TMP/ours/usr/bin/"
+cp "$ROOT"/build/brick/tools/* "$ROOT/tools/device/powertest" "$TMP/ours/usr/bin/"
 # match DIR PATTERN: the paths under DIR that PATTERN matches.
 match() { (cd "$1" && for f in $2; do if [ -e "$f" ]; then echo "$f"; fi; done); }
 # tar_args: "-C <source> <its files>" for each line of the list; checks: the loader's check of
@@ -51,7 +51,7 @@ match() { (cd "$1" && for f in $2; do if [ -e "$f" ]; then echo "$f"; fi; done);
 # loader fails or misses a library or symbol version ("not found").
 tar_args= checks=
 CHECK='check() { out=$("$@" 2>&1) && ! echo "$out" | grep -q "not found" || { echo "$out"; exit 1; }; }'
-grep -v -e '^#' -e '^$' "$ROOT/system/board/brick/debug-tools.list" >"$TMP/list"
+grep -v -e '^#' -e '^$' "$ROOT/system/common/debug-tools.list" >"$TMP/list"
 while read -r p; do
 	f=
 	for src in "$T" "$TMP/ours"; do

@@ -58,7 +58,7 @@ crystaline-<version>.update     ustar tar, exactly these regular files in this o
 └── rootfs.squashfs
 ```
 
-`tools/system/sign-update.sh <version dir> <key.pem> <out file>` makes one (`make update-file`); it refuses a `-dirty` version with any key but the checkout's development key. Trusted keys are files of 64 hex characters (a raw public key) in `/etc/crystaline/update-keys/`: `release.pub` (from `system/board/brick/update-keys/`; a release image doesn't build while that file is a placeholder) and, on development images, `dev.pub`.
+`tools/system/sign-update.sh <version dir> <key.pem> <out file>` makes one (`make update-file`); it refuses a `-dirty` version with any key but the checkout's development key. Trusted keys are files of 64 hex characters (a raw public key) in `/etc/crystaline/update-keys/`: `release.pub` (from `system/common/update-keys/`; a release image doesn't build while that file is a placeholder) and, on development images, `dev.pub`.
 
 ### `crystaline-install update <file>`
 

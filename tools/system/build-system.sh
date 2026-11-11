@@ -1,7 +1,7 @@
 #!/bin/sh
 # Assemble one version of the system: Buildroot's base root filesystem plus our parts, as
 #   $OUT/<version>/rootfs.squashfs   the root filesystem (zstd), mounted read-only on the device
-#   $OUT/<version>/boot.img          our kernel + initramfs (system/board/brick/initramfs/init),
+#   $OUT/<version>/boot.img          our kernel + initramfs (system/common/initramfs/init),
 #                                    written to a boot slot to run this version
 #   $OUT/<version>/manifest.json     version, git commit, build time, release or development,
 #                                    whether the kernel makes our device-tree changes (dt_edits),
@@ -27,16 +27,16 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 # is_key FILE: FILE holds an update key: 64 lower-case hex characters, as
 # sign-update.sh --public-key prints them.
 is_key() { k=$(cat "$1") && [ ${#k} -eq 64 ] && [ -z "$(printf %s "$k" | tr -d 0-9a-f)" ]; }
-RELEASE_KEY=$ROOT/system/board/brick/update-keys/release.pub
+RELEASE_KEY=$ROOT/system/common/update-keys/release.pub
 if [ "$RELEASE" = 1 ] && ! is_key "$RELEASE_KEY"; then
 	echo "refusing to build a release image: $RELEASE_KEY is a placeholder, not the release key" >&2
 	exit 1
 fi
 . "$ROOT/tools/env.sh"
-B=$ROOT/build
+B=$(dirname "$OUT")	# the family's build folder (the Makefile's $(B))
 BR=$B/buildroot
 KBUILD=$B/kernel
-BOARD=$ROOT/system/board/brick
+COMMON=$ROOT/system/common
 HOST=$BR/host/bin
 READELF=$(ls "$HOST"/aarch64-*-readelf | head -1)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -71,7 +71,7 @@ done
 put "$DUFS" /usr/bin/dufs 755
 # Our browser page for dufs (--assets in etc/sv/webdav/run). dufs tells browsers to keep the page's
 # script and style forever, so index.html asks for them with the version in their addresses.
-for f in "$BOARD"/webui/*; do put "$f" "/usr/share/crystaline-web/${f##*/}" 644; done
+for f in "$COMMON"/webui/*; do put "$f" "/usr/share/crystaline-web/${f##*/}" 644; done
 sed -i "s/@VERSION@/$VERSION/g" "$R/usr/share/crystaline-web/index.html"
 # Specular, its cores and fonts, as its own Makefile installed them (SPECULAR_STAGE in the Makefile).
 cp -R "$B/specular-install/." "$R/"
@@ -94,7 +94,7 @@ cp "$TMP"/stock/firmware/*xr829* "$TMP"/stock/firmware/rgx.* "$R/lib/firmware/"
 # debug-running-release` copies into a running release's memory instead.
 if [ "$RELEASE" = 1 ]; then
 	mkdir "$TMP/left-out"
-	grep -v -e '^#' -e '^$' "$BOARD/debug-tools.list" | while read -r p; do
+	grep -v -e '^#' -e '^$' "$COMMON/debug-tools.list" | while read -r p; do
 		set -- "$R"/$p
 		[ -e "$1" ] || { echo "debug-tools.list: nothing in the image matches $p" >&2; exit 1; }
 		mv "$@" "$TMP/left-out/"
@@ -179,7 +179,7 @@ list=$TMP/initramfs.list
 	echo "slink /usr/lib64 lib 777 0 0"
 	echo "slink /etc/mtab /proc/mounts 777 0 0"	# e2fsck checks for mounts through /etc/mtab
 	echo "nod /dev/console 600 0 0 c 5 1"
-	echo "file /init $BOARD/initramfs/init 755 0 0"
+	echo "file /init $COMMON/initramfs/init 755 0 0"
 	echo "file /etc/crystaline-version $R/etc/crystaline-version 644 0 0"
 	# The recovery menu mounts the SD card with mount-card's options, which name www-data's group:
 	# as a number, since the initramfs has no user database.

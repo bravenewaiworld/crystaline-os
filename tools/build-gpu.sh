@@ -10,13 +10,13 @@
 # differs, they refuse to run.
 #
 # The 4.9 kernel writes external-module objects next to the sources, so the tree is mirrored into
-# build/gpu/src (without .git), patched and built there; the source tree stays clean.
-# The kernel at build/kernel must already be built (Module.symvers is needed to resolve symbols).
-# Results: build/gpu/pvrsrvkm.ko and build/gpu/dc_sunxi.ko (load pvrsrvkm first; dc_sunxi depends on it).
+# build/brick/gpu/src (without .git), patched and built there; the source tree stays clean.
+# The kernel at build/brick/kernel must already be built (Module.symvers is needed to resolve symbols).
+# Results: build/brick/gpu/pvrsrvkm.ko and build/brick/gpu/dc_sunxi.ko (load pvrsrvkm first; dc_sunxi depends on it).
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 . "$ROOT/tools/env.sh"
-OUT=$ROOT/build/gpu
+OUT=$ROOT/build/brick/gpu
 SRC=$OUT/src
 
 mkdir -p "$SRC"
@@ -35,7 +35,7 @@ for p in "$ROOT"/tools/gpu-patches/*.patch; do
 done
 
 # CONFIG_DRM_IMG_ROGUE=m: the Kbuild file adds its modules to obj-$(CONFIG_DRM_IMG_ROGUE).
-"$ROOT/tools/kmake.sh" "$ROOT/build/kernel" M="$SRC" \
+"$ROOT/tools/kmake.sh" "$ROOT/build/brick/kernel" M="$SRC" \
 	CONFIG_DRM_IMG_ROGUE=m PVR_SYSTEM=sunxi_a133 modules "$@"
 
 cp "$SRC/pvrsrvkm.ko" "$SRC/dc_sunxi.ko" "$OUT/"

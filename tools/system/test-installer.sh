@@ -15,7 +15,7 @@
 # Usage: test-installer.sh   (after make sd-card)
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-B=$ROOT/build
+B=$ROOT/build/brick
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 check() { "$@" || { echo "FAIL: $*" >&2; exit 1; }; }
 sum() { sha256sum "$1" | cut -d' ' -f1; }

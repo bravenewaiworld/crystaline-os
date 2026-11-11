@@ -7,10 +7,16 @@ T=$1
 
 # Packages' own start scripts: our services are supervised by runit instead (etc/sv).
 rm -f "$T"/etc/init.d/S[0-9]*
-# Our services exactly as in the overlay: Buildroot copies the overlay over the target directory
-# it keeps between builds, so a service removed from the overlay would otherwise stay.
+# Our services exactly as in the overlays (BR2_ROOTFS_OVERLAY: common, family, board): Buildroot
+# copies the overlays over the target directory it keeps between builds, so a service removed from
+# an overlay would otherwise stay.
 rm -rf "$T/etc/sv"
-cp -a "$BR2_EXTERNAL_CRYSTALINE_PATH/board/brick/rootfs-overlay/etc/sv" "$T/etc/sv"
+mkdir "$T/etc/sv"
+overlays=$(sed -n 's/^BR2_ROOTFS_OVERLAY="\(.*\)"$/\1/p' "$BR2_CONFIG" |
+	sed "s#\$(BR2_EXTERNAL_CRYSTALINE_PATH)#$BR2_EXTERNAL_CRYSTALINE_PATH#g")
+for o in $overlays; do
+	[ ! -d "$o/etc/sv" ] || cp -a "$o/etc/sv/." "$T/etc/sv/"
+done
 
 mkdir -p "$T/system" "$T/mnt/SDCARD"
 ln -sfn /system/state "$T/var/state"

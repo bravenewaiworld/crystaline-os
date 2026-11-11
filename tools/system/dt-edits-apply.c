@@ -1,5 +1,5 @@
 /*
- * The kernel's built-in device-tree edits (linux/drivers/of/fdt_edits.c), on the PC: applies them to
+ * The kernel's built-in device-tree edits (linux-brick/drivers/of/fdt_edits.c), on the PC: applies them to
  * a tree as the kernel does at boot and writes what the kernel would use, which is what
  * /sys/firmware/fdt shows on the device. Prints the kernel's dt-edits log lines (without the
  * kernel's "booting the bootloader's device tree unchanged" on a failure).
