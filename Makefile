@@ -212,7 +212,7 @@ sd-card: system
 update-file: system
 	tools/system/dev-keys.sh
 	v=$$(basename "$$(readlink -f $(B)/system/latest)") && tools/system/sign-update.sh $(B)/system/latest \
-		$(or $(KEY),$(B)/ssh-host-keys/update_key.pem) $(B)/updates/crystaline-$$v.update
+		$(or $(KEY),$(ROOT)/build/ssh-host-keys/update_key.pem) $(B)/updates/crystaline-$$v.update
 
 update-device: system
 	UPDATE_KEY=$(KEY) tools/system/update-device.sh $(B)/system/latest
