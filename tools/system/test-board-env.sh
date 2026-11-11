@@ -36,7 +36,7 @@ for f in "$ROOT"/system/board/*/rootfs-overlay/usr/share/crystaline/boards/*.env
 		set +eu	# report every problem with this file, not stop at the first
 		. "$f" 2>$T/source.err
 		[ ! -s $T/source.err ] || echo "FAIL: ${f#$ROOT/}: sourcing it printed: $(cat $T/source.err)"
-		for v in BOARD_COMPATIBLE BOARD_NAME BOARD_CARD_CONTROLLER BOARD_CARD_LABEL BOARD_BATTERY; do
+		for v in BOARD_COMPATIBLE BOARD_NAME BOARD_CARD_CONTROLLER BOARD_CARD_LABEL BOARD_BATTERY BOARD_WIFI_MODULE; do
 			[ -n "${!v}" ] || echo "FAIL: ${f#$ROOT/}: $v is empty"
 		done
 		[ ${#BOARD_CARD_LABEL} -le 11 ] || echo "FAIL: ${f#$ROOT/}: BOARD_CARD_LABEL is over 11 characters"
