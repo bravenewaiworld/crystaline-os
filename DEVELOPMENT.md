@@ -18,6 +18,17 @@
 - **WebDAV and a browser page** serve the SD card's data partition on port 80, over WiFi or the USB link, while Specular's File transfer screen is open, or after `sv up webdav` over SSH (`sv down webdav` stops it). There is no login.
 - **ADB is not available.** Our system has no ADB server (`adbd`); use SSH.
 
+## Other boards
+
+`DEVICE=<board>` (a folder in `system/board/`, default `brick`) picks what is built; output goes to `build/<family>/` ([docs/boards.md](docs/boards.md)). Targets only the Brick has so far are refused for other boards. For the Powkiddy RGB20 Pro ([docs/mainline.md](docs/mainline.md)):
+
+- **Build:** `make DEVICE=rgb20pro sd-card` → `build/mainline/sd-card-rgb20pro.img` (`make DEVICE=rgb20pro buildroot` first; the first run also builds LLVM for the build machine, an hour or more). `third-party/rocknix-uboot-20260601/first16M.img` must be in place (`tools/fetch-third-party.sh --check`).
+- **Write the card:** `dd if=build/mainline/sd-card-rgb20pro.img of=/dev/sdX bs=4M conv=fsync` with the card's partitions unmounted; it boots from the slot the device starts from.
+- **Reach it:** the DC port (not the OTG port) with a USB-A end on the PC: `ADDR=192.168.8.2`. Its development layer and SSH work as on the Brick.
+- **A start that fails** prints the reason and the start-up log's last lines on the screen, and the green LED blinks. The progress codes are kernel log lines (`crystaline-progress`), kept across a warm restart in `/sys/fs/pstore` and copied to `/system/logs/crash-*/`.
+- **Installing a new version without a card swap** (until updates exist for this family): copy `build/mainline/system/<version>/` to `/system/images/` on the device, mount `/dev/mmcblk1p1` and copy that version's `Image`, `initramfs.cpio.gz` and `dtbs/` into its `a/`, then restart.
+- **GPU driver:** `crystaline-gpu` shows the driver in use and the one chosen; `crystaline-gpu mali` or `panfrost` switches from the next start. PanVK needs `PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1`. `kmscube`, `vulkaninfo`, `vkcube` (panel) and `vkmark` (`--winsys display|kms|headless`; `VKMARK_DISPLAY_HZ=60` picks the panel mode) are in development images; ARM's window layer logs with `VULKAN_WSI_DEBUG_LEVEL=1..3`.
+
 ## Changing what runs on the device
 
 - **Full update in one command** (`make update-device`): builds a new system version, signs it as an update file with this checkout's update key (`build/ssh-host-keys/update_key.pem`, made once like the SSH keys; `KEY=<key.pem>` for another), copies it to `/tmp` on the device and runs `crystaline-install update` there, as Settings does, then reboots. It is written to the boot slot not running, so a power cut leaves the running version starting. The device keeps the new version and the previous one; nothing older. To go back: `crystaline-install activate <previous version>` over SSH and reboot, or "Start the previous version" in the recovery menu. Nothing rolls back on its own. A device still on the layout from before the two boot slots can't be updated this way: write a card (`make sd-card`) and install from it.

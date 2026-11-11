@@ -253,6 +253,32 @@ Built, to test on the device:
 TODO:
 - Test the USB network link on Windows and macOS; add RNDIS only if one of them needs it
 
+## RGB20 Pro (mainline family)
+
+Goals:
+- The Powkiddy RGB20 Pro runs Crystaline OS with all of its hardware, from one tree with the Brick ([docs/boards.md](docs/boards.md), [docs/mainline.md](docs/mainline.md))
+
+### Building for two boards (stage 2)
+
+Done:
+- Layers (common, family, SoC, board), `DEVICE=`, shared names renamed `crystaline-*`, board names picked at start-up, family start-up hooks
+- Mainline kernel 7.3 as a submodule, configuration in family/SoC/board parts; Buildroot base system with Mesa (Panfrost, PanVK) and no LLVM on the device
+- Card image (GPT, ROCKNIX's loader and U-Boot, extlinux); boots to runit with SSH over USB
+- ARM's libmali as an option (`crystaline-gpu`), drawing on the panel through ARM's window layer; vkmark
+
+TODO:
+- Updates and the second boot slot for the mainline family (the installer's extlinux method, `make DEVICE=rgb20pro update-device`)
+- The installer, device tools (status screen, cardlog) and Specular built for the mainline family
+- mali_kbase: quiet its interrupt-name lookup, fix the regulator warning at runtime suspend
+- An OpenGL benchmark on our image (glmark2's DRM build needs udev)
+
+### Later stages
+
+TODO:
+- Stage 3: Specular on screen (KMS/GBM display, the RGB20 Pro's device crate)
+- Stage 4: exact panel modes (display clock; 90 and 120 Hz are blank), sticks, rumble, WiFi and Bluetooth, sleep, second SD slot, CPU/GPU clock profiles
+- Stage 5: our own loader and U-Boot
+
 ## V1
 
 Goals: 
