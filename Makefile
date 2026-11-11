@@ -77,13 +77,21 @@ install-image:
 	@echo '$@: not available yet (see ROADMAP.md)'; exit 1
 
 # --- Kernel and GPU driver ------------------------------------------------------------------
-# Always run: the kernel's own build decides what is out of date. Its device-tree edits are made
-# from the device tree in TrimUI's boot package (tools/kmake.sh).
-# The configuration is regenerated from trimui_brick_defconfig every time, as Buildroot's is, so
-# that file is the only place to change it; unchanged options rebuild nothing.
+# Always run: the kernel's own build decides what is out of date.
+ifeq ($(FAMILY),mainline)
+# One kernel (Image, device trees, modules) for every mainline board, built with Buildroot's
+# compiler; its configuration is merged from the family's, SoCs' and boards' parts every time
+# (tools/mainline/kmake.sh).
+kernel:
+	tools/mainline/kmake.sh $(B)/kernel
+else
+# The Brick's device-tree edits are made from the device tree in TrimUI's boot package
+# (tools/kmake.sh). The configuration is regenerated from trimui_brick_defconfig every time, as
+# Buildroot's is, so that file is the only place to change it; unchanged options rebuild nothing.
 kernel: $(B)/stock-fw/rootfs.fex
 	tools/kmake.sh $(B)/kernel trimui_brick_defconfig
 	tools/kmake.sh $(B)/kernel Image modules
+endif
 
 gpu: kernel
 	tools/build-gpu.sh
