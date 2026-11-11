@@ -32,7 +32,7 @@ STATIC := -static $(if $(DEBUG),,-s) -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--
 
 .PHONY: help all kernel gpu userspace specular installer device-tools buildroot system \
 	sd-card update-file update-device debug-running-release deploy-specular run-specular test-installer test-battery-guard \
-	test-mount-card test-last-shutdown test-cardlog test-xr829-attach test-timezone test-dt-edits test-exfat stock-fw install-image clean
+	test-mount-card test-board-env test-last-shutdown test-cardlog test-xr829-attach test-timezone test-dt-edits test-exfat stock-fw install-image clean
 
 help:
 	@echo 'DEVICE=<board> (default brick; boards in system/board/) picks what is built, into build/<family>/.'
@@ -57,6 +57,7 @@ help:
 	@echo '  test-battery-guard  test the low-battery guard'"'"'s decisions on the PC'
 	@echo '  test-mount-card  test the SD card mounting script on the PC against image files'
 	@echo '  test-timezone    test crystaline-timezone on the PC'
+	@echo '  test-board-env   test how a device finds its board'"'"'s names, and check every board'"'"'s, on the PC'
 	@echo '  test-last-shutdown  test the record of how the last run ended, on the PC'
 	@echo '                   (these four with the device'"'"'s BusyBox once buildroot has built it)'
 	@echo '  test-cardlog     test the log service that copies Specular'"'"'s log to the SD card, on the PC'
@@ -234,6 +235,9 @@ test-timezone:
 
 test-last-shutdown:
 	$(WITH_PC_BUSYBOX) tools/system/test-last-shutdown.sh
+
+test-board-env:
+	tools/system/test-board-env.sh
 
 test-cardlog:
 	tools/system/test-cardlog.sh

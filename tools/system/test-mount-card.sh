@@ -14,6 +14,7 @@
 # Usage: test-mount-card.sh
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+export BOARD_ENV=$ROOT/system/board/brick/rootfs-overlay/usr/share/crystaline/boards/brick.env	# the board's names, as rcS copies them
 SCRIPT=$ROOT/system/common/rootfs-overlay/usr/libexec/crystaline/mount-card
 [ "$(id -u)" != 0 ] || { echo "run this as a normal user" >&2; exit 1; }
 PATH=$PATH:/usr/sbin:/sbin

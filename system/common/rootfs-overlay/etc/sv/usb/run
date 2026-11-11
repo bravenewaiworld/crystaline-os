@@ -1,25 +1,30 @@
 #!/bin/sh
 # A USB network link to a PC on the bottom USB-C port (NCM, the USB network-adapter protocol Linux
-# PCs support without drivers). The Brick takes 192.168.7.2 and hands the PC an address in
+# PCs support without drivers). The device takes 192.168.7.2 and hands the PC an address in
 # 192.168.7.10-20 by DHCP, with no gateway or DNS, so the PC's internet routing is untouched.
 # Then: ssh root@192.168.7.2.
 # configfs builds the USB device the PC sees (the "gadget"); writing the USB controller's name to
 # UDC connects it. The port's role (a device for a PC, or a host powering USB devices) switches
-# by itself, from the power chip's cable detection (dt-tweaks.sh).
+# by itself (on the Brick, from the power chip's cable detection: dt-tweaks.sh).
 exec 2>&1
-G=/sys/kernel/config/usb_gadget/brick
+. /run/crystaline/board.env	# BOARD_NAME, the name the PC shows
+G=/sys/kernel/config/usb_gadget/crystaline
 if [ ! -d $G ]; then
 	mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
 	mkdir -p $G/strings/0x409 $G/configs/c.1/strings/0x409 $G/functions/ncm.usb0
 	echo 0x1d6b >$G/idVendor	# Linux Foundation
 	echo 0x0104 >$G/idProduct	# its "multifunction composite gadget" ID
-	echo Brick >$G/strings/0x409/manufacturer
-	echo Brick >$G/strings/0x409/product
-	sed -n 's/.*androidboot.serialno=\([^ ]*\).*/\1/p' /proc/cmdline >$G/strings/0x409/serialnumber
+	echo "$BOARD_NAME" >$G/strings/0x409/manufacturer
+	echo "$BOARD_NAME" >$G/strings/0x409/product
+	# The chip's serial number: from the command line on the Brick (its U-Boot passes it), else from
+	# the device tree (where mainline U-Boot puts it).
+	serial=$(sed -n 's/.*androidboot.serialno=\([^ ]*\).*/\1/p' /proc/cmdline)
+	[ -n "$serial" ] || serial=$(tr -d '\0' </proc/device-tree/serial-number 2>/dev/null)
+	echo "$serial" >$G/strings/0x409/serialnumber
 	echo 0xc0 >$G/configs/c.1/bmAttributes	# self-powered
 	echo 500 >$G/configs/c.1/MaxPower	# mA
 	ln -s $G/functions/ncm.usb0 $G/configs/c.1/
-	ls /sys/class/udc >$G/UDC	# the A133 has one USB device controller
+	ls /sys/class/udc >$G/UDC	# one USB device controller on every board so far
 fi
 ifconfig usb0 192.168.7.2 netmask 255.255.255.0 up || exit 1
 cat >/run/udhcpd-usb0.conf <<END

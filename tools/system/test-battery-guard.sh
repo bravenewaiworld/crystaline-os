@@ -9,6 +9,7 @@
 # Usage: test-battery-guard.sh
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+export BOARD_ENV=$ROOT/system/board/brick/rootfs-overlay/usr/share/crystaline/boards/brick.env	# the board's names, as rcS copies them
 GUARD=$ROOT/system/common/rootfs-overlay/usr/libexec/crystaline/battery-guard
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }

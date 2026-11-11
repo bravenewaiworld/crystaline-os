@@ -138,6 +138,9 @@ jobs:
       - name: Test mounting the data card
         run: make test-mount-card
 
+      - name: Test finding the board
+        run: make test-board-env
+
       - name: Test setting the time zone
         run: make test-timezone
 

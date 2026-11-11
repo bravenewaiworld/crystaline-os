@@ -15,15 +15,16 @@
 #   state/  logs/                      kept across versions (see /usr/libexec/crystaline/state and
 #                                      /etc/init.d/rcS in the system)
 #
-# Progress codes: each stage of the start-up (here, then the system's rcS) writes 0xB007XXYY to
-# the clock chip's spare register 7 (0x0700011C), which survives resets and power-off. YY is the
+# Board and family: the board's names (/usr/share/crystaline/boards, picked by board-env) and the
+# family's start-up hooks (progress, rescue: /usr/libexec/crystaline/family-hooks).
+#
+# Progress codes: each stage of the start-up (here, then the system's rcS) is recorded with the
+# family's progress hook, as XXYY (the Brick family keeps it where it survives resets). YY is the
 # stage: 01 started, 02 watchdog, 03 system partition found, 04 checked, 05 mounted, 06 image
 # mounted, 07 handing over, 08 recovery menu shown, 09 recovery action running; rcS: 10 started,
 # 11 data card, 12 services starting. XX is 00, or 03 while the partition is checked with YY then
 # counting the seconds it has taken (to 255), or EE once stage YY has failed. 08 and 09 aren't
-# stages: when the menu returns, the register goes back to the stage reached. After a start that
-# failed without a message (e.g. a reset loop), boot another card and read it (memreg
-# 0x0700011C): no B007 prefix means this program never ran.
+# stages: when the menu returns, the code goes back to the stage reached.
 #
 # Start-up log: from the moment the system partition is found until the hand-over, this program's
 # log, the kernel's log and the running programs are copied every second to crystaline-log/ on the
@@ -34,13 +35,15 @@
 # partition is mounted, shows a menu (drawn by status) that can continue starting (if nothing
 # failed), start the previous version, install an update file from the SD card, or power off
 # (docs/boot.md).
-progress() { devmem 0x0700011C 32 $((0xB0070000 | $1)) 2>/dev/null; }
+. /usr/libexec/crystaline/family-hooks
 stage() { STAGE=$1; progress $1; }
 
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 stage 0x01
+# Without its board's names this program can't find the SD card; fail (below) still works.
+BOARD_ENV=$(/usr/libexec/crystaline/board-env 2>/run-board-env.err) && . "$BOARD_ENV"
 VERSION=$(cat /etc/crystaline-version)
 
 # The kernel arms a 16 s hardware watchdog at boot and never resets it itself. This daemon resets
@@ -60,9 +63,10 @@ if status --held MENU 2>>$LOG; then
 	status --message "Opening the recovery menu..." >/dev/kmsg 2>&1
 fi
 
-# card_disk: the disk (e.g. mmcblk1) on the SD card's controller (sdc0), if a card is in.
+# card_disk: the disk (e.g. mmcblk1) on the SD card's controller (BOARD_CARD_CONTROLLER), if a
+# card is in.
 card_disk() {
-	set -- /sys/bus/platform/devices/sdc0/mmc_host/mmc*/mmc*:*/block/mmcblk*
+	set -- /sys/bus/platform/devices/$BOARD_CARD_CONTROLLER/mmc_host/mmc*/mmc*:*/block/mmcblk*
 	[ -e "$1" ] && echo ${1##*/}
 }
 
@@ -89,6 +93,7 @@ fail() {
 	fi
 	status --message "$1" "" "$fix" "(hold the power button to turn off)" "" \
 		${2:+-d "Details: $2"} -d "Version $VERSION" >/dev/kmsg 2>&1
+	rescue
 	while :; do sleep 3600; done
 }
 
@@ -117,7 +122,7 @@ finish() {
 
 # mount_card: mount the SD card's data partition at /card, as the system's
 # /usr/libexec/crystaline/mount-card does (but never making or formatting one, which stays its job): on
-# the disk on the SD card's controller (sdc0), the partition named "sdcard", else the first FAT32 or
+# the disk on the SD card's controller, the partition named "sdcard", else the first FAT32 or
 # exFAT one other than "bootloader". Without one, prints why (shown as a note) and fails.
 mount_card() {
 	grep -q ' /card ' /proc/mounts && return
@@ -227,9 +232,11 @@ recovery() {
 	progress $STAGE
 }
 
-# The boot slot this image was loaded from (see the top).
-slot=$(sed -n 's/.* brick\.boot=\([^ ]*\).*/\1/p' /proc/cmdline)
+# The boot slot this image was loaded from (see the top): brick.boot= from the Brick's U-Boot
+# settings, crystaline.boot= from other families' boot files.
+slot=$(sed -n 's/.* \(brick\|crystaline\)\.boot=\([^ ]*\).*/\2/p' /proc/cmdline)
 log "version $VERSION, slot ${slot:-unknown}"
+[ -n "$BOARD_ENV" ] && log "board: $BOARD_ENV" || log "$(cat /run-board-env.err)"
 uuid=$(sed -n 's/.* root=UUID=\([^ ]*\).*/\1/p' /proc/cmdline)
 [ -n "$uuid" ] || fail "No system partition given" "U-Boot's settings lack root=UUID=..."
 # The storage may still be starting up.
