@@ -32,7 +32,10 @@ VULKAN_WSI_LAYER_CONF_OPTS = \
 	-DSELECT_EXTERNAL_ALLOCATOR=dma_buf_heaps \
 	-DWSIALLOC_MEMORY_HEAP_NAME=system \
 	-DVULKAN_CXX_INCLUDE=$(@D)/vulkan-headers/include \
-	-DCMAKE_POLICY_VERSION_MINIMUM=3.5
+	-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+	-DCMAKE_CXX_FLAGS="$(TARGET_CXXFLAGS) -UNDEBUG"
+# -UNDEBUG keeps the layer's log (stderr; VULKAN_WSI_DEBUG_LEVEL=1 errors .. 3 info), which release
+# builds compile out, and its assertions: this driver is still being brought up on our boards.
 
 # The layer's manifest goes to /usr/share/crystaline/mali/vulkan/, not the loader's folder: the
 # start-up hooks put that folder in place of /usr/share/vulkan only while ARM's driver is in use (the

@@ -8,21 +8,25 @@
 # grep 'crystaline-progress'.
 progress() { printf 'crystaline-progress %04x\n' $(($1)) >/dev/kmsg 2>/dev/null; }
 
-# start_hardware: rcS, before the data card is mounted. mdev has loaded the drivers the device tree
-# asks for, Mesa's GPU driver (panfrost) among them. When /system/state/gpu-driver says "mali"
-# (crystaline-gpu), ARM's driver replaces it: its kernel module (kept out of the module index, so
-# mdev never loads it), its libraries over Mesa's, and its Vulkan driver and window-system layer as
-# the only ones the Vulkan loader sees. Bind mounts, so nothing changes on disk; a failure on the
-# way leaves Mesa's driver in use.
+# start_hardware: rcS, before the data card is mounted: the GPU's driver (mdev loads only the
+# drivers of devices with a node in /dev, which the GPU has only once its driver is in). Mesa's
+# panfrost, or, when /system/state/gpu-driver says "mali" (crystaline-gpu), ARM's driver: its kernel
+# module (kept out of the module index, so nothing else loads it), its libraries over Mesa's, and
+# its Vulkan driver and window-system layer as the only ones the Vulkan loader sees. Bind mounts, so
+# nothing changes on disk. If ARM's kernel module doesn't load, Mesa's driver is used.
 start_hardware() {
-	[ "$(cat /system/state/gpu-driver 2>/dev/null)" = mali ] || { echo "GPU driver: panfrost (Mesa)"; return; }
-	rmmod panfrost && insmod /usr/lib/crystaline/mali_kbase.ko ||
-		{ echo "GPU driver: can't switch to mali_kbase; panfrost stays"; modprobe panfrost; return; }
-	for l in /usr/lib/mali/lib*.so.*; do
-		[ -e "/usr/lib/${l##*/}" ] && mount --bind "$l" "/usr/lib/${l##*/}"
-	done
-	mount --bind /usr/share/crystaline/mali/vulkan /usr/share/vulkan
-	echo "GPU driver: mali (ARM's libmali)"
+	if [ "$(cat /system/state/gpu-driver 2>/dev/null)" = mali ]; then
+		if insmod /usr/lib/crystaline/mali_kbase.ko; then
+			for l in /usr/lib/mali/lib*.so.*; do
+				[ -e "/usr/lib/${l##*/}" ] && mount --bind "$l" "/usr/lib/${l##*/}"
+			done
+			mount --bind /usr/share/crystaline/mali/vulkan /usr/share/vulkan
+			echo "GPU driver: mali (ARM's libmali)"
+			return
+		fi
+		echo "GPU driver: mali_kbase didn't load; using panfrost"
+	fi
+	modprobe panfrost && echo "GPU driver: panfrost (Mesa)"
 }
 
 # rescue: the initramfs's start-up has failed for good; its message is already on screen. The last
