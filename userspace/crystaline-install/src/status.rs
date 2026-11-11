@@ -2,7 +2,7 @@
 //! by whoever comes later (Specular, restarted while the task ran). Dry runs and the read-only
 //! commands (offer, slots) don't take part.
 //!
-//! The status file (/run/brick-install.status; /run is emptied at each start-up) holds a copy of
+//! The status file (/run/crystaline-install.status; /run is emptied at each start-up) holds a copy of
 //! everything the running task printed (report.rs's protocol). The task holds an exclusive
 //! `flock` on it from start to end, so a held lock means "running"; `sleepnow` checks the same
 //! lock and doesn't sleep while it is held.
@@ -16,7 +16,7 @@ use std::time::Duration;
 use crate::report::{Context, Result, fail};
 
 /// The status file, unless `--status` gives another.
-pub const STATUS: &str = "/run/brick-install.status";
+pub const STATUS: &str = "/run/crystaline-install.status";
 
 /// Takes the lock for a new task and empties the status file, for the task's report to copy its
 /// lines into. Fails if a task is running.

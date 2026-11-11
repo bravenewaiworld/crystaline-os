@@ -1,4 +1,4 @@
-//! brick-install: installs the system running from the SD card onto the internal storage (eMMC),
+//! crystaline-install: installs the system running from the SD card onto the internal storage (eMMC),
 //! optionally backing the internal storage up to the card first, and puts such a backup back;
 //! installs signed update files and switches between installed versions (A/B boot slots).
 //! Specular runs it from its Settings and shows its progress (see report.rs for what it prints),
@@ -6,18 +6,18 @@
 //! folders, which is how tools/system/test-installer.sh tests it.
 //!
 //! Usage:
-//!   brick-install offer                  what can be done now, as JSON (see `offer`)
-//!   brick-install install [--backup] [--keep-card-bootable] [--dry-run]
-//!   brick-install restore <backup folder>
+//!   crystaline-install offer                  what can be done now, as JSON (see `offer`)
+//!   crystaline-install install [--backup] [--keep-card-bootable] [--dry-run]
+//!   crystaline-install restore <backup folder>
 //!                                        from the SD card: puts the backup back; from the
 //!                                        installed system: prepares a restore (makes the card
 //!                                        start the device next time; backup.rs)
-//!   brick-install restore --cancel       on the SD card: drops a prepared restore
-//!   brick-install update <file>          checks an update file, copies it into images/ and makes
+//!   crystaline-install restore --cancel       on the SD card: drops a prepared restore
+//!   crystaline-install update <file>          checks an update file, copies it into images/ and makes
 //!                                        it start next (update.rs)
-//!   brick-install activate <version>     makes an installed version start next (slots.rs)
-//!   brick-install slots                  what each boot slot holds, as text (slots.rs)
-//!   brick-install follow                 the running task's messages, from its start until it
+//!   crystaline-install activate <version>     makes an installed version start next (slots.rs)
+//!   crystaline-install slots                  what each boot slot holds, as text (slots.rs)
+//!   crystaline-install follow                 the running task's messages, from its start until it
 //!                                        ends; nothing if none runs (status.rs)
 //! On the device everything is found by itself; any of these can be given instead:
 //!   --target <disk or file>   the internal storage     --source <disk or file>   the SD card
@@ -68,7 +68,7 @@ fn main() {
         ["activate", version] => task("activate", &|p, r| { r.steps(1); r.step(&format!("Switching to version {version}")); slots::activate(p, version, r) }),
         ["slots"] => print(paths.as_ref().map_err(Clone::clone).and_then(slots::describe)),
         ["follow"] => print(status::follow(&status).map(|()| String::new())),
-        _ => { eprintln!("usage: brick-install offer | install [--backup] [--keep-card-bootable] [--dry-run] | restore <backup folder> | restore --cancel | update <file> | activate <version> | slots | follow"); 2 }
+        _ => { eprintln!("usage: crystaline-install offer | install [--backup] [--keep-card-bootable] [--dry-run] | restore <backup folder> | restore --cancel | update <file> | activate <version> | slots | follow"); 2 }
     };
     std::process::exit(code);
 }
@@ -164,7 +164,7 @@ impl Paths {
     /// The paths given (by option name, e.g. "--target"), the rest found on the device: the
     /// internal storage is the disk on the eMMC controller (sdc2), the card the disk on the SD
     /// card controller (sdc0); the system runs from the disk holding /system, which must be one
-    /// of them; the data partition is at /mnt/SDCARD; the version is /etc/brick-version.
+    /// of them; the data partition is at /mnt/SDCARD; the version is /etc/crystaline-version.
     fn find(mut given: impl FnMut(&str) -> Option<String>) -> Result<Self> {
         let (target, source, running, system, data, version) =
             (given("--target"), given("--source"), given("--running"), given("--system"), given("--data"), given("--version"));
@@ -189,11 +189,11 @@ impl Paths {
         }
         let version = match version {
             Some(v) => v,
-            None => std::fs::read_to_string("/etc/brick-version").map(|v| v.trim().to_string())
-                .map_err(|e| report::Failure { message: format!("reading /etc/brick-version: {e}"), hint: format!("The system is damaged. {}", report::REWRITE_CARD), ..Default::default() })?,
+            None => std::fs::read_to_string("/etc/crystaline-version").map(|v| v.trim().to_string())
+                .map_err(|e| report::Failure { message: format!("reading /etc/crystaline-version: {e}"), hint: format!("The system is damaged. {}", report::REWRITE_CARD), ..Default::default() })?,
         };
         Ok(Self { internal, card, running, system: path(system, "/system"), data: path(data, "/mnt/SDCARD"), version, slot,
-                  keys: path(keys, "/etc/brick/update-keys"), power: path(power, "/sys/class/power_supply") })
+                  keys: path(keys, "/etc/crystaline/update-keys"), power: path(power, "/sys/class/power_supply") })
     }
 
     /// The internal storage, failing if there is none.

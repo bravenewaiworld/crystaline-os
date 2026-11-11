@@ -1,5 +1,5 @@
 #!/bin/sh
-# brick-ssh: SSH on release images (make system RELEASE=1), for Specular's developer settings.
+# crystaline-ssh: SSH on release images (make system RELEASE=1), for Specular's developer settings.
 #   (nothing)  prints the state, one name=value per line:
 #                image=release or image=development
 #                ssh=on or ssh=off (development images: always on)
@@ -14,15 +14,15 @@
 # (WebDAV has no password). Its keys are kept in the state area (/var/state/ssh), and its sshd
 # service runs only while SSH is on (etc/sv/sshd). On development images SSH is always on with the
 # checkout's key, and on, off and import fail.
-# Errors go to stderr, with exit status 1; changes are logged (tag brick-ssh).
-# BRICK_ROOT: a directory to use as the root, for testing on a PC.
-R=${BRICK_ROOT:-}
+# Errors go to stderr, with exit status 1; changes are logged (tag crystaline-ssh).
+# CRYSTALINE_ROOT: a directory to use as the root, for testing on a PC.
+R=${CRYSTALINE_ROOT:-}
 D=$R/var/state/ssh
 KEYS=$D/authorized_keys
 ON=$D/on
 
-log() { logger -t brick-ssh "$*"; }
-fail() { echo "brick-ssh: $*" >&2; exit 1; }
+log() { logger -t crystaline-ssh "$*"; }
+fail() { echo "crystaline-ssh: $*" >&2; exit 1; }
 
 # release: whether this is a release image (root's authorized_keys links into the state area).
 release() { [ -L $R/root/.ssh/authorized_keys ]; }
@@ -61,7 +61,7 @@ import)
 	echo keys=$n
 	;;
 *)
-	echo "usage: brick-ssh [on | off | import]" >&2
+	echo "usage: crystaline-ssh [on | off | import]" >&2
 	exit 2
 	;;
 esac

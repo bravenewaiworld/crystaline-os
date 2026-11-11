@@ -9,12 +9,12 @@
 #   device. Files no longer built stay on the device until the next update-device.
 set -eu
 . "$(dirname "$0")/ssh.sh"
-if ! on_brick 'grep -q "^overlay / overlay" /proc/mounts'; then
-	on_brick 'mkdir -p /system/overlay/$(cat /etc/brick-version) && reboot'
-	echo "made the developer layer; waiting for $BRICK to restart"
+if ! on_device 'grep -q "^overlay / overlay" /proc/mounts'; then
+	on_device 'mkdir -p /system/overlay/$(cat /etc/crystaline-version) && reboot'
+	echo "made the developer layer; waiting for $ADDR to restart"
 	sleep 10
-	until on_brick true 2>/dev/null; do sleep 2; done
+	until on_device true 2>/dev/null; do sleep 2; done
 fi
 # Specular is stopped while its files are replaced (a running program's file can't be written).
 tar -C "$1$2" --owner=0 --group=0 -cf - . |
-	on_brick "sv stop frontend >/dev/null; mkdir -p $2 && tar -xf - -C $2; r=\$?; sv start frontend >/dev/null; exit \$r"
+	on_device "sv stop frontend >/dev/null; mkdir -p $2 && tar -xf - -C $2; r=\$?; sv start frontend >/dev/null; exit \$r"

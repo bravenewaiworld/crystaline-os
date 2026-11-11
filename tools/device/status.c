@@ -28,7 +28,7 @@
  *                                       notes appear under the title; B-TEXT is what the footer
  *                                       says B does (default "back"). Nothing scrolls: rows past
  *                                       the screen's 24 aren't shown, so keep lists short.
- *   status --task TITLE                 show brick-install's progress lines (LOG-FILE, STEP,
+ *   status --task TITLE                 show crystaline-install's progress lines (LOG-FILE, STEP,
  *                                       PROGRESS, DONE, FAIL; docs/install-and-update.md) read
  *                                       from stdin, then wait for A (only A): exit 0 after DONE,
  *                                       1 after FAIL or input ending without either, 2 after 10
@@ -704,7 +704,7 @@ static struct {
 	double done;		/* the step's progress (0-1); below 0 until it reports any */
 } t = { .result = -1 };
 
-/* Take in one line of brick-install's output. FAIL lines are "FAIL <message>\t<hint>"; TASK
+/* Take in one line of crystaline-install's output. FAIL lines are "FAIL <message>\t<hint>"; TASK
  * lines say nothing worth showing. */
 static void task_line(const char *s)
 {
@@ -770,7 +770,7 @@ static void draw_task(const char *title)
 
 /* --task: shows the task until it ends, then waits for A. The buttons are opened only once it
  * has ended, so presses made while it ran don't count, and a missing button device can't make
- * status exit mid-task: brick-install, writing into status's input, would then be killed by
+ * status exit mid-task: crystaline-install, writing into status's input, would then be killed by
  * SIGPIPE. For the same reason main() checks the framebuffer before anything is read. */
 static int task(const char *title)
 {

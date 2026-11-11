@@ -60,7 +60,7 @@ const MIN_SIZE: u64 = LAYOUT[LAYOUT.len() - 1].1 * SECTOR + (1 << 30);
 /// The install's options (main.rs's usage).
 pub struct Options { pub backup: bool, pub keep_card_bootable: bool, pub dry_run: bool }
 
-/// `brick-install install`: the steps in docs/install-and-update.md ("Install steps"). Returns the
+/// `crystaline-install install`: the steps in docs/install-and-update.md ("Install steps"). Returns the
 /// closing message (the DONE line).
 pub fn install(p: &Paths, o: &Options, report: &mut Report) -> Result<String> {
     report.steps(if o.backup { 6 } else { 5 });

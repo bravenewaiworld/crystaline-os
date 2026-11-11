@@ -32,18 +32,18 @@ help:
 	@echo '  update-file      build/updates/crystaline-<version>.update: the latest version as a'
 	@echo '                   signed update file (KEY=<key.pem>, default the development key)'
 	@echo '  update-device    build system, install it on a Brick running our system as an update,'
-	@echo '                   reboot (SSH; BRICK=<address>, default 192.168.7.2 over USB; KEY= as above)'
+	@echo '                   reboot (SSH; ADDR=<address>, default 192.168.7.2 over USB; KEY= as above)'
 	@echo '  debug-running-release  copy the debugging and hardware test tools a release image'
 	@echo '                   leaves out (strace, perf, gdbserver, memreg, ...) to a Brick running'
 	@echo '                   a release image, in memory until it restarts (SSH switched on there'
-	@echo '                   with your own key: SSH_KEY=<private key file>; BRICK= as above)'
+	@echo '                   with your own key: SSH_KEY=<private key file>; ADDR= as above)'
 	@echo '  deploy-specular  build Specular, replace it on the Brick and restart it (kept across'
 	@echo '                   restarts until the next update-device)'
 	@echo '  run-specular     build Specular and run it once in the foreground on the Brick'
 	@echo '  test-installer   test the installer on the PC against image files (after sd-card)'
 	@echo '  test-battery-guard  test the low-battery guard'"'"'s decisions on the PC'
 	@echo '  test-mount-card  test the SD card mounting script on the PC against image files'
-	@echo '  test-timezone    test brick-timezone on the PC'
+	@echo '  test-timezone    test crystaline-timezone on the PC'
 	@echo '  test-last-shutdown  test the record of how the last run ended, on the PC'
 	@echo '                   (these four with the device'"'"'s BusyBox once buildroot has built it)'
 	@echo '  test-cardlog     test the log service that copies Specular'"'"'s log to the SD card, on the PC'
@@ -124,11 +124,11 @@ specular:
 	rm -rf $(SPECULAR_STAGE)
 	$(SPECULAR) install DESTDIR=$(SPECULAR_STAGE) PREFIX=$(SPECULAR_PREFIX)
 
-# The installer (userspace/brick-install), into $(B)/installer. Always run: cargo decides what is
+# The installer (userspace/crystaline-install), into $(B)/installer. Always run: cargo decides what is
 # out of date. CC_aarch64_unknown_linux_gnu: the cross C compiler for crates that build C code,
 # which would otherwise use the PC's. Run from its directory, where rustup finds its pinned toolchain.
 installer:
-	cd userspace/brick-install && \
+	cd userspace/crystaline-install && \
 		CARGO_TARGET_DIR=$(B)/installer CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(CC) CC_aarch64_unknown_linux_gnu=$(CC) \
 		cargo build --release --target aarch64-unknown-linux-gnu
 
@@ -202,7 +202,7 @@ deploy-specular: specular
 run-specular: specular
 	tools/run-specular.sh $(SPECULAR_STAGE)$(SPECULAR_PREFIX)/specular
 
-# Its own PC build of the installer has the test-only cut points (userspace/brick-install/src/cut.rs).
+# Its own PC build of the installer has the test-only cut points (userspace/crystaline-install/src/cut.rs).
 test-installer:
 	tools/system/test-installer.sh
 

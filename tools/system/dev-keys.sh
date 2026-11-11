@@ -5,7 +5,7 @@
 #   key) and the login key root accepts (ssh -o IdentitiesOnly=yes -i build/ssh-host-keys/dev_key
 #   root@<address>);
 # - the update key (update_key.pem), which signs update files for development systems; they
-#   trust its public half (update_key.pub, installed as /etc/brick/update-keys/dev.pub).
+#   trust its public half (update_key.pub, installed as /etc/crystaline/update-keys/dev.pub).
 # Used by build-system.sh, update-device.sh and `make update-file`.
 set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -14,7 +14,7 @@ mkdir -p "$KEYS"
 for t in rsa ecdsa ed25519; do
 	[ -f "$KEYS/ssh_host_${t}_key" ] || ssh-keygen -q -N '' -t $t -f "$KEYS/ssh_host_${t}_key"
 done
-[ -f "$KEYS/dev_key" ] || ssh-keygen -q -N '' -t ed25519 -C brick-dev -f "$KEYS/dev_key"
+[ -f "$KEYS/dev_key" ] || ssh-keygen -q -N '' -t ed25519 -C crystaline-dev -f "$KEYS/dev_key"
 [ -f "$KEYS/update_key.pem" ] || (umask 077 && openssl genpkey -algorithm ed25519 -out "$KEYS/update_key.pem")
 [ -f "$KEYS/update_key.pub" ] ||
 	"$ROOT/tools/system/sign-update.sh" --public-key "$KEYS/update_key.pem" >"$KEYS/update_key.pub"

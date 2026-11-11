@@ -4,7 +4,7 @@
 #   images/<version>/   that version's boot.img, rootfs.squashfs and manifest.json
 #   state/  logs/       empty (see system/board/brick/initramfs/init)
 # U-Boot's settings name it by filesystem UUID (root=UUID=...). The data partition is added over
-# the rest of the card on first start (system/board/brick/rootfs-overlay/usr/libexec/brick/mount-card).
+# the rest of the card on first start (system/board/brick/rootfs-overlay/usr/libexec/crystaline/mount-card).
 # TrimUI's boot package goes on unchanged: the kernel makes our device-tree changes itself.
 # Usage: build-sd-card.sh <system-version-dir> <out.img>
 set -eu

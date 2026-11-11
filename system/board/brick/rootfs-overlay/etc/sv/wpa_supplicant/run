@@ -1,6 +1,6 @@
 #!/bin/sh
 # WiFi: loads the XR829 driver and runs wpa_supplicant with the saved networks in
-# /var/state/wifi/wpa_supplicant.conf (made at start-up by /usr/libexec/brick/state; networks
+# /var/state/wifi/wpa_supplicant.conf (made at start-up by /usr/libexec/crystaline/state; networks
 # joined in Specular are saved there by wpa_supplicant itself). Down at start-up (the `down`
 # file): Specular brings WiFi up and down as its setting says, unloading the driver when off. By
 # hand: sv up wpa_supplicant wifi-dhcp.

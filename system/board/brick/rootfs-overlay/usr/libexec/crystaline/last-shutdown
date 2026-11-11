@@ -1,7 +1,7 @@
 #!/bin/sh
 # Tells the next start how the system's last run ended, so that Specular can explain a Brick that
-# turned off by itself (the file /run/brick/last-shutdown; contract: docs/system-image.md).
-#   last-shutdown start           start-up (rcS): writes /run/brick/last-shutdown from the marks
+# turned off by itself (the file /run/crystaline/last-shutdown; contract: docs/system-image.md).
+#   last-shutdown start           start-up (rcS): writes /run/crystaline/last-shutdown from the marks
 #                                 below, then marks this run as running
 #   last-shutdown stop            an orderly power-off or restart (rcK): clears the running mark
 #   last-shutdown reason WORD     just before an orderly power-off whose cause the user should
@@ -11,7 +11,7 @@
 # Each decision is written to the kernel log (/dev/kmsg), because the system log isn't running yet
 # at start-up; klogd later copies it into the system log.
 R=${LAST_SHUTDOWN_ROOT-}	# a fake root for tools/system/test-last-shutdown.sh; empty on the device
-STATE=$R/system/state OUT=$R/run/brick
+STATE=$R/system/state OUT=$R/run/crystaline
 RUNNING=$STATE/running REASON=$STATE/shutdown-reason
 log() { echo "<5>last-shutdown: $*" >$R/dev/kmsg; }
 

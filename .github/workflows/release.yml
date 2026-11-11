@@ -83,7 +83,7 @@ jobs:
       # The toolchains the installer and Specular pin (each one's rust-toolchain.toml).
       - name: Install Rust
         run: |
-          for f in userspace/brick-install/rust-toolchain.toml specular/rust-toolchain.toml; do
+          for f in userspace/crystaline-install/rust-toolchain.toml specular/rust-toolchain.toml; do
             rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' "$f")" \
               --profile minimal --target aarch64-unknown-linux-gnu
           done

@@ -1,17 +1,17 @@
 #!/bin/sh
-# brick-power: applies power settings; Specular decides which ones to use, and when.
-#   brick-power                    prints the settings in effect, read back from the hardware
+# crystaline-power: applies power settings; Specular decides which ones to use, and when.
+#   crystaline-power                    prints the settings in effect, read back from the hardware
 #                                  (cpu-min: as last set)
-#   brick-power profile NAME       the CPU's speed range: performance (1200-2000 MHz), balanced
+#   crystaline-power profile NAME       the CPU's speed range: performance (1200-2000 MHz), balanced
 #                                  (408-2000) or saver (408-1200); resets cpu-min
-#   brick-power cpu-min MHZ|default
+#   crystaline-power cpu-min MHZ|default
 #                                  sets the CPU's minimum speed to its slowest speed step at or
 #                                  above MHZ, kept within the profile's range, and prints the speed
 #                                  set, in MHz; default goes back to the profile's minimum
-#   brick-power usb-top on|off     the top USB-C port: its 5 V output to attached devices and its
+#   crystaline-power usb-top on|off     the top USB-C port: its 5 V output to attached devices and its
 #                                  host controllers; off is refused while a USB device is attached
 # Exit status: 0 done, 1 refused or failed (the reason on stderr and in the system log, tag
-# brick-power), 2 usage. Nothing persists: start-up (rcS) applies balanced, and the top port
+# crystaline-power), 2 usage. Nothing persists: start-up (rcS) applies balanced, and the top port
 # starts on; Specular applies its own choices when it starts.
 # A thermal limit still applies under any profile: the kernel lowers the CPU's maximum (and the
 # minimum with it), and the status shows the limits in effect.
@@ -21,16 +21,16 @@ PLAT=/sys/bus/platform
 EHCI=5200000.ehci1-controller OHCI=5200000.ohci1-controller	# the top port's (USB 2.0, USB 1.1)
 # Holds "profile" (the name of the last profile applied), "cpu-min" (the speed cpu-min set, in MHz;
 # absent after profile or cpu-min default) and "lock".
-STATE=/run/brick-power
+STATE=/run/crystaline-power
 # How often the ondemand governor re-evaluates the CPU's speed. The kernel's default on this device
 # is 2 s (1000 times the CPU's 2 ms speed-change time), so a game could wait 2 s for full speed.
 # It samples only while a CPU is busy, so a shorter interval costs no wake-ups at idle.
 SAMPLING_US=50000
 
-log() { logger -s -t brick-power "$*"; }
+log() { logger -s -t crystaline-power "$*"; }
 fail() { log "$*"; exit 1; }
 usage() {
-	echo "usage: brick-power [profile performance|balanced|saver | cpu-min MHZ|default | usb-top on|off]" >&2
+	echo "usage: crystaline-power [profile performance|balanced|saver | cpu-min MHZ|default | usb-top on|off]" >&2
 	exit 2
 }
 
@@ -63,7 +63,7 @@ cpu_min() {	# $1: MHz | default
 	# A leading 0 would make the shell's arithmetic read the number as octal.
 	case $1 in default) ;; '' | 0* | *[!0-9]*) usage ;; esac
 	r=$(range "$(cat $STATE/profile 2>/dev/null)") ||
-		fail "cpu-min: no profile applied; apply one first with brick-power profile NAME"
+		fail "cpu-min: no profile applied; apply one first with crystaline-power profile NAME"
 	set -- "$1" $r	# $2, $3: the profile's minimum and maximum, in kHz
 	if [ $1 = default ]; then
 		min=$2
@@ -141,7 +141,7 @@ status() {
 	bound $OHCI && o=on || o=off
 	[ $e = $o ] && t=$e || t="ehci $e, ohci $o"
 	echo "usb-top   $t (5 V ${v:-unknown}, devices attached: $(top_devices))"
-	echo "battery   $(/usr/libexec/brick/battery-guard state)"
+	echo "battery   $(/usr/libexec/crystaline/battery-guard state)"
 }
 
 case ${1:-} in

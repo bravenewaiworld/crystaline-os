@@ -12,7 +12,7 @@ mount -t sysfs sys /sys
 mount -t devtmpfs dev /dev
 mount -t tmpfs tmp /tmp
 D=/dev/vda M=/mnt IO=/test-exfat-io
-. /usr/libexec/brick/card-options
+. /usr/libexec/crystaline/card-options
 OPTS=$(card_options exfat 33)	# 33: www-data's group, as mount-card passes it
 
 say() { echo "TEST: $*"; }

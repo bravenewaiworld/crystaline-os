@@ -4,7 +4,7 @@
 #
 # Which version runs is decided by the boot image alone, which U-Boot loads from the boot slot its
 # settings name (boot_a or boot_b, passed on as brick.boot=): each boot image carries its own
-# version (/etc/brick-version) and mounts images/<that version>/ from the system partition, so the
+# version (/etc/crystaline-version) and mounts images/<that version>/ from the system partition, so the
 # kernel and its modules always match. The system partition is found by its filesystem UUID,
 # which U-Boot's settings put on the command line as root=UUID=... (the same names exist on both
 # the SD card and the internal storage, so names can't tell them apart).
@@ -12,7 +12,7 @@
 # System partition (ext4):
 #   images/<version>/rootfs.squashfs   the root filesystem, mounted read-only
 #   overlay/<version>/                 developer mode: a writable layer over that version's root
-#   state/  logs/                      kept across versions (see /usr/libexec/brick/state and
+#   state/  logs/                      kept across versions (see /usr/libexec/crystaline/state and
 #                                      /etc/init.d/rcS in the system)
 #
 # Progress codes: each stage of the start-up (here, then the system's rcS) writes 0xB007XXYY to
@@ -26,7 +26,7 @@
 # 0x0700011C): no B007 prefix means this program never ran.
 #
 # Start-up log: from the moment the system partition is found until the hand-over, this program's
-# log, the kernel's log and the running programs are copied every second to brick-log/ on the
+# log, the kernel's log and the running programs are copied every second to crystaline-log/ on the
 # "bootloader" partition (FAT, readable on a PC) of the disk the system is on, so a start that
 # ends in a reset still leaves them behind.
 #
@@ -41,7 +41,7 @@ mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 stage 0x01
-VERSION=$(cat /etc/brick-version)
+VERSION=$(cat /etc/crystaline-version)
 
 # The kernel arms a 16 s hardware watchdog at boot and never resets it itself. This daemon resets
 # it from here on, for good: it keeps running after the hand-over (its program stays in memory),
@@ -52,7 +52,7 @@ stage 0x02
 LOG=/run-init.log
 # log MESSAGE: to the kernel log and $LOG, and, once a recovery menu has been shown, to its own log
 # on the system partition ($RLOG) as well.
-log() { echo "brick-init: $*" >/dev/kmsg; echo "$*" >>$LOG; [ -z "$RLOG" ] || echo "$*" >>$RLOG; }
+log() { echo "crystaline-init: $*" >/dev/kmsg; echo "$*" >>$LOG; [ -z "$RLOG" ] || echo "$*" >>$RLOG; }
 # Checked once, here, so MENU must be down now; the menu itself waits for the system partition.
 if status --held MENU 2>>$LOG; then
 	WANT_MENU=1
@@ -93,14 +93,14 @@ fail() {
 }
 
 # --- Recovery menu ----------------------------------------------------------------------------
-# Its actions run brick-install on /system and the SD card's data partition, mounted at /card.
+# Its actions run crystaline-install on /system and the SD card's data partition, mounted at /card.
 # The progress register says 08 while it shows and 09 while an action runs; STAGE stays as it was,
 # so a later failure still reports the stage reached.
 
-# bi ARG...: brick-install for the recovery menu; callers log its output. --status: its default is
+# bi ARG...: crystaline-install for the recovery menu; callers log its output. --status: its default is
 # in /run, which the initramfs lacks. Without an SD card, /card is an empty folder in memory, so
-# brick-install's own log (logs/ there) is lost; its output is still in $RLOG.
-bi() { brick-install "$@" --system /system --data /card --status /brick-install.status; }
+# crystaline-install's own log (logs/ there) is lost; its output is still in $RLOG.
+bi() { crystaline-install "$@" --system /system --data /card --status /crystaline-install.status; }
 
 # finish reboot|poweroff WHY: save the logs, unmount everything, then restart or power off at once.
 finish() {
@@ -113,10 +113,10 @@ finish() {
 
 # card_options: the SD card's mount options, shared with mount-card. (A missing file would end this
 # script, the kernel's first program, if sourced unchecked.)
-[ ! -f /usr/libexec/brick/card-options ] || . /usr/libexec/brick/card-options
+[ ! -f /usr/libexec/crystaline/card-options ] || . /usr/libexec/crystaline/card-options
 
 # mount_card: mount the SD card's data partition at /card, as the system's
-# /usr/libexec/brick/mount-card does (but never making or formatting one, which stays its job): on
+# /usr/libexec/crystaline/mount-card does (but never making or formatting one, which stays its job): on
 # the disk on the SD card's controller (sdc0), the partition named "sdcard", else the first FAT32 or
 # exFAT one other than "bootloader". Without one, prints why (shown as a note) and fails.
 mount_card() {
@@ -128,7 +128,7 @@ mount_card() {
 		sed "s/^/${c}p/") $c; do
 		grep -q '^PARTNAME=bootloader$' /sys/block/$c/$p/uevent 2>/dev/null && continue
 		for t in vfat exfat; do
-			mount -t $t -o $(card_options $t $(cat /etc/brick/www-data-gid)) /dev/$p /card \
+			mount -t $t -o $(card_options $t $(cat /etc/crystaline/www-data-gid)) /dev/$p /card \
 				2>/dev/null && { log "data partition $p ($t) mounted at /card"; return; }
 		done
 	done
@@ -154,16 +154,16 @@ menu() {
 	log "chosen: $chosen"
 }
 
-# task TITLE ARG...: run brick-install ARG..., showing its progress (status --task), then restart
+# task TITLE ARG...: run crystaline-install ARG..., showing its progress (status --task), then restart
 # once the user has read that it worked. Returns if it failed.
 task() {
 	t=$1
 	shift
 	progress 0x09
-	log "brick-install $*"
+	log "crystaline-install $*"
 	bi "$@" 2>&1 | tee -a $LOG $RLOG | status --task "$t" 2>>$LOG
 	case $? in
-	0) finish reboot "brick-install $1 done" ;;
+	0) finish reboot "crystaline-install $1 done" ;;
 	2) finish poweroff "no button pressed for 10 minutes" ;;
 	esac
 	progress 0x08
@@ -198,7 +198,7 @@ recovery() {
 		note=$(mount_card)
 		# "boot_a|boot_b <version|unknown> [running|previous]" per slot, then "next <slot>".
 		slots=$(bi slots 2>&1)
-		log "brick-install slots: $slots"
+		log "crystaline-install slots: $slots"
 		prev=$(echo "$slots" | sed -n 's/^boot_[ab] \([^ ]*\) previous$/\1/p')
 		set --
 		[ -n "$reason" ] || set -- "Continue starting"
@@ -239,15 +239,15 @@ stage 0x03
 
 # The start-up log on the bootloader partition (see the top).
 save_log() {
-	cp $LOG /bootlog/brick-log/init.log; dmesg >/bootlog/brick-log/dmesg.txt
-	ps >/bootlog/brick-log/ps.txt; sync
+	cp $LOG /bootlog/crystaline-log/init.log; dmesg >/bootlog/crystaline-log/dmesg.txt
+	ps >/bootlog/crystaline-log/ps.txt; sync
 }
 # stop_saver: stop the copying, copy a last time and unmount the bootloader partition.
 stop_saver() { [ -z "$saver" ] || { kill $saver; wait $saver 2>/dev/null; save_log; umount /bootlog; }; }
 disk=${dev#/dev/}; disk=${disk%p*}
 bl=$(grep -l '^PARTNAME=bootloader$' /sys/block/$disk/${disk}p*/uevent | sed 's|.*/\(.*\)/uevent|/dev/\1|')
 if [ -n "$bl" ] && mount -t vfat $bl /bootlog; then
-	mkdir -p /bootlog/brick-log
+	mkdir -p /bootlog/crystaline-log
 	while :; do save_log; sleep 1; done &
 	saver=$!
 fi

@@ -10,7 +10,7 @@
 # Keep the screen on while it runs: display registers are only read when their
 # clocks are on, but the screen blanking mid-run could still race that check.
 
-OUT=/tmp/brick-probe
+OUT=/tmp/crystaline-probe
 HERE=$(cd "$(dirname "$0")" && pwd)
 MEMDUMP=$HERE/memdump
 DBG=/sys/kernel/debug
@@ -235,5 +235,5 @@ collect() {
 # Only the final tarball goes to the real stdout; nothing else (including
 # children that outlive their time limit) holds it open.
 collect >&2
-tar czf - -C /tmp brick-probe
+tar czf - -C /tmp crystaline-probe
 rm -rf "$OUT"

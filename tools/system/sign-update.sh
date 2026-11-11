@@ -1,12 +1,12 @@
 #!/bin/sh
-# Make an update file (userspace/brick-install/src/update.rs says what checks it) from one version
+# Make an update file (userspace/crystaline-install/src/update.rs says what checks it) from one version
 # of the system (build-system.sh's output): a ustar tar of manifest.json, manifest.sig (an Ed25519
 # signature over manifest.json, 64 bytes), boot.img and rootfs.squashfs, in that order, with fixed
 # owners, modes and dates, so the same version and key always give the same file.
 # A -dirty version (built with uncommitted changes) is signed only with this checkout's
 # development key (build/ssh-host-keys/update_key.pem, made by dev-keys.sh).
 # Usage: sign-update.sh <version dir> <key.pem> <out file>
-#        sign-update.sh --public-key <key.pem>   prints the key's public half as brick-install
+#        sign-update.sh --public-key <key.pem>   prints the key's public half as crystaline-install
 #                                                reads it (64 hex characters)
 set -eu
 # The raw public key is the last 32 bytes of its DER form.

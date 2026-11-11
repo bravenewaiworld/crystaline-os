@@ -23,7 +23,7 @@ DEST=$ROOT/build/probe/$(date +%Y%m%d-%H%M%S)
 mkdir -p "$DEST"
 # One connection: ship the script and helper in, stream the result tarball out.
 tar cf - -C "$ROOT/tools/probe" probe.sh -C "$BUILD" memdump |
-	ssh "$HOST" 'D=/tmp/brick-probe-tools; rm -rf $D; mkdir -p $D && cd $D && tar xf - && sh probe.sh; rm -rf $D' |
+	ssh "$HOST" 'D=/tmp/crystaline-probe-tools; rm -rf $D; mkdir -p $D && cd $D && tar xf - && sh probe.sh; rm -rf $D' |
 	tar xzf - -C "$DEST" --strip-components=1 || true
 # Only the last stage of a pipeline sets the exit status, so check the result.
 if [ -z "$(ls -A "$DEST")" ]; then
