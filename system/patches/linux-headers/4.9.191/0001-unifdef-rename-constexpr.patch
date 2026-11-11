@@ -1,3 +1,5 @@
+(Only for the Brick's 4.9 kernel headers: newer kernels have the fix.)
+
 unifdef: rename the constexpr variable, a keyword in C23
 
 GCC 15 and later compile C as C23 by default, where constexpr is a keyword, so the
