@@ -1,0 +1,13 @@
+config BR2_PACKAGE_VKMARK
+	bool "vkmark"
+	depends on BR2_PACKAGE_VULKAN_LOADER
+	depends on BR2_INSTALL_LIBSTDCPP
+	select BR2_PACKAGE_ASSIMP
+	select BR2_PACKAGE_GLM
+	select BR2_PACKAGE_LIBDRM
+	select BR2_PACKAGE_VULKAN_HEADERS
+	help
+	  Vulkan benchmark, with its window systems for the panel
+	  (display: VK_KHR_display; kms: through GBM) and headless.
+
+	  https://github.com/vkmark/vkmark
