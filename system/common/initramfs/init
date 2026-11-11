@@ -236,13 +236,19 @@ recovery() {
 	progress $STAGE
 }
 
-# The boot slot this image was loaded from (see the top): brick.boot= from the Brick's U-Boot
-# settings, crystaline.boot= from other families' boot files.
-slot=$(sed -n 's/.* \(brick\|crystaline\)\.boot=\([^ ]*\).*/\2/p' /proc/cmdline)
+# From the kernel command line, word by word (extlinux puts nothing before its APPEND, so a value
+# may be the first word): the boot slot this image was loaded from (see the top; brick.boot= from
+# the Brick's U-Boot settings, crystaline.boot= from other families' boot files) and the system
+# partition's UUID.
+for a in $(cat /proc/cmdline); do
+	case $a in
+	brick.boot=* | crystaline.boot=*) slot=${a#*.boot=} ;;
+	root=UUID=*) uuid=${a#root=UUID=} ;;
+	esac
+done
 log "version $VERSION, slot ${slot:-unknown}"
 [ -n "$BOARD_ENV" ] && log "board: $BOARD_ENV" || log "$(cat /run-board-env.err)"
-uuid=$(sed -n 's/.* root=UUID=\([^ ]*\).*/\1/p' /proc/cmdline)
-[ -n "$uuid" ] || fail "No system partition given" "U-Boot's settings lack root=UUID=..."
+[ -n "$uuid" ] || fail "No system partition given" "the kernel command line has no root=UUID=..."
 # The storage may still be starting up.
 for _ in 1 2 3 4 5; do dev=$(findfs UUID=$uuid 2>/dev/null) && break; sleep 1; done
 [ -n "$dev" ] || fail "System partition not found" "No partition has the filesystem UUID $uuid"

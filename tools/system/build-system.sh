@@ -192,7 +192,7 @@ need /bin/busybox
 need /sbin/e2fsck
 for p in $INITRAMFS_PROGRAMS; do need "$p"; done
 for a in sh mount umount mkdir cat sed sleep findfs watchdog reboot poweroff switch_root cp echo ln \
-	devmem grep dmesg ps sync kill tee date ls sort head rm tr; do
+	devmem grep dmesg ps sync kill tee date ls sort head tail rm tr; do
 	echo "slink /bin/$a busybox 777 0 0" >>"$list"
 done
 "$KBUILD/usr/gen_init_cpio" "$list" >"$TMP/initramfs.cpio"
