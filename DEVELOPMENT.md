@@ -1,6 +1,6 @@
 # Crystaline OS Development Guide
 
-`make help` lists every build and device target. Commands that reach the device take its address from `ADDR` (default `192.168.7.2`, the USB network link).
+`make help` lists every build and device target. Commands that reach the device take its address from `ADDR` (default `192.168.7.2`, the Brick's USB network link; each board has its own, `BOARD_USB_NET` in its board file: `192.168.8.2` on the RGB20 Pro).
 
 ## Third-party inputs
 

@@ -1,13 +1,14 @@
 #!/bin/sh
 # A USB network link to a PC on the bottom USB-C port (NCM, the USB network-adapter protocol Linux
-# PCs support without drivers). The device takes 192.168.7.2 and hands the PC an address in
-# 192.168.7.10-20 by DHCP, with no gateway or DNS, so the PC's internet routing is untouched.
-# Then: ssh root@192.168.7.2.
+# PCs support without drivers). The device takes .2 in its board's network (BOARD_USB_NET, e.g.
+# 192.168.7.2 on the Brick) and hands the PC an address in .10-20 by DHCP, with no gateway or DNS,
+# so the PC's internet routing is untouched. Then: ssh root@192.168.7.2. Each board has its own
+# network, so a PC can have two different devices plugged in at once.
 # configfs builds the USB device the PC sees (the "gadget"); writing the USB controller's name to
 # UDC connects it. The port's role (a device for a PC, or a host powering USB devices) switches
 # by itself (on the Brick, from the power chip's cable detection: dt-tweaks.sh).
 exec 2>&1
-. /run/crystaline/board.env	# BOARD_NAME, the name the PC shows
+. /run/crystaline/board.env	# BOARD_NAME (the name the PC shows), BOARD_USB_NET
 G=/sys/kernel/config/usb_gadget/crystaline
 if [ ! -d $G ]; then
 	mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
@@ -26,11 +27,11 @@ if [ ! -d $G ]; then
 	ln -s $G/functions/ncm.usb0 $G/configs/c.1/
 	ls /sys/class/udc >$G/UDC	# one USB device controller on every board so far
 fi
-ifconfig usb0 192.168.7.2 netmask 255.255.255.0 up || exit 1
+ifconfig usb0 $BOARD_USB_NET.2 netmask 255.255.255.0 up || exit 1
 cat >/run/udhcpd-usb0.conf <<END
 interface usb0
-start 192.168.7.10
-end 192.168.7.20
+start $BOARD_USB_NET.10
+end $BOARD_USB_NET.20
 max_leases 10
 lease_file /run/udhcpd-usb0.leases
 END

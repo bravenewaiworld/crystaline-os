@@ -120,12 +120,18 @@ BUILDROOT_SRC := $(ROOT)/build/buildroot-$(BUILDROOT_VERSION)
 BR := $(MAKE) -C $(BUILDROOT_SRC) O=$(B)/buildroot BR2_EXTERNAL=$(ROOT)/system \
 	BR2_DL_DIR=$(DL)/buildroot
 
-$(BUILDROOT_SRC)/.done:
+# Our changes to Buildroot itself (its package definitions; patches to the packages' own sources
+# are in system/patches/). The source tree is extracted afresh whenever they change, so each applies
+# once to a clean tree.
+BUILDROOT_PATCHES := $(sort $(wildcard system/buildroot-patches/*.patch))
+$(BUILDROOT_SRC)/.done: $(BUILDROOT_PATCHES)
 	@mkdir -p $(DL)
-	curl -sSfL -o $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz \
+	[ -f $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz ] || curl -sSfL -o $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz \
 		https://buildroot.org/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz
 	echo '$(BUILDROOT_SHA256)  $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz' | sha256sum -c --quiet
+	rm -rf $(BUILDROOT_SRC)
 	tar xf $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz -C $(ROOT)/build
+	for p in $(BUILDROOT_PATCHES); do patch -s -p1 -d $(BUILDROOT_SRC) <$$p || exit 1; done
 	@touch $@
 
 # The configuration is regenerated every time from system/common/buildroot.config followed by

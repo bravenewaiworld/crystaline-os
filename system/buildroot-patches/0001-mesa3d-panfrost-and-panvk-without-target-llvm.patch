@@ -1,0 +1,77 @@
+Mesa: Panfrost and PanVK without LLVM on the device
+
+Buildroot's Panfrost option asks for Mesa's LLVM support, and its shader precompiler option
+selects OpenCL and the SPIR-V/LLVM translator for the target: LLVM, clang and libclc on the
+device, which Panfrost never uses. The precompiling runs on the build machine (host-mesa3d's
+mesa_clc and panfrost_compile), so the target needs only spirv-tools. Also adds an option for
+the Panfrost Vulkan driver (PanVK), which Buildroot doesn't offer.
+
+diff -ru a/package/mesa3d/Config.in b/package/mesa3d/Config.in
+--- a/package/mesa3d/Config.in	2026-11-11 15:20:31.638816344 -0500
++++ b/package/mesa3d/Config.in	2026-11-11 15:20:31.648280958 -0500
+@@ -21,10 +21,9 @@
+ config BR2_PACKAGE_MESA3D_NEEDS_ELFUTILS
+ 	bool
+ 
++# Shaders precompiled on the build machine (host-mesa3d's mesa_clc): the target needs no LLVM.
+ config BR2_PACKAGE_MESA3D_NEEDS_PRECOMP_COMPILER
+ 	bool
+-	select BR2_PACKAGE_MESA3D_OPENCL
+-	select BR2_PACKAGE_SPIRV_LLVM_TRANSLATOR
+ 	select BR2_PACKAGE_SPIRV_TOOLS
+ 
+ config BR2_PACKAGE_MESA3D_LLVM
+@@ -203,16 +202,12 @@
+ config BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_PANFROST
+ 	bool "Gallium panfrost driver"
+ 	depends on BR2_TOOLCHAIN_HAS_SYNC_4 || !BR2_PACKAGE_XORG7 # libxshmfence
+-	depends on BR2_PACKAGE_MESA3D_LLVM
+ 	select BR2_PACKAGE_MESA3D_GALLIUM_DRIVER
+ 	select BR2_PACKAGE_MESA3D_NEEDS_PRECOMP_COMPILER
+ 	select BR2_PACKAGE_MESA3D_RUSTICL_SUPPORTED_DRIVER
+ 	help
+ 	  Mesa driver for ARM Mali Midgard and Bifrost GPUs.
+ 
+-comment "panfrost driver needs llvm"
+-	depends on !BR2_PACKAGE_MESA3D_LLVM
+-
+ config BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_R300
+ 	bool "Gallium Radeon R300 driver"
+ 	depends on BR2_i386 || BR2_x86_64
+@@ -371,6 +366,16 @@
+ 	depends on !BR2_TOOLCHAIN_HEADERS_AT_LEAST_3_17 || \
+ 		!BR2_TOOLCHAIN_USES_GLIBC
+ 
++config BR2_PACKAGE_MESA3D_VULKAN_DRIVER_PANFROST
++	bool "Vulkan panfrost driver (PanVK)"
++	depends on BR2_arm || BR2_aarch64
++	depends on BR2_TOOLCHAIN_HAS_SYNC_4 || !BR2_PACKAGE_XORG7 # libxshmfence
++	select BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_PANFROST # its precompiled shaders
++	select BR2_PACKAGE_MESA3D_NEEDS_PRECOMP_COMPILER
++	select BR2_PACKAGE_MESA3D_VULKAN_DRIVER
++	help
++	  Vulkan driver for ARM Mali Bifrost and Valhall GPUs.
++
+ config BR2_PACKAGE_MESA3D_VULKAN_DRIVER_SWRAST
+ 	bool "Vulkan swrast driver"
+ 	depends on BR2_PACKAGE_MESA3D_LLVM
+diff -ru a/package/mesa3d/mesa3d.mk b/package/mesa3d/mesa3d.mk
+--- a/package/mesa3d/mesa3d.mk	2026-11-11 15:20:31.638880238 -0500
++++ b/package/mesa3d/mesa3d.mk	2026-11-11 15:20:31.648324851 -0500
+@@ -131,6 +131,7 @@
+ MESA3D_VULKAN_DRIVERS-$(BR2_PACKAGE_MESA3D_VULKAN_DRIVER_BROADCOM) += broadcom
+ MESA3D_VULKAN_DRIVERS-$(BR2_PACKAGE_MESA3D_VULKAN_DRIVER_IMAGINATION) += imagination
+ MESA3D_VULKAN_DRIVERS-$(BR2_PACKAGE_MESA3D_VULKAN_DRIVER_INTEL)   += intel
++MESA3D_VULKAN_DRIVERS-$(BR2_PACKAGE_MESA3D_VULKAN_DRIVER_PANFROST) += panfrost
+ MESA3D_VULKAN_DRIVERS-$(BR2_PACKAGE_MESA3D_VULKAN_DRIVER_SWRAST) += swrast
+ MESA3D_VULKAN_DRIVERS-$(BR2_PACKAGE_MESA3D_VULKAN_DRIVER_VIRTIO) += virtio
+ 
+@@ -154,7 +155,7 @@
+ 
+ ifeq ($(BR2_PACKAGE_MESA3D_NEEDS_PRECOMP_COMPILER),y)
+ MESA3D_CONF_OPTS += -Dmesa-clc=system -Dprecomp-compiler=system
+-MESA3D_DEPENDENCIES += host-mesa3d spirv-llvm-translator spirv-tools
++MESA3D_DEPENDENCIES += host-mesa3d spirv-tools
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_MESA3D_VULKAN_DRIVER),)
