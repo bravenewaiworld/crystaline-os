@@ -94,6 +94,9 @@ fail() {
 	fi
 	status --message "$1" "" "$fix" "(hold the power button to turn off)" "" \
 		${2:+-d "Details: $2"} -d "Version $VERSION" >/dev/kmsg 2>&1
+	# Also as plain text on the console (the screen, or the serial port): the kernel shows only its
+	# warnings there, so this program's log lines don't appear, and a board may have no status screen.
+	{ echo; echo "Crystaline OS $VERSION couldn't start: $1${2:+ ($2)}"; tail -n 15 $LOG; } >/dev/console 2>&1
 	rescue
 	while :; do sleep 3600; done
 }
