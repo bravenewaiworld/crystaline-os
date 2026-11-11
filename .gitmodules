@@ -1,5 +1,5 @@
 [submodule "linux"]
-	path = linux
+	path = linux-brick
 	url = https://github.com/bravenewaiworld/crystaline-linux
 [submodule "specular"]
 	path = specular

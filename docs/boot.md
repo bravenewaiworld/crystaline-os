@@ -23,7 +23,7 @@ How the Brick gets from power-on to our system: Allwinner's boot ROM, TrimUI's f
 - **No framebuffer console** (2026-10-10): it hangs the display driver's take-over of U-Boot's logo.
 - **Serial console at warnings only** (2026-10-12). At 115200 baud each line holds a CPU and the console lock for about 5 ms, and the GPU's display module takes that lock on every flip. Rejected: TrimUI's `loglevel=8`.
 - **Our boot logo replaces TrimUI's inside the bootloader partition's FAT image** (2026-10-14), by overwriting the stock `bootlogo.bmp` bytes in place (same size: 396×66, 24-bit), so no FAT tools or root rights are needed.
-- **The boot logo is the Crystaline OS wordmark: three hexagons beside "CRYSTALINE", in Specular's look** (2026-10-18): Geist SemiBold, letter-spaced, Specular's teal and coral accents on black. It is drawn by `system/board/brick/logo/make-logo.py`, and the resulting `bootlogo.bmp` is committed, so building needs no font or image library. Rejected: TrimUI's logo redrawn (it shows TrimUI's name on our system).
+- **The boot logo is the Crystaline OS wordmark: three hexagons beside "CRYSTALINE", in Specular's look** (2026-10-18): Geist SemiBold, letter-spaced, Specular's teal and coral accents on black. It is drawn by `system/family/brick/logo/make-logo.py`, and the resulting `bootlogo.bmp` is committed, so building needs no font or image library. Rejected: TrimUI's logo redrawn (it shows TrimUI's name on our system).
 - **No FEL (USB recovery) mode** (2026-10-18). The boot ROM tries the SD card first, so any of our cards recovers a device. Rejected for now: finding the board's FEL pads or using `fel-sdboot.sunxi` (only needed if starting from the SD card stops being enough).
 - **Kernel crash records (pstore) go to a 1 MiB `pstore` partition on the disk the system starts from** (2026-10-18), on both the SD card image and the installed eMMC layout. U-Boot's settings name it as `pstore_blk.blkdev=PARTUUID=<its GPT UUID>`, so it is found on whichever disk holds it. At a panic our writer drives that card's own controller by polling its registers (no interrupts, DMA or locks); rcS copies the records to `/system/logs/` on the next start. A panic stops the CPUs (`PANIC_TIMEOUT=0`) and the watchdog resets the device within 16 s. Rejected: pstore/blk's `best_effort` mode (it writes nothing at a panic, because its normal write refuses with interrupts off, and it registers at `late_initcall`, possibly before the SD card is found).
 
@@ -44,10 +44,10 @@ boot ROM ─ SD card first, then eMMC; boot0 at sector 16, copy at 256
 ### Device-tree edits
 
 ```
-build: tools/kmake.sh → tools/system/dt-edits.sh build/stock-fw/boot_package.fex <kernel build>/dt-edits.c
+build: tools/kmake.sh → tools/system/dt-edits.sh build/brick/stock-fw/boot_package.fex <kernel build>/dt-edits.c
          runs dt-tweaks.sh on TrimUI's DTB with fdtput/fdtget replaced by dt-edits-record, which runs
          the real tool and logs each step with the bytes it left in the tree (and TrimUI's value
-         before a set); the log becomes the table (CONFIG_OF_EDITS_TABLE, linux/drivers/of/fdt_edits.h)
+         before a set); the log becomes the table (CONFIG_OF_EDITS_TABLE, linux-brick/drivers/of/fdt_edits.h)
 boot:  unflatten_device_tree() → copy U-Boot's tree with 64 KiB to spare → apply the table in order
          set      already ours: in place · TrimUI's: applied · something else: replaced (logged),
                   or kept (logged) when marked KEEP_UBOOT_VALUE

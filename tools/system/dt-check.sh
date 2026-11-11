@@ -3,7 +3,7 @@
 # their outcome (/chosen/crystaline,dt-edits) and the kernel's dt-edits lines, and checks that the
 # tree the kernel used (/sys/firmware/fdt) is what this checkout's edits make of the tree U-Boot
 # handed over (/sys/firmware/fdt-bootloader); the status names the table, so a device running
-# another table's edits shows as different. Saves both in build/dt-samples/ (not in git: they hold
+# another table's edits shows as different. Saves both in build/brick/dt-samples/ (not in git: they hold
 # the device's serial number), where make test-dt-edits applies them too. On a kernel without the
 # edits, /sys/firmware/fdt is U-Boot's tree: it is saved as the -bootloader sample, and the log of
 # this checkout's edits on it is printed.
@@ -21,8 +21,8 @@ echo "status: $status"
 on_device 'dmesg | grep dt-edits' || echo "(no dt-edits lines in the kernel log)"
 on_device 'cat /sys/firmware/fdt' >$T/kernel.dtb
 "$ROOT/tools/system/build-dt-edits-apply.sh" $T/tool
-mkdir -p "$ROOT/build/dt-samples"
-name=$ROOT/build/dt-samples/$(date +%Y%m%d-%H%M%S)
+mkdir -p "$ROOT/build/brick/dt-samples"
+name=$ROOT/build/brick/dt-samples/$(date +%Y%m%d-%H%M%S)
 if ! on_device 'cat /sys/firmware/fdt-bootloader' >$T/bootloader.dtb 2>/dev/null; then
 	cp $T/kernel.dtb "$name-bootloader.dtb"
 	echo "no /sys/firmware/fdt-bootloader: saved U-Boot's tree as $name-bootloader.dtb; this checkout's edits on it:"

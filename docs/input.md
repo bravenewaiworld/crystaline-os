@@ -23,7 +23,7 @@ button pins ──► gpio-keys "brick-keys" ──(exclusive grab)──► pad
 power chip  ──► "axp2202-pek" (KEY_POWER) ─────────────────────────────────────────────────────────► Specular
 ```
 
-`system/board/brick/dt-tweaks.sh` creates "brick-keys". Every button is active-low and has an external pull-up. padbridge then maps each code onto the virtual gamepad:
+`system/family/brick/dt-tweaks.sh` creates "brick-keys". Every button is active-low and has an external pull-up. padbridge then maps each code onto the virtual gamepad:
 
 | Button (label, position) | Pin | brick-keys code | Virtual gamepad |
 |---|---|---|---|

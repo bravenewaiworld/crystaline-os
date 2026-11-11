@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build a TrimUI Brick (TG3040, A133P) SD-card image that boots the vendor boot0 + vendor
 # U-Boot 2018.05 from the card. U-Boot doesn't touch the internal eMMC when booting from the card;
-# whether the kernel sees it is up to the device tree (system/board/brick/dt-tweaks.sh enables it).
+# whether the kernel sees it is up to the device tree (system/family/brick/dt-tweaks.sh enables it).
 #
 # Usage: build_sd_image.sh OUT.img BOOT0 BOOT_PACKAGE BASE_ENV BOOT_IMG BOOTLOADER_FAT [ROOTFS_IMG]
 #   BOOT0          vendor boot0_sdcard.fex (Allwinner "eGON" first-stage loader, unmodified)

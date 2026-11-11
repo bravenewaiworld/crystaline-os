@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tests mount-card (system/board/brick/rootfs-overlay/usr/libexec/crystaline/mount-card) on the PC: the
+# Tests mount-card (system/common/rootfs-overlay/usr/libexec/crystaline/mount-card) on the PC: the
 # real script runs against a fake root (MOUNT_CARD_ROOT): a fake sysfs and mount table, and image
 # files standing in for the card's disk and partitions: each partition is its own image file
 # (pN.img), and disk.img holds only the partition table. mount, umount, partx, sv, logger, id and
@@ -14,7 +14,7 @@
 # Usage: test-mount-card.sh
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-SCRIPT=$ROOT/system/board/brick/rootfs-overlay/usr/libexec/crystaline/mount-card
+SCRIPT=$ROOT/system/common/rootfs-overlay/usr/libexec/crystaline/mount-card
 [ "$(id -u)" != 0 ] || { echo "run this as a normal user" >&2; exit 1; }
 PATH=$PATH:/usr/sbin:/sbin
 for t in blkid sfdisk flock fsck.fat mkfs.fat; do

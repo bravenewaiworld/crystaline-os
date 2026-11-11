@@ -20,7 +20,7 @@ on:
       - system/external.*
       - system/package/**
       - system/patches/**
-      - system/board/brick/busybox.fragment
+      - system/common/busybox.fragment
       - Makefile
       - tools/fetch-third-party.sh
   workflow_dispatch:
@@ -66,8 +66,8 @@ jobs:
       # build-system.sh refuses the placeholder too, but only after the hours spent building the parts.
       - name: Check the release key is in place
         run: |
-          [[ $(<system/board/brick/update-keys/release.pub) =~ ^[0-9a-f]{64}$ ]] ||
-            { echo "::error::system/board/brick/update-keys/release.pub is not a key (DEVELOPMENT.md, Making a release)"; exit 1; }
+          [[ $(<system/common/update-keys/release.pub) =~ ^[0-9a-f]{64}$ ]] ||
+            { echo "::error::system/common/update-keys/release.pub is not a key (DEVELOPMENT.md, Making a release)"; exit 1; }
 
       - name: Install the build's tools
         run: |
@@ -116,9 +116,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            build/buildroot
+            build/brick/buildroot
             build/buildroot-${{ steps.buildroot.outputs.version }}
-          key: buildroot-${{ steps.buildroot.outputs.version }}-${{ hashFiles('system/configs/brick_defconfig', 'system/Config.in', 'system/external.*', 'system/package/**', 'system/patches/**', 'system/board/brick/busybox.fragment') }}
+          key: buildroot-${{ steps.buildroot.outputs.version }}-${{ hashFiles('system/configs/brick_defconfig', 'system/Config.in', 'system/external.*', 'system/package/**', 'system/patches/**', 'system/common/busybox.fragment') }}
 
       - name: Fetch the third-party inputs
         env:
@@ -156,13 +156,13 @@ jobs:
       # Files are named by the tag, or by the system version on a run by hand.
       - name: Collect the results
         run: |
-          V=$(readlink -f build/system/latest)
+          V=$(readlink -f build/brick/system/latest)
           jq -e '.release and (.commit | endswith("-dirty") | not)' "$V/manifest.json" >/dev/null ||
             { echo "::error::not a release build of a clean checkout:"; cat "$V/manifest.json"; exit 1; }
           name=${TAG:-${V##*/}}
           mkdir -p "out/system/${V##*/}"
           cp "$V"/{boot.img,rootfs.squashfs,manifest.json} "out/system/${V##*/}/"
-          xz -T0 -c build/sd-card.img >"out/crystaline-$name-sd-card.img.xz"
+          xz -T0 -c build/brick/sd-card.img >"out/crystaline-$name-sd-card.img.xz"
           ls -lR out
 
       - uses: actions/upload-artifact@v4
@@ -192,7 +192,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-            build/buildroot
+            build/brick/buildroot
             build/buildroot-${{ steps.buildroot.outputs.version }}
           key: ${{ steps.buildroot-output.outputs.cache-primary-key }}
 
@@ -229,8 +229,8 @@ jobs:
           printf '%s\n' "$KEY" >"$key"
           # The key must be the one devices trust, whose public half is in release.pub.
           pub=$(tools/system/sign-update.sh --public-key "$key")
-          [ "$pub" = "$(cat system/board/brick/update-keys/release.pub)" ] ||
-            { echo "::error::UPDATE_SIGNING_KEY is not the key of system/board/brick/update-keys/release.pub (its public key is $pub)"; exit 1; }
+          [ "$pub" = "$(cat system/common/update-keys/release.pub)" ] ||
+            { echo "::error::UPDATE_SIGNING_KEY is not the key of system/common/update-keys/release.pub (its public key is $pub)"; exit 1; }
           tools/system/sign-update.sh out/system/* "$key" "out/crystaline-$TAG.update"
 
       - name: Make the draft release

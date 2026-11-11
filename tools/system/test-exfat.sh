@@ -1,20 +1,20 @@
 #!/bin/bash
 # Tests the kernel's exFAT driver on the PC: boots our 4.9 kernel in QEMU (the "virt" board, with
-# lock checking) on an initramfs made from the device's root filesystem (build/buildroot/target),
+# lock checking) on an initramfs made from the device's root filesystem (build/brick/buildroot/target),
 # whose init is test-exfat-guest.sh, against a 1 GiB virtual disk. Runs the functional and options
 # phases, then ROUNDS power cuts (default 10): a boot that writes and saves until a forced reset
 # 3-14 s in, as if the power were cut, then a boot that runs fsck.exfat -n and, if it finds errors,
 # repairs with fsck.exfat -p as mount-card does.
 # Fails on any failed check, a kernel warning (lockdep, BUG, oops), a save missing or not whole
 # after a cut, a repair that doesn't leave the disk clean, or a guest still running after 5 minutes.
-# Builds QEMU once with Buildroot's host-qemu (build/qemu, about 15 minutes), and the test kernel
-# (trimui_brick_defconfig plus test-exfat.config) in build/test-exfat/kernel; a run after that
+# Builds QEMU once with Buildroot's host-qemu (build/brick/qemu, about 15 minutes), and the test kernel
+# (trimui_brick_defconfig plus test-exfat.config) in build/brick/test-exfat/kernel; a run after that
 # takes about 4 minutes. Needs `make buildroot` first. Logs of the last run are in
-# build/test-exfat/logs. Prints PASS or the first failure.
-# Usage: test-exfat.sh       KERNEL_SRC overrides the kernel source tree (default linux/).
+# build/brick/test-exfat/logs. Prints PASS or the first failure.
+# Usage: test-exfat.sh       KERNEL_SRC overrides the kernel source tree (default linux-brick/).
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-B=$ROOT/build
+B=$ROOT/build/brick
 BR_SRC=$(ls -d $B/buildroot-*/ 2>/dev/null | head -1)	# unpacked by make buildroot; builds QEMU too
 TARGET=$B/buildroot/target
 QEMU=$B/qemu/host/bin/qemu-system-aarch64
@@ -33,7 +33,7 @@ if [ ! -x $QEMU ]; then
 	br() { make -C $BR_SRC O=$B/qemu BR2_DL_DIR=$B/downloads/buildroot "$@" >>$B/qemu/build.log 2>&1; }
 	br BR2_DEFCONFIG=$B/qemu/defconfig defconfig && br host-qemu ||
 		fail "building QEMU; see $B/qemu/build.log"
-	rm -rf $B/qemu/build	# about 3.5 GB of build files; QEMU runs from build/qemu/host
+	rm -rf $B/qemu/build	# about 3.5 GB of build files; QEMU runs from build/brick/qemu/host
 fi
 
 echo "building the test kernel"

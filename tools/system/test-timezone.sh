@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tests crystaline-timezone (system/board/brick/rootfs-overlay/usr/sbin/crystaline-timezone) on the PC: the
+# Tests crystaline-timezone (system/common/rootfs-overlay/usr/sbin/crystaline-timezone) on the PC: the
 # real script runs against a fake root (CRYSTALINE_ROOT) whose zoneinfo is the PC's, with stubs for
 # hwclock (records its calls and the offset the real one would give the kernel) and logger. With
 # BusyBox on the PATH (make test-timezone builds the device's, tools/system/pc-busybox.sh), the
@@ -8,7 +8,7 @@
 # Usage: test-timezone.sh
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-CMD=$ROOT/system/board/brick/rootfs-overlay/usr/sbin/crystaline-timezone
+CMD=$ROOT/system/common/rootfs-overlay/usr/sbin/crystaline-timezone
 [ -f /usr/share/zoneinfo/zone.tab ] || { echo "needs the PC's time zone data (tzdata)" >&2; exit 1; }
 DATE=$(command -v date)	# the PC's, for glibc's reading of a zone file
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT

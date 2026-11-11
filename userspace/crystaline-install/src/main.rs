@@ -173,7 +173,7 @@ impl Paths {
         let internal = target.map(PathBuf::from).or_else(|| disk_on("sdc2")).ok_or_else(|| report::Failure {
             message: "this device's internal storage isn't available".into(),
             hint: format!("This version of Crystaline OS can't use the internal storage. Install a newer version from {}.", report::RELEASES),
-            detail: "no disk on the eMMC controller (sdc2): the device tree must enable it (system/board/brick/dt-tweaks.sh)".into() });
+            detail: "no disk on the eMMC controller (sdc2): the device tree must enable it (system/family/brick/dt-tweaks.sh)".into() });
         let card = source.map(PathBuf::from).or_else(|| disk_on("sdc0")).map_or_else(|| fail("there is no SD card in the device", "Insert the SD card, then try again."), Ok);
         let running = match running {
             Some(r) => PathBuf::from(r),
