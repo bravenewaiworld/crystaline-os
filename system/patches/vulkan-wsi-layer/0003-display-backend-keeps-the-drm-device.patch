@@ -1,0 +1,32 @@
+Claim the DRM device for the layer's display backend before the driver's vkCreateInstance. ARM's
+libmali opens /dev/dri/card0 there and becomes its DRM master without finding a display, so the layer
+can't (EBUSY) and no display is found at all.
+
+--- a/layer/layer.cpp	2026-11-11 16:50:18.361338531 -0500
++++ b/layer/layer.cpp	2026-11-11 16:51:06.367821855 -0500
+@@ -44,6 +44,9 @@
+ #include "util/log.hpp"
+ #include "util/macros.hpp"
+ #include "util/helpers.hpp"
++#if BUILD_WSI_DISPLAY
++#include "wsi/display/drm_display.hpp"
++#endif
+ 
+ #define VK_LAYER_API_VERSION VK_MAKE_VERSION(1, 2, VK_HEADER_VERSION)
+ 
+@@ -587,6 +590,15 @@
+     * Layers have to abide the rule that vkCreateInstance must not generate an error for unrecognized extension names.
+     * Also, the loader filters the extension list to ensure that ICDs do not see extensions that they do not support.
+     */
++#if BUILD_WSI_DISPLAY
++   /* The layer drives the display itself, as the DRM device's master. Some drivers open the DRM device
++    * in vkCreateInstance and become its master without using it (ARM's libmali does), which would lock
++    * the layer out (EBUSY), so the layer claims it first. */
++   if (layer_platforms_to_enable.contains(VK_ICD_WSI_PLATFORM_DISPLAY))
++   {
++      wsi::display::drm_display::get_display();
++   }
++#endif
+    TRY_LOG(fpCreateInstance(&modified_info, pAllocator, pInstance), "Failed to create the instance");
+    /* Note: If the call to vkCreateInstance succeeded, the loader will do the clean-up for us
+     * after this function returns with an error code. We can't call vkDestroyInstance
