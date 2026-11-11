@@ -108,7 +108,7 @@ pub fn check(dir: &Path, report: &mut Report) -> Result<serde_json::Value> {
     Ok(m)
 }
 
-/// `brick-install restore <dir>`: from the SD card, `restore`; from the installed system, `prepare`.
+/// `crystaline-install restore <dir>`: from the SD card, `restore`; from the installed system, `prepare`.
 pub fn restore_or_prepare(p: &Paths, dir: &Path, report: &mut Report) -> Result<String> {
     if !p.on_card() { return prepare(p, dir, report); }
     report.steps(3);
@@ -233,7 +233,7 @@ fn can_prepare(internal: &Disk, card: &Disk) -> Result<()> {
     Ok(())
 }
 
-/// `brick-install restore --cancel`, on the SD card: drops a prepared restore (its marker) and
+/// `crystaline-install restore --cancel`, on the SD card: drops a prepared restore (its marker) and
 /// erases the card's first-stage loader again, so the device starts from the internal storage.
 pub fn cancel(p: &Paths, report: &mut Report) -> Result<String> {
     report.steps(1);

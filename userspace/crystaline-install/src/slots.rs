@@ -90,7 +90,7 @@ pub fn activate(p: &Paths, version: &str, report: &mut Report) -> Result<String>
     if version == p.version { return keep_running(p, report); }
     let dir = p.system.join("images").join(version);
     if version.ends_with(".part") || !dir.join("manifest.json").is_file() {
-        return fail(format!("version {version} isn't installed"), "Choose a version from brick-install slots, or install an update.");
+        return fail(format!("version {version} isn't installed"), "Choose a version from crystaline-install slots, or install an update.");
     }
     install::check_images(&dir, report)?;
     let (disk, parts, held, this) = target(p, true, report)?;
@@ -156,7 +156,7 @@ pub fn target(p: &Paths, write: bool, report: &mut Report) -> Result<(Disk, Vec<
     Ok((disk, parts, held, this))
 }
 
-/// What `brick-install slots` prints: each slot with what it holds ("unknown" if no version in
+/// What `crystaline-install slots` prints: each slot with what it holds ("unknown" if no version in
 /// images/ matches), labelled "running" or "previous" (the other slot, holding another version),
 /// then the slot that starts next, from the settings copy U-Boot uses:
 ///   boot_a 20261018-212347-b3a6d97 running

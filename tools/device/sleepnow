@@ -5,8 +5,8 @@
 # The WiFi driver (XR829) refuses to suspend while connected, so WiFi is stopped first and, if
 # it was running, restarted afterwards.
 # Not while an install or a restore runs (it holds a lock on its status file, see
-# userspace/brick-install/src/status.rs): sleeping would stop it partway.
-STATUS=/run/brick-install.status
+# userspace/crystaline-install/src/status.rs): sleeping would stop it partway.
+STATUS=/run/crystaline-install.status
 if [ -e $STATUS ] && ! flock -n -s $STATUS true; then
 	echo "sleepnow: an install or a restore is running; not sleeping" >&2
 	exit 1
@@ -19,10 +19,10 @@ fi
 # runs when Specular calls this, so powering off loses nothing. Caveat: at 1 % with the guard
 # distrusting the gauge ("unsure"), the device sleeps and gets no low-battery wake.
 poweroff_if_empty() {
-	b=$(/usr/libexec/brick/battery-guard state)
+	b=$(/usr/libexec/crystaline/battery-guard state)
 	[ "${b%% *}" = empty ] || return 0
 	logger -s -t sleepnow "battery $b: powering off instead of sleeping"
-	/usr/libexec/brick/last-shutdown reason battery-empty
+	/usr/libexec/crystaline/last-shutdown reason battery-empty
 	exec poweroff
 }
 poweroff_if_empty

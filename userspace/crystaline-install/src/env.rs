@@ -180,7 +180,7 @@ mod tests {
     #[test]
     fn switches_both_copies() {
         for (e, r) in [(1, 1), (254, 255), (255, 0), (0, 254), (5, 4)] {
-            let path = std::env::temp_dir().join(format!("brick-install-env-test-{}-{e}-{r}", std::process::id()));
+            let path = std::env::temp_dir().join(format!("crystaline-install-env-test-{}-{e}-{r}", std::process::id()));
             std::fs::write(&path, vec![0; 2 * SIZE]).unwrap();
             let disk = Disk::open(&path, true).unwrap();
             let parts = [Part { name: "env".into(), start: 0, size: SIZE as u64 }, Part { name: "env-redund".into(), start: SIZE as u64, size: SIZE as u64 }];

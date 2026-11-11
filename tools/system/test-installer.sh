@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tests the installer (userspace/brick-install) on the PC, against image files: a fake internal
+# Tests the installer (userspace/crystaline-install) on the PC, against image files: a fake internal
 # storage laid out as TrimUI's (with the boot area copied off a Brick's eMMC, when there, and
 # random data in its partitions), a copy of the SD card image (make sd-card) and the system
 # version it holds. Checks the card's layout and start-up settings, runs offer, a dry run (which
@@ -10,7 +10,7 @@
 # followed; cancels a prepared restore. Then installs update files on the card (signed with a
 # test key; damaged and wrongly signed ones, and versions whose kernel doesn't make the device-tree
 # changes, must change nothing), cut short at each write that matters (the cut points in
-# userspace/brick-install/src/cut.rs), switches back to the previous version, and checks that a
+# userspace/crystaline-install/src/cut.rs), switches back to the previous version, and checks that a
 # low battery stops each task. Needs no root rights. Prints PASS or the first failure.
 # Usage: test-installer.sh   (after make sd-card)
 set -euo pipefail
@@ -21,7 +21,7 @@ check() { "$@" || { echo "FAIL: $*" >&2; exit 1; }; }
 sum() { sha256sum "$1" | cut -d' ' -f1; }
 # Sectors of a disk image: sectors <image> <first> <count>
 sectors() { dd if="$1" bs=512 skip="$2" count="$3" status=none; }
-# What U-Boot will use on a disk image, read independently of brick-install: uboot <image> [key]
+# What U-Boot will use on a disk image, read independently of crystaline-install: uboot <image> [key]
 uboot() { python3 -I "$ROOT/tools/sdboot/uboot-env.py" "$@"; }
 # A partition's start sector or GPT UUID (in capitals), from sfdisk: part <image> <name> start|uuid
 part() { sfdisk -d "$1" | sed -n "s/.*$3= *\([0-9A-F-]*\).*name=\"$2\".*/\1/p"; }
@@ -29,8 +29,8 @@ part() { sfdisk -d "$1" | sed -n "s/.*$3= *\([0-9A-F-]*\).*name=\"$2\".*/\1/p"; 
 zeros() { [ "$(tr -d '\0' | wc -c)" = 0 ]; }
 
 # From its directory, where rustup finds its pinned toolchain.
-(cd "$ROOT/userspace/brick-install" && CARGO_TARGET_DIR=$B/installer-host cargo build -q --release --features cut-points)
-BIN=$B/installer-host/release/brick-install
+(cd "$ROOT/userspace/crystaline-install" && CARGO_TARGET_DIR=$B/installer-host cargo build -q --release --features cut-points)
+BIN=$B/installer-host/release/crystaline-install
 V=$(basename "$(readlink -f "$B/system/latest")")
 
 # The fake internal storage: 2 GiB, TrimUI's partitions (the sizes in its firmware's
@@ -75,7 +75,7 @@ for k in key other-key; do openssl genpkey -algorithm ed25519 -out "$T/$k.pem" 2
 "$ROOT/tools/system/sign-update.sh" --public-key "$T/key.pem" >"$T/keys/test.pub"
 echo 'not a key' >"$T/keys/junk.pub"  # skipped
 
-# brick-install's options: the system runs from $RUNNING (default the card) as version $VER
+# crystaline-install's options: the system runs from $RUNNING (default the card) as version $VER
 # (default $V) from slot $SLOT (default boot_a), with $POWER as its power supplies.
 args() {
 	ARGS=(--target "$EMMC" --source "$T/card.img" --running "${RUNNING:-$T/card.img}" --system "$T/system" --data "$T/data"
@@ -84,7 +84,7 @@ args() {
 bi() { args; "$BIN" "$@" "${ARGS[@]}"; }
 # What the internal storage holds, from the offer (install::holds).
 holds() { bi offer | sed -n 's/.*"internal":"\([a-z-]*\)".*/\1/p'; }
-# start <name> <args...>: runs brick-install in the background, its output in $T/<name>.out.
+# start <name> <args...>: runs crystaline-install in the background, its output in $T/<name>.out.
 start() { local name=$1; shift; args; "$BIN" "$@" "${ARGS[@]}" >"$T/$name.out" & PID=$!; }
 # wait_for <name> <awk condition>: waits until the task's output meets the condition.
 wait_for() { until awk "$2" "$T/$1.out"; do sleep 0.05; done; }
@@ -320,7 +320,7 @@ bi slots | tee "$T/slots.out"
 check [ "$(cat "$T/slots.out")" = "$(printf 'boot_a %s running\nboot_b %s previous\nnext boot_b' $V $V2)" ]
 
 echo "== another update before a restart: the settings are pointed away from the slot before it is overwritten"
-BRICK_INSTALL_CUT=slot-written bi update "$T/updates/older.update" >"$T/cut.out" 2>&1 || true
+CRYSTALINE_INSTALL_CUT=slot-written bi update "$T/updates/older.update" >"$T/cut.out" 2>&1 || true
 check grep -q 'cut at slot-written' "$T/cut.out"
 check [ "$(uboot "$T/card.img" boot_partition)" = boot_a ]
 check startable
@@ -354,7 +354,7 @@ check [ "$(sum "$T/card.img")" = "$CARD" ]
 echo "== updates cut short at each write that matters: the device still starts, and it can run again"
 for cut in slot-written:boot_a env-1-torn:boot_a env-1:boot_b env-2-torn:boot_b env-2:boot_b; do
 	fresh
-	BRICK_INSTALL_CUT=${cut%:*} bi update "$T/updates/good.update" >"$T/cut.out" 2>&1 || true
+	CRYSTALINE_INSTALL_CUT=${cut%:*} bi update "$T/updates/good.update" >"$T/cut.out" 2>&1 || true
 	check grep -q "cut at ${cut%:*}" "$T/cut.out"
 	check [ "$(uboot "$T/card.img" boot_partition)" = ${cut#*:} ]
 	check startable

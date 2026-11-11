@@ -17,8 +17,8 @@ hostname -F /etc/hostname
 # Loopback: the kernel leaves it down, and local services rely on 127.0.0.1 (Specular checks the
 # file transfer server is up by connecting to it).
 ip link set lo up
-# How the last run ended (/run/brick/last-shutdown, for Specular), and this run marked as running.
-/usr/libexec/brick/last-shutdown start
+# How the last run ended (/run/crystaline/last-shutdown, for Specular), and this run marked as running.
+/usr/libexec/crystaline/last-shutdown start
 # The outcome of the kernel's device-tree edits, and its log lines about them (docs/boot.md).
 echo "device-tree edits: $(tr -d '\0' </proc/device-tree/chosen/crystaline,dt-edits 2>/dev/null || echo 'none (kernel without them)')"
 dmesg | grep dt-edits
@@ -32,16 +32,16 @@ modprobe pvrsrvkm
 modprobe dc_sunxi
 # The balanced CPU profile (the top USB port starts on by itself); Specular applies its own choices
 # when it starts.
-brick-power profile balanced
+crystaline-power profile balanced
 
 # The kernel's time zone offset, before the card is mounted: the FAT driver converts file times
-# with it (see brick-timezone).
-brick-timezone kernel
+# with it (see crystaline-timezone).
+crystaline-timezone kernel
 # The data card: mounted now, and kept matching the card in the slot from here on (mdev.conf).
-/usr/libexec/brick/mount-card start
+/usr/libexec/crystaline/mount-card start
 progress 0x11
-# State that survives reboots and updates, on the system partition (see usr/libexec/brick/state).
-/usr/libexec/brick/state
+# State that survives reboots and updates, on the system partition (see usr/libexec/crystaline/state).
+/usr/libexec/crystaline/state
 
 # Kernel crash records (the log at an oops or panic, kept on the disk's pstore partition): copied
 # to /system/logs/crash-<UTC time>/ and removed, which erases them from the partition. The newest

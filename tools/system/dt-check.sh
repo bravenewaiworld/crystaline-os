@@ -7,7 +7,7 @@
 # the device's serial number), where make test-dt-edits applies them too. On a kernel without the
 # edits, /sys/firmware/fdt is U-Boot's tree: it is saved as the -bootloader sample, and the log of
 # this checkout's edits on it is printed.
-# Usage: dt-check.sh          BRICK as for ssh.sh. Exits 1 if anything doesn't match, or the kernel
+# Usage: dt-check.sh          ADDR as for ssh.sh. Exits 1 if anything doesn't match, or the kernel
 #                             has no edits.
 set -euo pipefail
 . "$(dirname "$0")/ssh.sh"
@@ -15,15 +15,15 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 ok=1
 
-status=$(on_brick 'tr -d "\0" </proc/device-tree/chosen/crystaline,dt-edits' 2>/dev/null) ||
+status=$(on_device 'tr -d "\0" </proc/device-tree/chosen/crystaline,dt-edits' 2>/dev/null) ||
 	status="(none: the running kernel has no built-in edits, or couldn't copy the tree)"
 echo "status: $status"
-on_brick 'dmesg | grep dt-edits' || echo "(no dt-edits lines in the kernel log)"
-on_brick 'cat /sys/firmware/fdt' >$T/kernel.dtb
+on_device 'dmesg | grep dt-edits' || echo "(no dt-edits lines in the kernel log)"
+on_device 'cat /sys/firmware/fdt' >$T/kernel.dtb
 "$ROOT/tools/system/build-dt-edits-apply.sh" $T/tool
 mkdir -p "$ROOT/build/dt-samples"
 name=$ROOT/build/dt-samples/$(date +%Y%m%d-%H%M%S)
-if ! on_brick 'cat /sys/firmware/fdt-bootloader' >$T/bootloader.dtb 2>/dev/null; then
+if ! on_device 'cat /sys/firmware/fdt-bootloader' >$T/bootloader.dtb 2>/dev/null; then
 	cp $T/kernel.dtb "$name-bootloader.dtb"
 	echo "no /sys/firmware/fdt-bootloader: saved U-Boot's tree as $name-bootloader.dtb; this checkout's edits on it:"
 	$T/tool/dt-edits-apply $T/kernel.dtb $T/expected.dtb || true

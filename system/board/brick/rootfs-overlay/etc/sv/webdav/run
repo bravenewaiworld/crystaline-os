@@ -11,4 +11,4 @@
 exec 2>&1
 # No data card: stay down rather than retry every second.
 mountpoint -q /mnt/SDCARD || { sv down webdav; exit 0; }
-exec chpst -u www-data /usr/bin/dufs -A --assets /usr/share/brick-web -p 80 /mnt/SDCARD
+exec chpst -u www-data /usr/bin/dufs -A --assets /usr/share/crystaline-web -p 80 /mnt/SDCARD

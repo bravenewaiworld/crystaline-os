@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tests the low-battery guard (system/board/brick/rootfs-overlay/usr/libexec/brick/battery-guard)
+# Tests the low-battery guard (system/board/brick/rootfs-overlay/usr/libexec/crystaline/battery-guard)
 # on the development PC: its decisions over sequences of samples (through `battery-guard replay`,
 # which takes samples as the service logs them), that its log of them replays to the same
 # decisions, its reading of a fake battery (`state`), and the service loop against a fake empty
@@ -9,7 +9,7 @@
 # Usage: test-battery-guard.sh
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-GUARD=$ROOT/system/board/brick/rootfs-overlay/usr/libexec/brick/battery-guard
+GUARD=$ROOT/system/board/brick/rootfs-overlay/usr/libexec/crystaline/battery-guard
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 

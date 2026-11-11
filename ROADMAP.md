@@ -54,8 +54,8 @@ Completed:
 - DRAM at 744 MHz (TrimUI: 672), set in the card's first-stage loader: about 5 % more frames per second in a memory-bound game (the GameCube race); 756 gains nothing more, 768 and up don't start. Reaches a device only through a newly written card, which an install copies to the internal storage
 
 Built, to test on the device:
-- Profiles through `brick-power profile performance|balanced|saver` (1200–2000 / 408–2000 / 408–1200 MHz); the governor now checks every 50 ms instead of every 2 s. Gate: idle power must not rise
-- A minimum CPU speed Specular raises during a game: `brick-power cpu-min <MHz>|default` (PS1 games settled near 1.2 GHz and fell short of full speed). Specular's side is checked on the device; left: the battery cost of the minimum
+- Profiles through `crystaline-power profile performance|balanced|saver` (1200–2000 / 408–2000 / 408–1200 MHz); the governor now checks every 50 ms instead of every 2 s. Gate: idle power must not rise
+- A minimum CPU speed Specular raises during a game: `crystaline-power cpu-min <MHz>|default` (PS1 games settled near 1.2 GHz and fell short of full speed). Specular's side is checked on the device; left: the battery cost of the minimum
 
 TODO:
 - Decide whether to keep the 2.0 GHz step, by a long full-load run at 2.0 GHz with temperature logging; keep it if stable
@@ -89,7 +89,7 @@ Completed:
 - Top USB-C port: host, 5 V always on
 
 Built, to test on the device:
-- Top port's 5 V switch while awake (`brick-power usb-top on|off`; refuses while a device is attached)
+- Top port's 5 V switch while awake (`crystaline-power usb-top on|off`; refuses while a device is attached)
 
 TODO:
 - Find what power chip register 0xE9 holds; if it is the charger's advertised current, use it to set the input limit for USB-C chargers without BC1.2
@@ -110,7 +110,7 @@ Built, to test on the device:
 - Battery level is the gauge's own (no driver smoothing; the old lag came from TrimUI's U-Boot setting the smoothing flag)
 - LEDs' 5 V supply off while every LED is dark (check nothing else is fed by it)
 - Battery guard: powers off at 1 % (checked against the battery voltage); the power chip's low-battery interrupt wakes a sleeping device to do it. Gate: does that interrupt wake it?
-- Power mechanisms for Specular's policy: `brick-power` profiles and top-port switch (above); dimming, screen off, the 3 % save-and-quit and the power-saving mode are Specular's
+- Power mechanisms for Specular's policy: `crystaline-power` profiles and top-port switch (above); dimming, screen off, the 3 % save-and-quit and the power-saving mode are Specular's
 
 TODO:
 - Find what draws ~27 mA in deep sleep (candidates: DRAM self-refresh, the always-on domain, rails the sleep firmware keeps on, the SD card, the WiFi/Bluetooth chip's supply), by a stock-firmware sleep test or a USB power meter on the charge port (the gauge's coulomb counter isn't usable)
@@ -163,7 +163,7 @@ Completed:
 - Clock read from the clock chip at boot; set from network time while WiFi is up, and written back
 
 Built, to test on the device:
-- Time zone: `brick-timezone get|set|list` (default UTC; the clock chip stays UTC); files on the SD card stamped in local time. Automatic time zone is Specular's (with the user's consent to an IP lookup)
+- Time zone: `crystaline-timezone get|set|list` (default UTC; the clock chip stays UTC); files on the SD card stamped in local time. Automatic time zone is Specular's (with the user's consent to an IP lookup)
 
 TODO:
 - Check whether the clock survives power-off, by powering off for an hour and comparing with network time
@@ -179,7 +179,7 @@ Built, to test on the device:
 - Device-tree changes applied by our kernel itself, so they ship with each version; TrimUI's boot package unmodified
 - Crystaline OS boot logo
 - Recovery menu: hold MENU at power-on (or after a failed start): start the previous version, install an update from the card, power off
-- How the last run ended (`/run/brick/last-shutdown`: `unexpected` or `battery-empty`), for Specular to tell the user once
+- How the last run ended (`/run/crystaline/last-shutdown`: `unexpected` or `battery-empty`), for Specular to tell the user once
 - Crash records (pstore) on the SD card or eMMC, whichever the system runs from, saved to `/system/logs/crash-*/` at the next start
 
 TODO:
@@ -195,7 +195,7 @@ Completed:
 
 Built, to test on the device (needs a newly written card: the layout changed):
 - Two boot slots (A/B), switched through U-Boot's two settings copies, so a power cut during an update never leaves the device unbootable. `make update-device` into the other slot works on the device; left: updates from the card, the battery refusal, an update cut short, the previous version, restore
-- Signed update files (Ed25519), installed from the SD card (`brick-install update`) or the recovery menu; older versions allowed with a warning; previous version kept and startable
+- Signed update files (Ed25519), installed from the SD card (`crystaline-install update`) or the recovery menu; older versions allowed with a warning; previous version kept and startable
 - Restore TrimUI's system from the installed system (prepared there, finished from the card); restore now checks the battery
 - GitHub Actions release workflow (tags `v0.YYYY.MM.DD`): SD-card image, signed update file and checksums in a draft release
 
@@ -206,7 +206,7 @@ TODO:
 
 Completed:
 - `padbridge` (see Input)
-- `brick-install`: install to internal storage, with an optional backup of TrimUI's system to the card, and restore; an install or restore cut short is recognised and can simply be run again
+- `crystaline-install`: install to internal storage, with an optional backup of TrimUI's system to the card, and restore; an install or restore cut short is recognised and can simply be run again
 - Service manager restarts any service that exits; the frontend falls back to a status screen after 3 failures within a minute
 - Services: SSH, USB network link, WebDAV file server, WiFi, Bluetooth and Bluetooth audio, network time, system log
 - Loopback (`lo`) up at start-up (Specular's file transfer screen checks its server at 127.0.0.1)
@@ -223,7 +223,7 @@ Built, to test on the device:
 TODO (No Manuals gaps found in the 2026-10-19 audit, not yet decided):
 - `wpa_supplicant.conf` on the card is imported once, silently, and stays readable on the card (passwords): report the result, or drop the feature
 - The USB network link is always on: a PC grows an unexplained "Brick" network adapter. Give it a descriptive name, and show its address on Specular's File transfer screen (or limit it to developer mode)
-- The recovery menu lists older and unsigned update files without warning; build its list from `brick-install offer`
+- The recovery menu lists older and unsigned update files without warning; build its list from `crystaline-install offer`
 - Before its first start the card has no partition a PC can read, so the PC offers to format it: a small FAT partition with a "don't format: put this card in the Brick" note, remade on the first start
 - Device-tree edits that fail leave no buttons, and say so only in `rcS.log`
 - An update that finds the system partition full can only say to rewrite the card: prune old logs or offer to drop the developer layer
@@ -248,7 +248,7 @@ Built, to test on the device:
 - `perf`, `gdbserver` and `strace` in development images; `make debug-running-release` copies them (and the hardware test tools) into a running release image's memory
 - Memory bus monitor (`sunxi_nsi`): DRAM traffic per bus master (CPU, GPU, SD card…) through sysfs; present on the device, not yet used by any tool
 - System log kept across reboots (`/system/logs/messages`, 1 MiB at most), with kernel messages
-- Release images (`make system RELEASE=1`): no development key, no serial login, per-device host keys, SSH off unless switched on with keys imported on the device (`brick-ssh`)
+- Release images (`make system RELEASE=1`): no development key, no serial login, per-device host keys, SSH off unless switched on with keys imported on the device (`crystaline-ssh`)
 
 TODO:
 - Test the USB network link on Windows and macOS; add RNDIS only if one of them needs it

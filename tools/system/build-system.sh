@@ -64,15 +64,15 @@ rm -f "$R/lib/modules/$KERNEL_RELEASE/build" "$R/lib/modules/$KERNEL_RELEASE/sou
 
 put "$B/userspace/padbridge" /usr/bin/padbridge 755
 put "$B/userspace/xr829-attach" /usr/bin/xr829-attach 755
-put "$B/installer/aarch64-unknown-linux-gnu/release/brick-install" /usr/sbin/brick-install 755
+put "$B/installer/aarch64-unknown-linux-gnu/release/crystaline-install" /usr/sbin/crystaline-install 755
 for f in "$B"/tools/* "$ROOT/tools/device/powertest" "$ROOT/tools/device/sleepnow"; do
 	put "$f" "/usr/bin/${f##*/}" 755
 done
 put "$DUFS" /usr/bin/dufs 755
 # Our browser page for dufs (--assets in etc/sv/webdav/run). dufs tells browsers to keep the page's
 # script and style forever, so index.html asks for them with the version in their addresses.
-for f in "$BOARD"/webui/*; do put "$f" "/usr/share/brick-web/${f##*/}" 644; done
-sed -i "s/@VERSION@/$VERSION/g" "$R/usr/share/brick-web/index.html"
+for f in "$BOARD"/webui/*; do put "$f" "/usr/share/crystaline-web/${f##*/}" 644; done
+sed -i "s/@VERSION@/$VERSION/g" "$R/usr/share/crystaline-web/index.html"
 # Specular, its cores and fonts, as its own Makefile installed them (SPECULAR_STAGE in the Makefile).
 cp -R "$B/specular-install/." "$R/"
 
@@ -115,7 +115,7 @@ fi
 # with dev_key, or without a password on the serial console.
 # Release: no keys in the image. The host keys and root's authorized_keys link into the state
 # area: the device makes host keys of its own (ssh-host-keys), and the login keys are only those
-# the user imports on the device (brick-ssh, which also switches SSH on and off). Root's password
+# the user imports on the device (crystaline-ssh, which also switches SSH on and off). Root's password
 # becomes "*", which no password matches, so nobody can log in on the serial console ("!" would
 # mark the account locked, and sshd would then refuse root's keys too).
 install -d -m 700 "$R/root/.ssh"
@@ -136,18 +136,18 @@ else
 fi
 
 # --- Update keys ------------------------------------------------------------------------------
-# brick-install update accepts update files signed by a key in /etc/brick/update-keys/: the
+# crystaline-install update accepts update files signed by a key in /etc/crystaline/update-keys/: the
 # release key (the maintainer's, kept offline) and, on development images, this checkout's
 # development key (made by dev-keys.sh). The release key file is a placeholder until the release
 # key exists; a development image then goes without it.
 if is_key "$RELEASE_KEY"; then
-	put "$RELEASE_KEY" /etc/brick/update-keys/release.pub 644
+	put "$RELEASE_KEY" /etc/crystaline/update-keys/release.pub 644
 else
 	echo "warning: no release key yet ($RELEASE_KEY): only development update files will install" >&2
 fi
-[ "$RELEASE" = 1 ] || put "$B/ssh-host-keys/update_key.pub" /etc/brick/update-keys/dev.pub 644
+[ "$RELEASE" = 1 ] || put "$B/ssh-host-keys/update_key.pub" /etc/crystaline/update-keys/dev.pub 644
 
-echo "$VERSION" >"$R/etc/brick-version"
+echo "$VERSION" >"$R/etc/crystaline-version"
 V=$OUT/$VERSION
 mkdir -p "$V"
 # usr/bin/dufs: gets the right to listen on port 80, as it runs as a normal user (etc/sv/webdav).
@@ -163,15 +163,15 @@ python3 -I "$ROOT/tools/system/tar-with-owners.py" "$BR/images/rootfs.tar" "$R" 
 # (which sets owners itself, so no root rights are needed).
 list=$TMP/initramfs.list
 {
-	for d in /dev /proc /sys /system /lower /newroot /bootlog /card /bin /sbin /etc /etc/brick \
-		/etc/brick/update-keys /lib /usr /usr/bin /usr/sbin /usr/lib /usr/libexec \
-		/usr/libexec/brick; do
+	for d in /dev /proc /sys /system /lower /newroot /bootlog /card /bin /sbin /etc /etc/crystaline \
+		/etc/crystaline/update-keys /lib /usr /usr/bin /usr/sbin /usr/lib /usr/libexec \
+		/usr/libexec/crystaline; do
 		echo "dir $d 755 0 0"
 	done
-	# The recovery menu's brick-install checks update files against the same keys as the system
+	# The recovery menu's crystaline-install checks update files against the same keys as the system
 	# (-e: without any, the pattern stays as written).
-	for k in "$R"/etc/brick/update-keys/*; do
-		[ ! -e "$k" ] || echo "file /etc/brick/update-keys/${k##*/} $k 644 0 0"
+	for k in "$R"/etc/crystaline/update-keys/*; do
+		[ ! -e "$k" ] || echo "file /etc/crystaline/update-keys/${k##*/} $k 644 0 0"
 	done
 	# The dynamic loader looks for libraries in /lib64 and /usr/lib64 only (Buildroot's root
 	# filesystem links both to lib, as here).
@@ -180,13 +180,13 @@ list=$TMP/initramfs.list
 	echo "slink /etc/mtab /proc/mounts 777 0 0"	# e2fsck checks for mounts through /etc/mtab
 	echo "nod /dev/console 600 0 0 c 5 1"
 	echo "file /init $BOARD/initramfs/init 755 0 0"
-	echo "file /etc/brick-version $R/etc/brick-version 644 0 0"
+	echo "file /etc/crystaline-version $R/etc/crystaline-version 644 0 0"
 	# The recovery menu mounts the SD card with mount-card's options, which name www-data's group:
 	# as a number, since the initramfs has no user database.
-	echo "file /usr/libexec/brick/card-options $R/usr/libexec/brick/card-options 644 0 0"
+	echo "file /usr/libexec/crystaline/card-options $R/usr/libexec/crystaline/card-options 644 0 0"
 	sed -n 's/^www-data:[^:]*:\([0-9]*\):.*/\1/p' "$R/etc/group" >"$TMP/www-data-gid"
 	[ -s "$TMP/www-data-gid" ] || { echo "no www-data group in the root filesystem" >&2; exit 1; }
-	echo "file /etc/brick/www-data-gid $TMP/www-data-gid 644 0 0"
+	echo "file /etc/crystaline/www-data-gid $TMP/www-data-gid 644 0 0"
 } >"$list"
 # need FILE: add FILE (a path in the root filesystem) and, recursively, the libraries it needs and
 # its dynamic loader. A path that is a link in the root filesystem becomes a copy of its target.
@@ -205,7 +205,7 @@ need() {
 need /bin/busybox
 need /sbin/e2fsck
 need /usr/bin/status
-need /usr/sbin/brick-install
+need /usr/sbin/crystaline-install
 for a in sh mount umount mkdir cat sed sleep findfs watchdog reboot poweroff switch_root cp echo ln \
 	devmem grep dmesg ps sync kill tee date ls sort head rm; do
 	echo "slink /bin/$a busybox 777 0 0" >>"$list"
@@ -224,7 +224,7 @@ python3 -I "$ROOT/tools/sdboot/mkbootimg.py" --ramdisk "$TMP/initramfs.cpio.gz" 
 
 # --- Manifest ---------------------------------------------------------------------------------
 # dt_edits: the kernel makes our device-tree changes itself (CONFIG_OF_EDITS), so this version runs
-# with TrimUI's boot package unchanged; brick-install refuses versions without it.
+# with TrimUI's boot package unchanged; crystaline-install refuses versions without it.
 DT_EDITS=$(grep -q '^CONFIG_OF_EDITS=y' "$KBUILD/.config" && echo true || echo false)
 entry() { printf '"%s": { "size": %s, "sha256": "%s" }' "$1" "$(stat -c%s "$V/$1")" \
 	"$(sha256sum "$V/$1" | cut -d' ' -f1)"; }

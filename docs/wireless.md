@@ -36,7 +36,7 @@ bluetoothd      BlueZ, once D-Bus runs
 bluealsa        bluealsa -p a2dp-source, once D-Bus runs
 ```
 
-The state area. `/var/state` links to `/system/state`. The start-up script `/usr/libexec/brick/state` creates it:
+The state area. `/var/state` links to `/system/state`. The start-up script `/usr/libexec/crystaline/state` creates it:
 
 ```
 /var/state/bluetooth/xr_bt.conf        the Bluetooth address: "%02x " per byte, most significant first, trailing space

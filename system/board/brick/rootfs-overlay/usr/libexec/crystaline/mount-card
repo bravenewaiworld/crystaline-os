@@ -14,7 +14,7 @@
 # unmount, or by /system).
 # Debugging: touch /run/card/trace to have each run's commands traced (sh -x) into it.
 R=${MOUNT_CARD_ROOT-}	# a fake root for tools/system/test-mount-card.sh; empty on the device
-MNT=$R/mnt/SDCARD RUN=$R/run/card GUIDES=$R/usr/share/brick/card-guides
+MNT=$R/mnt/SDCARD RUN=$R/run/card GUIDES=$R/usr/share/crystaline/card-guides
 log() { logger -s -t mount-card "$*"; }
 
 # The helpers below work on the card's disk in $disk and /system's device number in $sys, both set

@@ -85,7 +85,7 @@ ENV=$(mktemp); trap 'rm -f "$ENV"' EXIT
 python3 -I "$TOOLS/mkenv.py" "$BASE_ENV" "$ENV" $ENV_SIZE -root_partition -blkoops_partition \
 	"mmc_root=$ROOT_REF" boot_partition=boot_a "blkoops_blkdev=PARTUUID=$PSTORE_UUID" \
 	'setargs_mmc+= brick.boot=${boot_partition}' >/dev/null
-# U-Boot keeps two copies and uses the newer one whose CRC is good (env.rs in brick-install).
+# U-Boot keeps two copies and uses the newer one whose CRC is good (env.rs in crystaline-install).
 put "$ENV" $((ENV_AT*MiB)) $((ENV_MiB*MiB))
 put "$ENV" $((ENV2_AT*MiB)) $((ENV_MiB*MiB))
 put "$BOOTIMG" $((BOOTA_AT*MiB)) $((BOOT_MiB*MiB))

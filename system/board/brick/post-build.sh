@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs after Buildroot has filled the target directory ($1), before the root filesystem tar is
 # made. The root filesystem is mounted read-only, so everything that must be written to links to
-# the state area (/var/state, on the system partition: see rootfs-overlay/usr/libexec/brick/state).
+# the state area (/var/state, on the system partition: see rootfs-overlay/usr/libexec/crystaline/state).
 set -eu
 T=$1
 
@@ -10,7 +10,7 @@ rm -f "$T"/etc/init.d/S[0-9]*
 # Our services exactly as in the overlay: Buildroot copies the overlay over the target directory
 # it keeps between builds, so a service removed from the overlay would otherwise stay.
 rm -rf "$T/etc/sv"
-cp -a "$BR2_EXTERNAL_BRICK_PATH/board/brick/rootfs-overlay/etc/sv" "$T/etc/sv"
+cp -a "$BR2_EXTERNAL_CRYSTALINE_PATH/board/brick/rootfs-overlay/etc/sv" "$T/etc/sv"
 
 mkdir -p "$T/system" "$T/mnt/SDCARD"
 ln -sfn /system/state "$T/var/state"
@@ -24,7 +24,7 @@ ln -s /var/state/bluetooth "$T/var/lib/bluetooth"
 # /etc/machine-id); the state script makes it once.
 ln -sfn /var/state/machine-id "$T/etc/machine-id"
 
-# The time zone, which brick-timezone keeps in the state area. Until it first sets one,
+# The time zone, which crystaline-timezone keeps in the state area. Until it first sets one,
 # /var/state/time/localtime doesn't exist and glibc uses UTC.
 ln -sfn /var/state/time/localtime "$T/etc/localtime"
 # The zones' leap-second variants: nothing uses them.

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tests mount-card (system/board/brick/rootfs-overlay/usr/libexec/brick/mount-card) on the PC: the
+# Tests mount-card (system/board/brick/rootfs-overlay/usr/libexec/crystaline/mount-card) on the PC: the
 # real script runs against a fake root (MOUNT_CARD_ROOT): a fake sysfs and mount table, and image
 # files standing in for the card's disk and partitions: each partition is its own image file
 # (pN.img), and disk.img holds only the partition table. mount, umount, partx, sv, logger, id and
@@ -14,7 +14,7 @@
 # Usage: test-mount-card.sh
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-SCRIPT=$ROOT/system/board/brick/rootfs-overlay/usr/libexec/brick/mount-card
+SCRIPT=$ROOT/system/board/brick/rootfs-overlay/usr/libexec/crystaline/mount-card
 [ "$(id -u)" != 0 ] || { echo "run this as a normal user" >&2; exit 1; }
 PATH=$PATH:/usr/sbin:/sbin
 for t in blkid sfdisk flock fsck.fat mkfs.fat; do
@@ -108,7 +108,7 @@ new_root() {
 	for d in mmcblk0:0 mmcblk0p5:5; do mkdir $R/sys/class/block/${d%:*}; echo 179:${d#*:} >$R/sys/class/block/${d%:*}/dev; done
 	: >$R/dev/kmsg
 	# The guide texts mount-card copies onto the card.
-	mkdir -p $R/usr/share/brick && cp -r $ROOT/system/board/brick/rootfs-overlay/usr/share/brick/card-guides $R/usr/share/brick/
+	mkdir -p $R/usr/share/crystaline && cp -r $ROOT/system/board/brick/rootfs-overlay/usr/share/crystaline/card-guides $R/usr/share/crystaline/
 	echo "17 1 $1 / $R/system rw,noatime - ext4 /dev/system rw" >$R/proc/self/mountinfo
 	: >$T/calls
 }
@@ -404,7 +404,7 @@ not_called mount
 [ -z "$(uniq -d $T/fsck-trace)" ] || fail "checks overlapped: $(paste -sd' ' $T/fsck-trace)"
 
 case_ "16. guide files: written where their folder exists, rewritten only when they differ"
-G=$R/usr/share/brick/card-guides
+G=$R/usr/share/crystaline/card-guides
 fat_card guide mbr
 new_root 179:5; insert guide 32
 run start

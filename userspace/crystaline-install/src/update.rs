@@ -10,7 +10,7 @@
 //! tar reader, which would accept far more than sign-update.sh writes.
 //!
 //! Trusted keys are files of 64 hex characters (a raw Ed25519 public key) in the keys folder
-//! (/etc/brick/update-keys/; --keys).
+//! (/etc/crystaline/update-keys/; --keys).
 
 use std::fs::File;
 use std::io::Write;
@@ -141,7 +141,7 @@ fn valid_version(v: &str) -> bool {
         && (7..=40).contains(&commit.len()) && commit.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
 }
 
-/// `brick-install update <file>`, in three steps: checking the update file, copying it into
+/// `crystaline-install update <file>`, in three steps: checking the update file, copying it into
 /// `images/<version>/` (through `<version>.part/`, renamed once complete), then making it start
 /// next (slots::activate). An older version is allowed (`list` marks it, so Specular can warn).
 pub fn apply(p: &Paths, path: &Path, report: &mut Report) -> Result<String> {

@@ -10,7 +10,7 @@
 # does; iocharset=utf8 instead would make Linux's FAT match them case-sensitively, so "roms/"
 # wouldn't find a card's "Roms/" (the kernel's FAT documentation warns against iocharset=utf8 for
 # this reason). exFAT matches regardless of case either way.
-# File times: FAT converts them with the kernel's time zone, which brick-timezone (/usr/sbin) keeps
+# File times: FAT converts them with the kernel's time zone, which crystaline-timezone (/usr/sbin) keeps
 # current, so the FAT mount must never get tz=UTC or time_offset=. exFAT stores UTC plus an offset;
 # sys_tz makes entries written without an offset (by some PCs) count as local time, as FAT's do.
 # FAT and exFAT have no owners: every file is root's and group www-data's, writable by both (gid,

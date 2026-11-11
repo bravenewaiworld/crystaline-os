@@ -53,7 +53,7 @@ fdtput -t i "$DTB" /cpus/cpu@0 cpu-supply "$(fdtget "$DTB" $TCS phandle)"
 
 # Battery warning levels (the power chip's register 0x1b). Warning 2 stays on in sleep
 # (wakeup_low_warning2) and fires when the gauge drops to its level. That level is 1 %,
-# battery-guard's EMPTY (usr/libexec/brick/battery-guard; keep the two the same), so a device
+# battery-guard's EMPTY (usr/libexec/crystaline/battery-guard; keep the two the same), so a device
 # asleep in a bag wakes and sleepnow powers it off cleanly, before the power chip cuts the power at
 # 3.2 V (TrimUI's device tree sets 0 %). Warning 1 (5 %) is not a wake source: there is nothing to
 # do asleep at 5 %.
@@ -173,7 +173,7 @@ fdtput -t u "$DTB" /soc@03000000/usbc0@0 extcon "$(fdtget "$DTB" $USB_PSY phandl
 # Internal storage (eMMC, controller sdc2), which U-Boot leaves disabled when booting from the card.
 # Enabled with the limits U-Boot itself sets when it boots TrimUI's system from the eMMC, the
 # settings stock has always used: 50 MHz and no HS200/HS400, so the eMMC runs in DDR52 mode.
-# The installer (userspace/brick-install) needs it; nothing mounts it by itself. For an eMMC boot
+# The installer (userspace/crystaline-install) needs it; nothing mounts it by itself. For an eMMC boot
 # U-Boot also fills in sample delays tuned for each unit (sdc_tm4_sm<speed mode>_freq<frequency
 # band>, one byte per band); 0xff bytes mean "not set", so the driver uses its defaults, which read
 # the eMMC without errors (two full reads gave the same checksum, 2026-10-14; see docs/storage.md).
