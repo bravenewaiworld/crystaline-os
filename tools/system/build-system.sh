@@ -75,7 +75,7 @@ sed -i "s/@VERSION@/$VERSION/g" "$R/usr/share/crystaline-web/index.html"
 # debug-running-release` copies into a running release's memory instead.
 if [ "$RELEASE" = 1 ]; then
 	mkdir "$TMP/left-out"
-	grep -v -e '^#' -e '^$' "$COMMON/debug-tools.list" | while read -r p; do
+	grep -v -e '^#' -e '^$' "$COMMON/debug-tools.list" | sed -n -e "/^[a-z]*: /{s/^$FAMILY: //p;d}" -e p | while read -r p; do
 		set -- "$R"/$p
 		[ -e "$1" ] || { echo "debug-tools.list: nothing in the image matches $p" >&2; exit 1; }
 		mv "$@" "$TMP/left-out/"
