@@ -289,11 +289,12 @@ Done:
 - CPU speed: schedutil, `crystaline-power` shared by both families (profiles from the board's efficient speed); Specular's per-game minimum speed on mainline
 - Sleep (`sleepnow`, WiFi unloaded around it): 10 timed sleeps with WiFi up, all woke with WiFi back
 - WiFi: the RTL8723DS (`rtw88_8723ds`; ROCKNIX's device tree names the RTL8821CS) scans; Bluetooth: `hci_uart` and the RTL8723DS firmware (pinned from Armbian) bring up hci0
-- Panel modes: the display clock (VPLL) follows each mode, all 12 within 20 ppm; Specular switches to the mode nearest a game's rate
+- Panel modes: the display clock (VPLL) follows each mode, all 12 within 20 ppm; Specular can switch to the mode nearest a game's rate (off on the RGB20 Pro: below)
 - Specular: sticks to cores and the left stick through menus; rumble on the `pwm-vibrator`
 
 TODO:
 - Checked by a person: joining WiFi, pairing Bluetooth (a controller, headphones), rumble, sticks in a PS1 analog game, 90 and 120 Hz showing a picture, Select + Start as Menu
+- Panel mode switching garbles the RGB20 Pro's panel until the next start, even back at 60 Hz (Specular's docs/mainline.md, Findings): find what the panel or the DSI link keeps, then turn Specular's per-game rates on
 - The second SD slot for games (Specular's library has one data folder today)
 - GPU clock profiles (devfreq already scales 200–800 MHz)
 
