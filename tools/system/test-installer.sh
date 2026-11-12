@@ -114,6 +114,7 @@ if [ "$FAMILY" != brick ]; then
 	bi offer | tee "$T/offer.json"
 	check grep -q '"install":null' "$T/offer.json"
 	check grep -q '"why_not":"[^"]*no internal storage' "$T/offer.json"
+	check grep -q '"internal":"none"' "$T/offer.json"
 	check grep -q '"running":{"disk":"card","slot":"boot_a","version":"'"$V"'"}' "$T/offer.json"
 else
 	# The fake internal storage: 2 GiB, TrimUI's partitions (the sizes in its firmware's

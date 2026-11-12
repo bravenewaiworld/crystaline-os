@@ -95,7 +95,8 @@ fn run(logs: Option<&Path>, name: &str, lock: Option<std::fs::File>, f: impl FnO
 ///   { "install": null, or { "bytes": the internal storage's size,
 ///                           "backup": { "possible", "free" (bytes on the data partition) } },
 ///     "why_not": why installing isn't possible (with "install": null),
-///     "internal": what the internal storage holds (install::holds; with "install"),
+///     "internal": what the internal storage holds (install::holds; with "install"), or "none" on a
+///                 device without internal storage,
 ///     "backups": [{ "dir", "created", "bytes", "holds" (if known) }] (complete ones on the card,
 ///                 newest first),
 ///     "running": { "version", "disk": "card" or "internal", "slot": its boot slot, or null },
@@ -132,7 +133,10 @@ fn offer(paths: &Result<Paths>) -> serde_json::Value {
             o["install"] = serde_json::json!({ "bytes": t.size, "backup": { "possible": free >= t.size, "free": free } });
             o["internal"] = install::holds(&t).into();
         }
-        Err(e) => { o["install"] = serde_json::Value::Null; o["why_not"] = e.message.into(); }
+        Err(e) => {
+            o["install"] = serde_json::Value::Null; o["why_not"] = e.message.into();
+            if !p.has_internal { o["internal"] = "none".into(); }
+        }
     }
     o
 }
@@ -142,6 +146,8 @@ fn offer(paths: &Result<Paths>) -> serde_json::Value {
 pub struct Paths {
     /// The internal storage (a disk device, or an image file), or why there is none.
     internal: Result<PathBuf>,
+    /// Whether the device has internal storage at all (given, or named by the board).
+    has_internal: bool,
     /// The SD card, or why there is none.
     card: Result<PathBuf>,
     /// The disk the system runs from (holding /system): the card or the internal storage.
@@ -174,7 +180,9 @@ impl Paths {
             (given("--target"), given("--source"), given("--running"), given("--system"), given("--data"), given("--version"));
         let (slot, keys, power) = (given("--slot"), given("--keys"), given("--power-supply"));
         let path = |p: Option<String>, default: &str| PathBuf::from(p.unwrap_or_else(|| default.into()));
-        let internal = match (target, controller("BOARD_INTERNAL_CONTROLLER")) {
+        let internal_controller = controller("BOARD_INTERNAL_CONTROLLER");
+        let has_internal = target.is_some() || internal_controller.is_some();
+        let internal = match (target, internal_controller) {
             (Some(t), _) => Ok(PathBuf::from(t)),
             (None, None) => fail("this device has no internal storage", ""),
             (None, Some(c)) => disk_on(&c).ok_or_else(|| report::Failure {
@@ -204,7 +212,7 @@ impl Paths {
         let system = path(system, "/system");
         let family = report::read_json(&system.join("images").join(&version).join("manifest.json"), "the running version's manifest")
             .map(|m| family(&m).to_string()).unwrap_or_else(|_| "brick".into());
-        Ok(Self { internal, card, running, system, data: path(data, "/mnt/SDCARD"), version, slot,
+        Ok(Self { internal, has_internal, card, running, system, data: path(data, "/mnt/SDCARD"), version, slot,
                   keys: path(keys, "/etc/crystaline/update-keys"), power: path(power, "/sys/class/power_supply"), family })
     }
 
