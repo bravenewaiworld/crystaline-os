@@ -279,7 +279,7 @@ Done:
 - On the RGB20 Pro, Specular draws through KMS/GBM with page flips: a GBA game at one frame per refresh (59.33 Hz), none late over 50 s (Specular's docs/mainline.md)
 
 TODO:
-- FN as Specular's Menu button: `adc-keys` on SARADC channel 0 in our device tree (built; a press on the device to confirm)
+- Select + Start as Specular's Menu button on the RGB20 Pro, which has none (built; to check by hand)
 - Mesa's shader cache somewhere writable (the root filesystem is read-only, so shaders are compiled again at every start)
 - The Brick checked on Specular's shared drawing loop and Crystaline OS services (with stage 2's Brick check)
 
