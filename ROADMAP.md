@@ -290,11 +290,12 @@ Done:
 - Sleep (`sleepnow`, WiFi unloaded around it): 10 timed sleeps with WiFi up, all woke with WiFi back
 - WiFi: the RTL8723DS (`rtw88_8723ds`; ROCKNIX's device tree names the RTL8821CS) scans; Bluetooth: `hci_uart` and the RTL8723DS firmware (pinned from Armbian) bring up hci0
 - Panel modes: the display clock (VPLL) follows each mode, all within 20 ppm; the D-PHY uses longer timings the panel needs above 400 Mbps (75.47 Hz clean); 90 and 120 Hz dropped (blank whatever the link does); the game modes (59.73, 59.94, 60.10, 57.5, 50 Hz) run near 51 MHz; Specular switches to the mode nearest a game's rate
-- Specular: sticks to cores and the left stick through menus; rumble on the `pwm-vibrator`
+- Specular: sticks to cores and the left stick through menus (both sticks' vertical axes reversed in the device tree, checked by hand); rumble on the `pwm-vibrator`; Select + Start as Menu
+- The second SD slot: `mount-card games` mounts a games card at `/mnt/GAMES`, and Specular lists its games with the system card's, keeping their saves on the system card (built and tested on the PC)
+- Checked by a person: Select + Start as Menu, both sticks, a GBA game at 59.73 Hz, joining WiFi, the panel modes
 
 TODO:
-- Checked by a person: joining WiFi, pairing Bluetooth (a controller, headphones), rumble, sticks in a PS1 analog game, 90 and 120 Hz showing a picture, Select + Start as Menu
-- The second SD slot for games (Specular's library has one data folder today)
+- Checked by a person: pairing Bluetooth (a controller, headphones), rumble, a PS1 analog game, a games card in the second slot
 - GPU clock profiles (devfreq already scales 200–800 MHz)
 
 ### Later stages

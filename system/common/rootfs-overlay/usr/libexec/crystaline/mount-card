@@ -63,12 +63,16 @@ message() {
 	again="Take the card out and insert it again"
 	holds_system && again="Restart the $BOARD_NAME"	# pulling the system's own card turns it off
 	pc_repair="Repair the card on a PC (on Windows: the card's Properties, Tools, Check)"
+	# The games card's own wording for these; its other states share the system card's, but for
+	# the read-only ones, whose saves it never holds anyway.
 	case "$GAMES $*" in
+	"1 read-only"*)
+		echo "The games card can only be read (locked, or with errors): its games play as usual, and their saves are on the system's SD card. Check it on a PC if it keeps happening." ;;
 	"1 absent") echo "No games card. Games on a card in the second slot join the library; their saves stay on the system's card." ;;
 	"1 failed no-partition")
 		echo "The games card has no FAT32 or exFAT partition that can be read, so its games can't be used. Format it as FAT32 or exFAT on a PC (this erases it)." ;;
 	esac
-	[ -z "$GAMES" ] || case "$*" in absent | "failed no-partition") return ;; esac
+	[ -z "$GAMES" ] || case "$*" in absent | read-only* | "failed no-partition") return ;; esac
 	case "$*" in
 	absent)	echo "No SD card. Insert the SD card with your games: games, saves and settings are all kept on it." ;;
 	checking)
@@ -163,7 +167,7 @@ named() {
 # partition other than our boot pictures' ("bootloader"), or the whole card when it has no
 # partitions. Formatting happens only on the card holding /system, and only to an "sdcard"
 # partition with no filesystem (one this script added). Returns 1 if there is none, 2 if making it
-# failed, 3 if the card has too little room left for it.
+# failed, 3 if the card has too little room left for it. On the games card: any_partition only.
 data_partition() {
 	[ -n "$GAMES" ] && { any_partition; return; }
 	p=$(named sdcard)
@@ -183,8 +187,9 @@ data_partition() {
 	any_partition
 }
 
-# any_partition: prints the lowest-numbered FAT or exFAT partition other than our boot pictures'
-# ("bootloader"), or the whole card when it has no partitions; returns 1 if there is none.
+# any_partition: prints the lowest-numbered FAT or exFAT partition other than the one named
+# "bootloader" (a Crystaline OS card's boot files), or the whole card when it has no partitions;
+# returns 1 if there is none.
 any_partition() {
 	parts=$(ls $R/sys/block/$disk | sed -n "s/^${disk}p//p" | sort -n)
 	[ -n "$parts" ] || { usable $disk && echo $disk; return; }
