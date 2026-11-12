@@ -81,7 +81,7 @@ CONFIG_ENV_OFFSET_REDUND=0x1020000
 # Start the boot slot the settings name (boot_a if they are lost): the partition boot_a or boot_b on
 # the first slot's card (mmc 1, by the device tree's aliases), whose boot.img is a FAT image with
 # extlinux.conf (tools/system/parts-mainline.sh). No automatic fall-back to the other slot
-# (docs/install-and-update.md). No pause before it: there is no serial console to stop it from.
+# (docs/install-and-update.md). No pause before it: its serial console is inside the case, so nobody could stop it.
 CONFIG_BOOTCOMMAND="test -n \"${boot_partition}\" || setenv boot_partition boot_a; part number mmc 1 ${boot_partition} slot && sysboot mmc 1:${slot} any ${scriptaddr} /extlinux/extlinux.conf"
 CONFIG_CMD_SYSBOOT=y
 CONFIG_BOOTDELAY=0

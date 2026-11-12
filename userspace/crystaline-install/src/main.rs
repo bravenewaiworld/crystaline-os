@@ -174,8 +174,8 @@ impl Paths {
     /// internal storage is the disk on the board's eMMC controller and the card the disk on its SD
     /// card controller (`controller`); the system runs from the disk holding /system, which must
     /// be one of them; the data partition is at /mnt/SDCARD; the version is
-    /// /etc/crystaline-version; the family is the running version's (its manifest in images/;
-    /// "brick" if that can't be read).
+    /// /etc/crystaline-version; the family is the running version's (its manifest in images/,
+    /// which must be readable).
     fn find(mut given: impl FnMut(&str) -> Option<String>) -> Result<Self> {
         let (target, source, running, system, data, version) =
             (given("--target"), given("--source"), given("--running"), given("--system"), given("--data"), given("--version"));
@@ -211,8 +211,11 @@ impl Paths {
                 .map_err(|e| report::Failure { message: format!("reading /etc/crystaline-version: {e}"), hint: format!("The system is damaged. {}", report::REWRITE_CARD), ..Default::default() })?,
         };
         let system = path(system, "/system");
+        // Without its manifest the system is damaged (every version has one in images/), and which
+        // versions it can run can't be told.
         let family = report::read_json(&system.join("images").join(&version).join("manifest.json"), "the running version's manifest")
-            .map(|m| family(&m).to_string()).unwrap_or_else(|_| "brick".into());
+            .map(|m| family(&m).to_string())
+            .map_err(|e| report::Failure { hint: format!("The system is damaged. {}", report::REWRITE_CARD), ..e })?;
         Ok(Self { internal, has_internal, card, running, system, data: path(data, "/mnt/SDCARD"), version, slot,
                   keys: path(keys, "/etc/crystaline/update-keys"), power: path(power, "/sys/class/power_supply"), family })
     }
