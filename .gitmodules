@@ -7,4 +7,4 @@
 [submodule "linux-mainline"]
 	path = linux-mainline
 	url = https://github.com/bravenewaiworld/crystaline-linux-mainline
-	branch = crystaline-7.3
+	branch = rgb20pro
