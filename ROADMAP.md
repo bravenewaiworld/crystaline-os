@@ -283,10 +283,23 @@ TODO:
 - Mesa's shader cache somewhere writable (the root filesystem is read-only, so shaders are compiled again at every start)
 - The Brick checked on Specular's shared drawing loop and Crystaline OS services (with stage 2's Brick check)
 
+### Full hardware (stage 4)
+
+Done:
+- CPU speed: schedutil, `crystaline-power` shared by both families (profiles from the board's efficient speed); Specular's per-game minimum speed on mainline
+- Sleep (`sleepnow`, WiFi unloaded around it): 10 timed sleeps with WiFi up, all woke with WiFi back
+- WiFi: the RTL8723DS (`rtw88_8723ds`; ROCKNIX's device tree names the RTL8821CS) scans; Bluetooth: `hci_uart` and the RTL8723DS firmware (pinned from Armbian) bring up hci0
+- Panel modes: the display clock (VPLL) follows each mode, all 12 within 20 ppm; Specular switches to the mode nearest a game's rate
+- Specular: sticks to cores and the left stick through menus; rumble on the `pwm-vibrator`
+
+TODO:
+- Checked by a person: joining WiFi, pairing Bluetooth (a controller, headphones), rumble, sticks in a PS1 analog game, 90 and 120 Hz showing a picture, Select + Start as Menu
+- The second SD slot for games (Specular's library has one data folder today)
+- GPU clock profiles (devfreq already scales 200–800 MHz)
+
 ### Later stages
 
 TODO:
-- Stage 4: exact panel modes (display clock; 90 and 120 Hz are blank), sticks, rumble, WiFi and Bluetooth, sleep, second SD slot, CPU/GPU clock profiles
 - Stage 5: our own loader and U-Boot
 
 ## V1
