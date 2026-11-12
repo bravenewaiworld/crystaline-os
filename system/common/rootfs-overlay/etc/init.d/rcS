@@ -37,6 +37,7 @@ start_hardware
 crystaline-timezone kernel
 # The data card: mounted now, and kept matching the card in the slot from here on (mdev.conf).
 /usr/libexec/crystaline/mount-card start
+/usr/libexec/crystaline/mount-card games start
 progress 0x11
 # State that survives reboots and updates, on the system partition (see usr/libexec/crystaline/state).
 /usr/libexec/crystaline/state

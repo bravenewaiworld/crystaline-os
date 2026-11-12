@@ -7,6 +7,12 @@
 #   mount-card         makes the mount match the card now (Specular runs it when a write to the card
 #                      fails as read-only, so that the state says so)
 #   mount-card stop    shutdown (rcK): unmounts, so the card's last writes reach it
+#   mount-card games …  the same for the games card, a second card that holds only games, in the slot
+#                      BOARD_GAMES_CARD_CONTROLLER names (nothing to do on a board without one): mounted
+#                      at /mnt/GAMES, its state in /run/card-games/state. It is checked and repaired as
+#                      the system's card is, but never partitioned or formatted, and nothing is written
+#                      to it but roms/ (Specular keeps its games' saves on the system's card). start
+#                      doesn't wait for it: a card found later arrives as an event.
 # Each run works from what is there now, not from the event that started it, and runs take turns
 # (a lock), so overlapping or out-of-order events still end with the mount matching the card.
 # Disks are told apart by device number, never by name: a card inserted after a removal gets the
@@ -16,6 +22,12 @@
 R=${MOUNT_CARD_ROOT-}	# a fake root for tools/system/test-mount-card.sh; empty on the device
 . "${BOARD_ENV:-/run/crystaline/board.env}"	# BOARD_*: this board's names (board-env)
 MNT=$R/mnt/SDCARD RUN=$R/run/card GUIDES=$R/usr/share/crystaline/card-guides
+CONTROLLER=$BOARD_CARD_CONTROLLER GAMES=
+if [ "$1" = games ]; then
+	shift
+	[ -n "${BOARD_GAMES_CARD_CONTROLLER:-}" ] || exit 0
+	MNT=$R/mnt/GAMES RUN=$R/run/card-games CONTROLLER=$BOARD_GAMES_CARD_CONTROLLER GAMES=1
+fi
 log() { logger -s -t mount-card "$*"; }
 
 # The helpers below work on the card's disk in $disk and /system's device number in $sys, both set
@@ -32,9 +44,9 @@ holds_dev() {
 holds_system() { [ -n "$sys" ] && [ -n "$disk" ] && [ -n "$(holds_dev $sys)" ]; }
 # gone: whether the card has been removed since this run found it.
 gone() { [ ! -e $R/sys/block/$disk ]; }
-# card_disk: the disk (e.g. mmcblk1) on the SD card controller (BOARD_CARD_CONTROLLER), if a card is in.
+# card_disk: the disk (e.g. mmcblk1) on this card's SD card controller, if a card is in.
 card_disk() {
-	set -- $R/sys/bus/platform/devices/$BOARD_CARD_CONTROLLER/mmc_host/mmc*/mmc*:*/block/mmcblk*
+	set -- $R/sys/bus/platform/devices/$CONTROLLER/mmc_host/mmc*/mmc*:*/block/mmcblk*
 	[ -e "$1" ] && echo ${1##*/}
 }
 # fs_type NAME: the filesystem on /dev/NAME (vfat, exfat, …; empty if none). -p reads the device
@@ -51,6 +63,12 @@ message() {
 	again="Take the card out and insert it again"
 	holds_system && again="Restart the $BOARD_NAME"	# pulling the system's own card turns it off
 	pc_repair="Repair the card on a PC (on Windows: the card's Properties, Tools, Check)"
+	case "$GAMES $*" in
+	"1 absent") echo "No games card. Games on a card in the second slot join the library; their saves stay on the system's card." ;;
+	"1 failed no-partition")
+		echo "The games card has no FAT32 or exFAT partition that can be read, so its games can't be used. Format it as FAT32 or exFAT on a PC (this erases it)." ;;
+	esac
+	[ -z "$GAMES" ] || case "$*" in absent | "failed no-partition") return ;; esac
 	case "$*" in
 	absent)	echo "No SD card. Insert the SD card with your games: games, saves and settings are all kept on it." ;;
 	checking)
@@ -147,6 +165,7 @@ named() {
 # partition with no filesystem (one this script added). Returns 1 if there is none, 2 if making it
 # failed, 3 if the card has too little room left for it.
 data_partition() {
+	[ -n "$GAMES" ] && { any_partition; return; }
 	p=$(named sdcard)
 	[ -n "$p" ] && usable $p && { echo $p; return; }
 	if holds_system; then
@@ -161,6 +180,12 @@ data_partition() {
 			echo $p; return
 		fi
 	fi
+	any_partition
+}
+
+# any_partition: prints the lowest-numbered FAT or exFAT partition other than our boot pictures'
+# ("bootloader"), or the whole card when it has no partitions; returns 1 if there is none.
+any_partition() {
 	parts=$(ls $R/sys/block/$disk | sed -n "s/^${disk}p//p" | sort -n)
 	[ -n "$parts" ] || { usable $disk && echo $disk; return; }
 	for n in $parts; do
@@ -232,7 +257,7 @@ sync_card() {
 	# The system's own card was pulled: nothing on it can be reached any more (the system log's
 	# file included), so the device turns off. Nothing is done to whatever card is in the slot now.
 	# <2>: the kernel log's "critical" level, so the line reaches the serial console.
-	if [ -n "$sys" ] && ! grep -qx "$sys" $R/sys/class/block/*/dev; then
+	if [ -z "$GAMES" ] && [ -n "$sys" ] && ! grep -qx "$sys" $R/sys/class/block/*/dev; then
 		echo "<2>mount-card: the SD card holding the system was removed; turning off" >$R/dev/kmsg
 		report failed system-card-removed
 		# Best effort, as sleep and poweroff are on the pulled card and run only if still in memory.
@@ -272,8 +297,8 @@ sync_card() {
 	log "mounting $part ($type) with $opts"
 	mount -t $type -o $opts $R/dev/$part $MNT || { failed mount; return; }
 	[ -n "$ro" ] && { report read-only $ro; return; }
-	mkdir -p $MNT/roms $MNT/bios $MNT/saves $MNT/updates
-	guides
+	if [ -n "$GAMES" ]; then mkdir -p $MNT/roms
+	else mkdir -p $MNT/roms $MNT/bios $MNT/saves $MNT/updates; guides; fi
 	[ $check = clean ] || card_log
 	report mounted
 }
@@ -307,7 +332,7 @@ log "run: ${1:-asked}${ACTION:+ ($ACTION $MDEV)}"
 exec 9>>$RUN/lock && flock 9 || exit 1
 case $1 in
 start)	n=0	# up to 25 x 0.2 s
-	until [ -n "$(card_disk)" ] || [ $n -ge 25 ]; do sleep 0.2; n=$((n + 1)); done
+	until [ -n "$GAMES" ] || [ -n "$(card_disk)" ] || [ $n -ge 25 ]; do sleep 0.2; n=$((n + 1)); done
 	sync_card ;;
 stop)	umount $MNT 2>/dev/null || [ -z "$(mounted_dev $MNT)" ] ||
 		log "can't unmount the SD card, in use by: $(echo $(holders))" ;;
