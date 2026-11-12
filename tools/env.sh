@@ -13,11 +13,22 @@
 # dufs (github.com/sigoden/dufs), the WebDAV/web file server: the static aarch64 binary of its
 # v0.46.0 release.
 : "${DUFS:=$ROOT/third-party/dufs-v0.46.0/dufs}"
-# The RK3566 boards' first-stage loader and U-Boot (Rockchip's DDR init, TF-A and ROCKNIX's
-# "generic" U-Boot, which picks the board's device tree itself), until we build our own: the first
-# 16 MiB of a ROCKNIX 20260601 card for these boards (dd if=<card> bs=1M count=16), whose sectors 64
-# to 32767 hold them. No download address: put it in place by hand (it is checked).
-: "${RK3566_UBOOT:=$ROOT/third-party/rocknix-uboot-20260601/first16M.img}"
+# Mainline boards' loaders (tools/mainline/build-loader.sh): U-Boot; open TF-A, at a commit after
+# v2.15 for its fix to the RK3566's GPU after sleep (a934036098); and the device tree compiler TF-A
+# builds its libfdt from (its contrib/dtc submodule, at the commit TF-A names).
+: "${UBOOT_SRC:=$ROOT/third-party/u-boot-v2026.10}"
+: "${TFA_SRC:=$ROOT/third-party/tf-a-d70b52de}"
+: "${TFA_DTC_SRC:=$ROOT/third-party/dtc-8f48565e}"
+# The RK3566's DDR init, the one closed part of its loader: Rockchip's binary
+# (github.com/rockchip-linux/rkbin), the one ROCKNIX's 20260601 cards carry.
+: "${RK3566_DDR:=$ROOT/third-party/rkbin/rk3566_ddr_1056MHz_v1.23.bin}"
+# Empty: the RK3566 loader runs open TF-A. Set to a BL31 file to use that instead, e.g. Rockchip's
+# closed one that ROCKNIX's cards carry: $ROOT/third-party/rkbin/rk3568_bl31_v1.45.elf.
+: "${RK3566_BL31:=}"
+# Empty: the card builder writes the loader build-loader.sh made. Set to another loader to write that
+# instead (what goes at sector 64), e.g. one taken from a ROCKNIX card for comparison:
+# dd if=<card> of=rocknix-loader.bin bs=512 skip=64 count=32704.
+: "${RK3566_LOADER:=}"
 # ARM's kernel driver for Mali Bifrost GPUs (mali_kbase), ROCKNIX's copy with its fixes for newer
 # kernels (github.com/rocknix/mali_kbase): the optional alternative to Panfrost on mainline boards,
 # for ARM's own GL ES and Vulkan libraries (tools/mainline/build-mali.sh).
@@ -28,4 +39,4 @@
 : "${RTL8723DS_BT:=$ROOT/third-party/rtl8723ds-bt}"
 # The OpenWrt gcc wrapper warns when this is unset; its value is unused.
 : "${STAGING_DIR:=/tmp}"
-export CROSS_COMPILE GPU_SRC DUFS STOCK_FW RK3566_UBOOT MALI_KBASE_SRC RTL8723DS_BT STAGING_DIR
+export CROSS_COMPILE GPU_SRC DUFS STOCK_FW UBOOT_SRC TFA_SRC TFA_DTC_SRC RK3566_DDR RK3566_BL31 RK3566_LOADER MALI_KBASE_SRC RTL8723DS_BT STAGING_DIR

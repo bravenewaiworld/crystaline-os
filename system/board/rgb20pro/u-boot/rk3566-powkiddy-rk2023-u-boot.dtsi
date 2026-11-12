@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+// U-Boot's additions to the RK2023's device tree, for the RGB20 Pro (rgb20pro-rk3566_defconfig);
+// tools/mainline/build-loader.sh copies this into U-Boot's arch/arm/dts/.
+#include "rk356x-u-boot.dtsi"
+
+/ {
+	chosen {
+		/* Only the first slot: the second holds a games card, never a system. */
+		u-boot,spl-boot-order = &sdmmc0;
+	};
+
+	options {
+		u-boot {
+			compatible = "u-boot,config";
+			boot-led = <&green_led>;
+		};
+	};
+};

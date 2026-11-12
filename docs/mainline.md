@@ -1,13 +1,13 @@
 # Mainline family and the RGB20 Pro
 
-Status: In progress · Updated: 2026-11-11
+Status: In progress · Updated: 2026-11-12
 
 The boards that run mainline Linux, starting with the Powkiddy RGB20 Pro (Rockchip RK3566, 4x Cortex-A55, Mali-G52, 1 GB RAM, 1024x768 DSI panel, two SD slots and no internal storage). How their kernel, card and graphics work; the layering they share with the Brick is in [boards.md](boards.md).
 
 ## Decisions
 
 - **Kernel: our fork of Linux 7.3 stable, crystaline-linux-mainline (submodule `linux-mainline`, branch `crystaline-7.3`), built with Buildroot's GCC 14** (2026-11-11). Our commits are prefixed by layer (`rockchip:`, `powkiddy:`, `rgb20pro:`); the only out-of-tree driver carried is ROCKNIX's generic DSI panel driver. Its configuration is merged from `system/family/mainline/kernel.config`, each SoC's and each board's part (`tools/mainline/kmake.sh`). Rejected: a branch of the Brick's 4.9 tree (shares nothing).
-- **ROCKNIX's prebuilt loader and U-Boot until we build our own** (2026-11-11): the first 16 MiB of a ROCKNIX card (third-party input `RK3566_UBOOT`). It reads GPT and extlinux.conf.
+- **The loader is built from source; only Rockchip's DDR init stays a binary** (2026-11-12): U-Boot v2026.10 with our RGB20 Pro configuration (`system/board/rgb20pro/u-boot/`) on the RK2023's device tree, which is the same board, so U-Boot sets up the real power rails; open TF-A as BL31, at a commit after v2.15 for its GPU-after-sleep fix; Rockchip's `rk3566_ddr_1056MHz_v1.23.bin`, byte for byte the DDR init ROCKNIX's cards carry (`make DEVICE=rgb20pro loader`, `tools/mainline/build-loader.sh`). U-Boot reads GPT and extlinux.conf, starts only from the first slot, and powers off again when started by plugging in a charger. Rejected: ROCKNIX's prebuilt loader (used until stage 5; it runs as the RG353 with Rockchip's closed BL31), Rockchip's closed BL31 (kept as `RK3566_BL31` for comparison).
 - **The card is laid out like the Brick's: GPT, FAT `bootloader`, ext4 `system`, FAT games partition made on first start** (2026-11-11), so the initramfs, mount-card and the installer work unchanged. The boot partition holds `extlinux/extlinux.conf` and a boot slot folder per version (`a/`, later `b/`). Rejected: one FAT partition for boot files and games (mixes them in the folder people drop games into).
 - **Panfrost (Mesa) is the GPU driver; ARM's libmali is an option** (2026-11-11). Panfrost is open, 45 % faster in glmark2 under ROCKNIX and in vkmark here, and works with KMS directly. libmali is a complete, conformant Vulkan 1.3 driver where PanVK is a partial Vulkan 1.0 one, so it stays available for trying games that need it: `crystaline-gpu panfrost|mali` (from the next start).
 - **Mesa is built without LLVM on the device** (2026-11-11): its shaders are compiled on the build machine (`system/buildroot-patches/0001-*`), which also adds the PanVK option Buildroot lacks.

@@ -5,3 +5,5 @@
 FAMILY := mainline
 SOC := rk3566
 DTB := rockchip/rk3566-powkiddy-rgb20-pro.dtb
+# Its U-Boot configuration, in system/board/rgb20pro/u-boot/ (tools/mainline/build-loader.sh).
+UBOOT_DEFCONFIG := rgb20pro-rk3566_defconfig

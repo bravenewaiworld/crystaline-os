@@ -2,8 +2,7 @@
 # Build an SD card image for a mainline board that runs one version of our system (build-system.sh's
 # output for the mainline family). Layout, in 512-byte sectors:
 #   0-33        protective MBR, GPT header and entries
-#   64-32767    the first-stage loader and U-Boot (RK3566_UBOOT, tools/env.sh), where the RK3566's
-#               boot ROM and that loader look for them
+#   64-32767    the loader (tools/mainline/build-loader.sh), where the RK3566's boot ROM looks for it
 #   16 MiB      "bootloader": FAT32, 256 MiB, the partition U-Boot reads (marked legacy-BIOS-
 #               bootable, which U-Boot's distro boot looks for): extlinux/extlinux.conf and a/ (this
 #               version's kernel, initramfs and device trees); b/, the second boot slot, is made
@@ -14,9 +13,9 @@
 # The initramfs finds the system partition by the filesystem UUID extlinux.conf passes it
 # (root=UUID=...). The games partition is added over the rest of the card on first start
 # (system/common/rootfs-overlay/usr/libexec/crystaline/mount-card), as on the Brick.
-# Usage: build-card.sh <system-version-dir> <board's DTB, as in its board.mk> <out.img>
+# Usage: build-card.sh <system-version-dir> <board's DTB, as in its board.mk> <loader> <out.img>
 set -eu
-V=$1 DTB=$2 OUT=$3
+V=$1 DTB=$2 LOADER=$3 OUT=$4
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 . "$ROOT/tools/env.sh"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -25,7 +24,9 @@ MiB=2048	# sectors
 BOOT_AT=16 BOOT_MiB=256
 
 [ -f "$V/dtbs/$DTB" ] || { echo "$V has no device tree $DTB" >&2; exit 1; }
-[ -f "$RK3566_UBOOT" ] || { echo "no U-Boot: $RK3566_UBOOT (tools/env.sh, RK3566_UBOOT)" >&2; exit 1; }
+[ -f "$LOADER" ] || { echo "no loader: $LOADER (make DEVICE=<board> loader)" >&2; exit 1; }
+[ "$(stat -c%s "$LOADER")" -le $(( (BOOT_AT * MiB - 64) * 512 )) ] ||
+	{ echo "$LOADER doesn't fit before the boot partition at $BOOT_AT MiB" >&2; exit 1; }
 
 # The system partition, with this version in images/.
 mkdir -p "$TMP/tree/images" "$TMP/tree/state" "$TMP/tree/logs"
@@ -59,7 +60,7 @@ MTOOLS_SKIP_CHECK=1 mcopy -s -i "$TMP/boot.fat" "$TMP/boot/extlinux" "$TMP/boot/
 # The card: loader, partition table, then both filesystems in place.
 SYSTEM_AT=$((BOOT_AT + BOOT_MiB))
 rm -f "$OUT"; truncate -s $((SYSTEM_AT + SYSTEM_MiB + 1))M "$OUT"	# +1 MiB for the backup GPT
-dd if="$RK3566_UBOOT" of="$OUT" bs=512 skip=64 seek=64 count=$((BOOT_AT * MiB - 64)) conv=notrunc status=none
+dd if="$LOADER" of="$OUT" bs=512 seek=64 conv=notrunc status=none
 sfdisk --quiet --no-reread --no-tell-kernel "$OUT" <<EOF
 label: gpt
 first-lba: $((BOOT_AT * MiB))

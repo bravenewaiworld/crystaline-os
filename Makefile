@@ -40,7 +40,7 @@ CFLAGS := -O2 -Wall -Wextra $(if $(DEBUG),-g)
 # glibc also needs the unwinder (-lgcc_eh).
 STATIC := -static $(if $(DEBUG),,-s) -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
 
-.PHONY: help all kernel mali gpu userspace specular installer device-tools buildroot system \
+.PHONY: help all kernel mali loader gpu userspace specular installer device-tools buildroot system \
 	sd-card update-file update-device debug-running-release deploy-specular run-specular test-installer test-battery-guard \
 	test-mount-card test-board-env test-last-shutdown test-cardlog test-xr829-attach test-timezone test-dt-edits test-exfat stock-fw install-image clean
 
@@ -53,6 +53,8 @@ help:
 	@echo '                   debugging or hardware test tools)'
 	@echo '  sd-card          an SD card image that runs the latest version: build/brick/sd-card.img,'
 	@echo '                   or build/<family>/sd-card-<board>.img for other families'
+	@echo '  loader           a mainline board'"'"'s loader (U-Boot, BL31, DDR init), built from source:'
+	@echo '                   build/<family>/loader/<board>/u-boot-rockchip.bin (sd-card builds it)'
 	@echo '  update-file      build/<family>/updates/crystaline-<version>.update: the latest version as a'
 	@echo '                   signed update file (KEY=<key.pem>, default the development key)'
 	@echo '  update-device    build system, install it on a Brick running our system as an update,'
@@ -240,8 +242,14 @@ system: buildroot kernel $(SYSTEM_PARTS_$(FAMILY))
 
 # The card image for DEVICE: the Brick's own layout, or a mainline board's (its DTB from board.mk).
 ifeq ($(FAMILY),mainline)
-sd-card: system
-	tools/mainline/build-card.sh $(B)/system/latest $(DTB) $(B)/sd-card-$(DEVICE).img
+# The board's loader (U-Boot, BL31, the SoC's DDR init), rebuilt from clean every time
+# (tools/mainline/build-loader.sh); RK3566_LOADER (tools/env.sh) puts another on the card instead.
+loader:
+	tools/mainline/build-loader.sh $(DEVICE) $(B)/loader/$(DEVICE)
+RK3566_LOADER := $(call env,RK3566_LOADER)
+sd-card: system $(if $(RK3566_LOADER),,loader)
+	tools/mainline/build-card.sh $(B)/system/latest $(DTB) \
+		$(or $(RK3566_LOADER),$(B)/loader/$(DEVICE)/u-boot-rockchip.bin) $(B)/sd-card-$(DEVICE).img
 else
 sd-card: system
 	tools/system/build-sd-card.sh $(B)/system/latest $(B)/sd-card.img

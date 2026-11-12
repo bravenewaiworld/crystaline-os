@@ -22,7 +22,7 @@
 
 `DEVICE=<board>` (a folder in `system/board/`, default `brick`) picks what is built; output goes to `build/<family>/` ([docs/boards.md](docs/boards.md)). Targets only the Brick has so far are refused for other boards. For the Powkiddy RGB20 Pro ([docs/mainline.md](docs/mainline.md)):
 
-- **Build:** `make DEVICE=rgb20pro sd-card` → `build/mainline/sd-card-rgb20pro.img` (`make DEVICE=rgb20pro buildroot` first; the first run also builds LLVM for the build machine, an hour or more). `third-party/rocknix-uboot-20260601/first16M.img` must be in place (`tools/fetch-third-party.sh --check`).
+- **Build:** `make DEVICE=rgb20pro sd-card` → `build/mainline/sd-card-rgb20pro.img` (`make DEVICE=rgb20pro buildroot` first; the first run also builds LLVM for the build machine, an hour or more). It builds the loader from source too (`make DEVICE=rgb20pro loader`; its sources come from `tools/fetch-third-party.sh`).
 - **Write the card:** `dd if=build/mainline/sd-card-rgb20pro.img of=/dev/sdX bs=4M conv=fsync` with the card's partitions unmounted; it boots from the slot the device starts from.
 - **Reach it:** the DC port (not the OTG port) with a USB-A end on the PC: `ADDR=192.168.8.2`. Its development layer and SSH work as on the Brick.
 - **A start that fails** prints the reason and the start-up log's last lines on the screen, and the green LED blinks. The progress codes are kernel log lines (`crystaline-progress`), kept across a warm restart in `/sys/fs/pstore` and copied to `/system/logs/crash-*/`.
