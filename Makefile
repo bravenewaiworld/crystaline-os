@@ -18,9 +18,8 @@ B := $(ROOT)/build/$(FAMILY)
 FAMILY_BOARDS := $(shell tools/system/family-boards.sh $(FAMILY))
 # Targets only the Brick family has so far: refused for other families, rather than built from the
 # Brick's inputs into the wrong folder.
-BRICK_ONLY := gpu userspace device-tools installer stock-fw deploy-specular run-specular \
-	update-file update-device debug-running-release test-xr829-attach test-dt-edits \
-	test-exfat
+BRICK_ONLY := gpu userspace stock-fw deploy-specular run-specular debug-running-release \
+	test-xr829-attach test-dt-edits test-exfat
 ifneq ($(FAMILY),brick)
 ifneq ($(filter $(BRICK_ONLY),$(MAKECMDGOALS)),)
 $(error $(filter $(BRICK_ONLY),$(MAKECMDGOALS)): not available for DEVICE=$(DEVICE) ($(FAMILY) family) yet)
@@ -32,13 +31,23 @@ CROSS_COMPILE := $(call env,CROSS_COMPILE)
 STOCK_FW := $(call env,STOCK_FW)
 export STAGING_DIR := $(call env,STAGING_DIR)
 
-CC := $(CROSS_COMPILE)gcc
+# The C compiler for our programs that run on the device (also the installer's linker): the Brick's
+# from tools/env.sh; for mainline boards, the family's Buildroot compiler, as for their kernel
+# (tools/mainline/kmake.sh), so `make DEVICE=<board> buildroot` comes first.
+CC_brick := $(CROSS_COMPILE)gcc
+CC_mainline := $(B)/buildroot/host/bin/aarch64-buildroot-linux-gnu-gcc
+CC := $(CC_$(FAMILY))
 # DEBUG=1 (any value) keeps symbols and adds debug information to our C programs, for gdb
 # (DEVELOPMENT.md). The code is the same as without it.
 CFLAGS := -O2 -Wall -Wextra $(if $(DEBUG),-g)
-# Static, so on-device tools don't depend on the device's libraries. This toolchain's static
-# glibc also needs the unwinder (-lgcc_eh).
+# Static, so on-device tools don't depend on the device's libraries. Static glibc also needs the
+# unwinder (-lgcc_eh).
 STATIC := -static $(if $(DEBUG),,-s) -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
+# The device's address for the commands that reach it (tools/system/ssh.sh). Default: the board's
+# end of its USB network link (BOARD_USB_NET in its description, plus .2).
+ifndef ADDR
+export ADDR := $(shell sed -n 's/^BOARD_USB_NET=//p' system/board/$(DEVICE)/rootfs-overlay/usr/share/crystaline/boards/*.env).2
+endif
 
 .PHONY: help all kernel mali loader gpu userspace specular installer device-tools buildroot system \
 	sd-card update-file update-device debug-running-release deploy-specular run-specular test-installer test-battery-guard \
@@ -57,8 +66,9 @@ help:
 	@echo '                   build/<family>/loader/<board>/u-boot-rockchip.bin (sd-card builds it)'
 	@echo '  update-file      build/<family>/updates/crystaline-<version>.update: the latest version as a'
 	@echo '                   signed update file (KEY=<key.pem>, default the development key)'
-	@echo '  update-device    build system, install it on a Brick running our system as an update,'
-	@echo '                   reboot (SSH; ADDR=<address>, default 192.168.7.2 over USB; KEY= as above)'
+	@echo '  update-device    build system, install it on a device running our system as an update,'
+	@echo '                   reboot (SSH; ADDR=<address>, default the board'"'"'s USB network address,'
+	@echo '                   192.168.7.2 on the Brick, 192.168.8.2 on the RGB20 Pro; KEY= as above)'
 	@echo '  debug-running-release  copy the debugging and hardware test tools a release image'
 	@echo '                   leaves out (strace, perf, gdbserver, memreg, ...) to a Brick running'
 	@echo '                   a release image, in memory until it restarts (SSH switched on there'
@@ -192,16 +202,19 @@ installer:
 
 # --- Development tools that run on the device -----------------------------------------------
 # Also status and cardlog (Specular's log service), which the system itself uses; all go to /usr/bin.
-DEVICE_TOOLS := dispctl dispcap glspin rumble i2creg memreg status blkro cardlog
-device-tools: $(addprefix $(B)/tools/,$(DEVICE_TOOLS))
+# Brick only: dispctl and dispcap use Allwinner's display driver, glspin TrimUI's GPU libraries.
+DEVICE_TOOLS := status cardlog rumble i2creg memreg blkro
+DEVICE_TOOLS_brick := dispctl dispcap glspin
+device-tools: $(addprefix $(B)/tools/,$(DEVICE_TOOLS) $(DEVICE_TOOLS_$(FAMILY)))
 
 # status: a plain screen of the device's state, which frontend-run falls back to when Specular keeps
-# crashing; the initramfs also shows its errors with it. It draws text with the kernel's 8x16
-# console font, extracted from the kernel source (linux-brick/) into a header.
-$(B)/include/font8x16.h: linux-brick/lib/fonts/font_8x16.c
+# crashing; the initramfs also shows its errors and its recovery menu with it. It draws text with
+# the kernel's 8x16 console font: the font's bytes, taken from the family's kernel source
+# (linux-<family>/), in a header.
+$(B)/include/font8x16.h: linux-$(FAMILY)/lib/fonts/font_8x16.c
 	@mkdir -p $(@D)
-	sed -n '/^static const unsigned char fontdata_8x16/,/^};/p' $< | \
-		sed '1s/.*/static const unsigned char font8x16[4096] = {/' > $@
+	{ echo 'static const unsigned char font8x16[4096] = {'; \
+		LC_ALL=C sed -n '/^[[:space:]]*0x[0-9a-fA-F][0-9a-fA-F],/p' $<; echo '};'; } >$@
 
 $(B)/tools/status: tools/device/status.c $(B)/include/font8x16.h
 	@mkdir -p $(@D)
@@ -236,7 +249,7 @@ $(B)/stock-root/.done: $(B)/stock-fw/rootfs.fex
 RELEASE ?= 0
 # What each family's system is made of (tools/system/parts-<family>.sh adds them to the image).
 SYSTEM_PARTS_brick := gpu userspace device-tools specular installer $(B)/stock-root/.done
-SYSTEM_PARTS_mainline := mali specular $(B)/tools/cardlog
+SYSTEM_PARTS_mainline := mali specular installer device-tools
 system: buildroot kernel $(SYSTEM_PARTS_$(FAMILY))
 	FAMILY=$(FAMILY) RELEASE=$(RELEASE) tools/system/build-system.sh $(B)/system
 

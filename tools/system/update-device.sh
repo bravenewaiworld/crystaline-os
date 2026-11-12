@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install one version of the system (build-system.sh's output) on a Brick running our system and
+# Install one version of the system (build-system.sh's output) on a device running our system and
 # restart into it, over SSH (see ssh.sh for ADDR), the way Settings installs an update: signs it
 # as an update file (sign-update.sh; with UPDATE_KEY, or this checkout's development key), copies
 # that to /tmp on the device (in memory, so it takes no room on the system partition beside
@@ -13,7 +13,7 @@ V=$(readlink -f "$1")
 VERSION=$(basename "$V")
 on_device true || { echo "can't reach $ADDR over SSH (asleep? USB cable? set ADDR=<address>)" >&2; exit 1; }
 on_device 'test -f /etc/crystaline-version' ||
-	{ echo "$ADDR doesn't run our system (TrimUI's system? write an SD card with make sd-card)" >&2; exit 1; }
+	{ echo "$ADDR doesn't run our system (the system it came with? write an SD card with make sd-card)" >&2; exit 1; }
 on_device 'crystaline-install slots' >/dev/null || {
 	echo "crystaline-install slots failed on $ADDR (above). A system from before the two boot slots can't be updated" >&2
 	echo "this way: write an SD card (make sd-card), and install from it to update the internal storage." >&2

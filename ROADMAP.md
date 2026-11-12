@@ -267,8 +267,6 @@ Done:
 - ARM's libmali as an option (`crystaline-gpu`), drawing on the panel through ARM's window layer; vkmark
 
 TODO:
-- Updates and the second boot slot for the mainline family (the installer's extlinux method, `make DEVICE=rgb20pro update-device`)
-- The installer and the device tools (status screen) built for the mainline family; until the status screen is, a Specular that keeps failing leaves the screen as it was (frontend-run waits instead)
 - mali_kbase: quiet its interrupt-name lookup, fix the regulator warning at runtime suspend
 - An OpenGL benchmark on our image (glmark2's DRM build needs udev)
 
@@ -298,10 +296,15 @@ TODO:
 - Checked by a person: pairing Bluetooth (a controller, headphones), rumble, a PS1 analog game, a games card in the second slot
 - GPU clock profiles (devfreq already scales 200–800 MHz)
 
-### Later stages
+### Loader, updates and recovery (stage 5)
+
+Done:
+- The loader built from source (`make DEVICE=rgb20pro loader`): U-Boot, open TF-A; only Rockchip's DDR init is a binary
+- The card in the Brick's slot layout (U-Boot settings, `boot_a`/`boot_b`); the installer serves both families (`make DEVICE=rgb20pro test-installer`)
+- The installer and the device tools built for the mainline family: the status screen (also the fallback when Specular keeps failing), the initramfs's messages and recovery menu (SELECT + START at power-on), `make DEVICE=rgb20pro update-file` and `update-device`
 
 TODO:
-- Stage 5: our own loader and U-Boot
+- Checked by a person on the RGB20 Pro: the status screen and its fallback banner, the recovery menu (all its actions), `update-device`, starting the previous version
 
 ## V1
 

@@ -6,22 +6,21 @@ kmake() { "$ROOT/tools/mainline/kmake.sh" "$KBUILD" "$@"; }
 
 # add_parts: what this family adds to the root filesystem besides the kernel's modules and the
 # parts every family has: ARM's GPU kernel driver, outside the module index so that mdev never loads
-# it (the start-up hooks do, when it is chosen), Specular, cardlog (Specular's log service) and
-# sleepnow, and the RTL8723DS's Bluetooth firmware (tools/env.sh). The other WiFi and Bluetooth
-# firmware comes from Buildroot (linux-firmware); the installer and the other device tools aren't
-# built for this family yet.
+# it (the start-up hooks do, when it is chosen), the installer, the device tools (status, cardlog,
+# ...; the Makefile's DEVICE_TOOLS) and sleepnow, Specular, and the RTL8723DS's Bluetooth firmware
+# (tools/env.sh). The other WiFi and Bluetooth firmware comes from Buildroot (linux-firmware).
 add_parts() {
 	put "$B/mali/mali_kbase.ko" /usr/lib/crystaline/mali_kbase.ko 644
-	put "$B/tools/cardlog" /usr/bin/cardlog 755
-	put "$ROOT/tools/device/sleepnow" /usr/bin/sleepnow 755
+	put "$B/installer/aarch64-unknown-linux-gnu/release/crystaline-install" /usr/sbin/crystaline-install 755
+	for f in "$B"/tools/* "$ROOT/tools/device/sleepnow"; do put "$f" "/usr/bin/${f##*/}" 755; done
 	for f in rtl8723ds_fw.bin rtl8723ds_config.bin; do put "$RTL8723DS_BT/$f" /lib/firmware/rtl_bt/$f 644; done
 	# Specular, its cores and fonts, as its own Makefile installed them (SPECULAR_STAGE in the Makefile).
 	cp -R "$B/specular-install/." "$R/"
 }
 
-# The initramfs's programs besides BusyBox and e2fsck: none yet. Without the status screen its
-# messages go only to the kernel log, and there is no recovery menu.
-INITRAMFS_PROGRAMS=
+# The initramfs's programs besides BusyBox and e2fsck: the status screen (messages, recovery menu)
+# and the installer (the recovery menu's actions).
+INITRAMFS_PROGRAMS="/usr/bin/status /usr/sbin/crystaline-install"
 
 # make_boot INITRAMFS: this version's boot.img in $V (BOOT_FILES, for the manifest), what a boot slot
 # holds (the partition boot_a or boot_b, tools/mainline/build-card.sh): a FAT image that U-Boot

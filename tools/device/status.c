@@ -10,8 +10,10 @@
  *
  * Draws text straight into the framebuffer (/dev/fb0), so it needs neither the GPU nor SDL. The
  * framebuffer has two screen-sized pages: each frame is drawn into the hidden one, then shown by
- * panning to it. The font is the kernel's 8x16 console font (extracted from linux/ at build time),
- * drawn at double size: 64 columns by 24 rows on the 1024x768 panel.
+ * panning to it. The font is the kernel's 8x16 console font (extracted from the family's kernel
+ * source at build time), drawn at double size: 64 columns by 24 rows on a 1024x768 panel.
+ * What differs between boards (the buttons' input devices, the power supplies, the board's name)
+ * comes from the board's description (BOARD_*; see board()).
  *
  * The other modes serve the boot image's start-up program (initramfs; its recovery menu is in
  * docs/boot.md):
@@ -19,8 +21,8 @@
  *                                       show TITLE (in red) and the lines, then exit, leaving them
  *                                       on screen (why the system couldn't start); a line after
  *                                       -d is a detail, in grey
- *   status --held BUTTON                exit 0 if BUTTON (a label printed on the Brick, e.g. MENU)
- *                                       is held now, 1 if not
+ *   status --held BUTTON...             exit 0 if every BUTTON (a label printed on the device,
+ *                                       e.g. MENU; buttons[] lists them) is held now, 1 if not
  *   status --menu TITLE [-n NOTE | -b B-TEXT]... ITEM...
  *                                       a list to choose from with the D-pad; A prints the chosen
  *                                       item's index (from 0) and exits 0, leaving "ITEM..." on
@@ -34,8 +36,8 @@
  *                                       1 after FAIL or input ending without either, 2 after 10
  *                                       minutes without a press. Up to 8 steps are listed.
  * Every mode exits 3 if it can't run (no framebuffer, no buttons, bad arguments). --held, --menu
- * and --task read the buttons' input device, "brick-keys", directly. padbridge takes that device
- * for itself while it runs, so then --menu and --task get no presses: they are for the
+ * and --task read the buttons' input devices (BOARD_KEYS) directly. On the Brick, padbridge takes
+ * its device for itself while it runs, so then --menu and --task get no presses: they are for the
  * initramfs, where padbridge doesn't run.
  */
 #include <dirent.h>
@@ -43,6 +45,7 @@
 #include <fcntl.h>
 #include <linux/fb.h>
 #include <linux/input.h>
+#include <linux/kd.h>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -69,17 +72,12 @@
  * interrupts for a full battery read), so they are refreshed this often rather than every frame;
  * the battery driver itself only updates every 10 s. */
 #define SLOW_REFRESH_MS	5000
-#define BACKLIGHT	128	/* 0-255; the bootloader leaves it nearly dark */
 /* Ignore power-button events this long after waking: the press that woke the device arrives
  * once it is running again and must not send it straight back to sleep. */
 #define WAKE_GRACE_MS	1500
 /* --menu and --task give up after this long without a button press, so a forgotten screen
  * doesn't drain the battery (the initramfs then powers off). */
 #define IDLE_MS		(10 * 60 * 1000)
-
-/* Allwinner display driver ioctl (include/video/sunxi_display2.h); this kernel has no
- * /sys/class/backlight. Arguments: screen, level. */
-#define DISP_LCD_SET_BRIGHTNESS	0x102
 
 enum { GREY = 0x909090, WHITE = 0xffffff, GREEN = 0x60e060, YELLOW = 0xe0d060, RED = 0xe06060,
        SELECTED = 0x304860 };	/* the background of the chosen menu item */
@@ -190,6 +188,10 @@ static void begin_frame(void)
 
 static void show_frame(void)
 {
+	/* Mainline's framebuffer (DRM's emulation of one) copies what was drawn to the screen's memory
+	 * some milliseconds later; fsync copies it now, so the page is complete when shown. On the
+	 * Brick there is nothing to copy, and fsync fails harmlessly. */
+	fsync(fb_fd);
 	var.yoffset = var.yoffset ? 0 : var.yres;
 	ioctl(fb_fd, FBIOPAN_DISPLAY, &var);
 }
@@ -237,33 +239,99 @@ static long readn(const char *path)
 	return atol(readf(path));
 }
 
-#define BAT "/sys/class/power_supply/axp2202-battery/"
-#define USB "/sys/class/power_supply/axp2202-usb/"
-#define CPU "/sys/devices/system/cpu/cpufreq/policy0/"
-
-static void show_power(void)
+/* @name's value in the board's description (/usr/share/crystaline/boards/<board>.env, plain shell
+ * assignments), without the quotes around it; "" if it isn't there. The description is
+ * /run/crystaline/board.env, which the system's start-up copies there, or BOARD_ENV if set (the
+ * initramfs's init sets it to the file board-env picks). */
+static const char *board(const char *name)
 {
-	long cap = readn(BAT "capacity");
+	const char *file = getenv("BOARD_ENV");
+	char buf[256], *v;
+	size_t n = strlen(name), len;
+	FILE *f = fopen(file ? file : "/run/crystaline/board.env", "r");
 
-	line(WHITE, "Battery  %ld%%  %s", cap, readf(BAT "status"));
-	/* The driver reports only the charge current. */
-	line(GREY, "  %.2f V  %ld mA charging  %.1f C", readn(BAT "voltage_now") / 1e6,
-	     readn(BAT "current_now") / 1000, readn(BAT "temp") / 10.0);
-	line(GREY, "  to empty %ld min, to full %ld min", readn(BAT "time_to_empty_now") / 60,
-	     readn(BAT "time_to_full_now") / 60);
-	line(GREY, "USB      %s, input limit %ld mA", readn(USB "online") ? "connected" : "unplugged",
-	     readn(USB "input_current_limit") / 1000);
+	while (f && fgets(buf, sizeof(buf), f)) {
+		if (strncmp(buf, name, n) || buf[n] != '=')
+			continue;
+		v = buf + n + 1;
+		v[strcspn(v, "\n")] = 0;
+		len = strlen(v);
+		if (len >= 2 && (*v == '\'' || *v == '"') && v[len - 1] == *v) {
+			v[len - 1] = 0;
+			v++;
+		}
+		fclose(f);
+		return strdup(v);
+	}
+	if (f)
+		fclose(f);
+	return "";
 }
 
-/* Thermal zone type without the chip prefix and "_thermal_zone" suffix, e.g. "gpu". */
+/* The status screen's board names (BOARD_NAME, BOARD_BATTERY, BOARD_CHARGER), read by main(). */
+static const char *board_name, *battery, *charger;
+
+/* Power supply @name's property @prop, as readf() reads it ("" if it has none). */
+static const char *ps(const char *name, const char *prop)
+{
+	char path[256];
+
+	snprintf(path, sizeof(path), "/sys/class/power_supply/%s/%s", name, prop);
+	return readf(path);
+}
+
+/* The battery's property @a, or else @b ("" if it has neither). */
+static const char *bat_prop(const char *a, const char *b)
+{
+	const char *v = ps(battery, a);
+
+	return *v ? v : ps(battery, b);
+}
+
+#define CPU "/sys/devices/system/cpu/cpufreq/policy0/"
+
+/* The battery and the charger input. Drivers report different values: the Brick's instantaneous
+ * ones (*_now; its current only while charging) and the times to empty and full, the RK817's
+ * averages (*_avg). Lines a driver can't fill are left out. */
+static void show_power(void)
+{
+	char text[128] = "", limit[48] = "";
+	const char *v;
+	long cap = atol(ps(battery, "capacity")), empty;
+	int n = 0;
+
+	line(WHITE, "Battery  %ld%%  %s", cap, ps(battery, "status"));
+	if (*(v = bat_prop("voltage_now", "voltage_avg")))
+		n += snprintf(text + n, sizeof(text) - n, "  %.2f V", atol(v) / 1e6);
+	if (*(v = bat_prop("current_now", "current_avg")))
+		n += snprintf(text + n, sizeof(text) - n, "  %ld mA", atol(v) / 1000);
+	if (*(v = ps(battery, "temp")))
+		snprintf(text + n, sizeof(text) - n, "  %.1f C", atol(v) / 10.0);
+	if (text[0])
+		line(GREY, "%s", text);
+	if (*(v = ps(battery, "time_to_empty_now"))) {
+		empty = atol(v);	/* before the next ps() reuses readf()'s buffer */
+		line(GREY, "  to empty %ld min, to full %ld min", empty / 60,
+		     atol(ps(battery, "time_to_full_now")) / 60);
+	}
+	if (*(v = ps(charger, "input_current_limit")))
+		snprintf(limit, sizeof(limit), ", input limit %ld mA", atol(v) / 1000);
+	line(GREY, "USB      %s%s", atol(ps(charger, "online")) ? "connected" : "unplugged", limit);
+}
+
+/* Thermal zone type without the chip prefix and the "_thermal_zone" or "-thermal" suffix, e.g.
+ * "gpu". */
 static const char *short_name(const char *type)
 {
 	static char buf[64];
+	char *end;
 
 	if (!strncmp(type, "axp2202-", 8))
 		type += 8;
 	snprintf(buf, sizeof(buf), "%s", type);
 	buf[strcspn(buf, "_")] = 0;
+	if ((end = strstr(buf, "-thermal")))
+		*end = 0;
 	return buf;
 }
 
@@ -339,64 +407,139 @@ static void show_network(void)
 /* Bit n of an evdev bitmask. */
 #define TEST(bits, n)	((bits)[(n) / 8] & (1 << ((n) % 8)))
 
-/* Held buttons, read from padbridge's virtual gamepad ("TRIMUI Player1"), labelled as printed
- * on the Brick. Codes as padbridge sends them (see userspace/padbridge/padbridge.c). */
-static void show_buttons(int pad_fd)
-{
-	/* padbridge sends the Brick's X (top) as SDL's Xbox Y (0x134) and Y (left) as 0x133. */
-	static const struct { int code; const char *name; } keys[] = {
-		{ BTN_EAST, "A" }, { BTN_SOUTH, "B" }, { 0x134, "X" }, { 0x133, "Y" },
-		{ BTN_TL, "L1" }, { BTN_TR, "R1" }, { BTN_SELECT, "SELECT" }, { BTN_START, "START" },
-		{ BTN_MODE, "MENU" }, { BTN_THUMBL, "F1" }, { BTN_THUMBR, "F2" },
-		{ KEY_VOLUMEUP, "VOL+" }, { KEY_VOLUMEDOWN, "VOL-" },
-	};
-	unsigned char kbits[KEY_MAX / 8 + 1] = { 0 }, sbits[SW_MAX / 8 + 1] = { 0 };
-	struct input_absinfo a;
-	char text[128] = "";
-	size_t i;
+/* Every input device, opened once by open_inputs(), non-blocking (devices that appear later aren't
+ * seen), and whether each is one of the buttons' devices: named in BOARD_KEYS. */
+static struct pollfd inputs[MAX_INPUTS];
+static char is_keys[MAX_INPUTS];
+static int ninputs;
+static const char *key_names;	/* BOARD_KEYS */
 
-	if (pad_fd < 0) {
-		line(RED, "Buttons  no gamepad (is padbridge running?)");
-		return;
-	}
-	ioctl(pad_fd, EVIOCGKEY(sizeof(kbits)), kbits);
-	ioctl(pad_fd, EVIOCGSW(sizeof(sbits)), sbits);
-	for (i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
-		if (TEST(kbits, keys[i].code))
-			strcat(strcat(text, keys[i].name), " ");
-	if (ioctl(pad_fd, EVIOCGABS(ABS_Z), &a) == 0 && a.value)
-		strcat(text, "L2 ");
-	if (ioctl(pad_fd, EVIOCGABS(ABS_RZ), &a) == 0 && a.value)
-		strcat(text, "R2 ");
-	if (ioctl(pad_fd, EVIOCGABS(ABS_HAT0X), &a) == 0 && a.value)
-		strcat(text, a.value < 0 ? "LEFT " : "RIGHT ");
-	if (ioctl(pad_fd, EVIOCGABS(ABS_HAT0Y), &a) == 0 && a.value)
-		strcat(text, a.value < 0 ? "UP " : "DOWN ");
-	line(YELLOW, "Buttons  %s", text[0] ? text : "-");
-	line(GREY, "  FN switch %s", TEST(sbits, SW_TABLET_MODE) ? "on" : "off");
+/* Whether @word is one of the space-separated words in @list. */
+static int has_word(const char *list, const char *word)
+{
+	size_t n = strlen(word);
+	const char *p;
+
+	for (p = list; n && (p = strstr(p, word)); p += n)
+		if ((p == list || p[-1] == ' ') && (p[n] == ' ' || !p[n]))
+			return 1;
+	return 0;
 }
 
-/* Headphone jack (its input device's switches) and whether the speaker amplifier is powered (its
- * enable pin, labelled "SPK" in debugfs's GPIO list). */
-static void show_audio(int jack_fd)
+static void open_inputs(void)
 {
-	unsigned char sbits[SW_MAX / 8 + 1] = { 0 };
-	char line_buf[256];
-	const char *amp = "?";
+	struct dirent *e;
+	DIR *d = opendir("/dev/input");
+
+	key_names = board("BOARD_KEYS");
+	while (d && (e = readdir(d)) && ninputs < MAX_INPUTS) {
+		char path[300], name[64] = "";
+		int fd;
+
+		if (strncmp(e->d_name, "event", 5))
+			continue;
+		snprintf(path, sizeof(path), "/dev/input/%s", e->d_name);
+		fd = open(path, O_RDONLY | O_NONBLOCK);
+		if (fd < 0)
+			continue;
+		ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+		is_keys[ninputs] = has_word(key_names, name);
+		inputs[ninputs++] = (struct pollfd){ .fd = fd, .events = POLLIN };
+	}
+	if (d)
+		closedir(d);
+}
+
+/* The buttons, labelled as printed on the devices, and their codes on the buttons' devices. The
+ * face buttons' codes go by position (docs/input.md): A is the right one, B the bottom, X the top,
+ * Y the left. Not every board has every button: MENU, F1 and F2 are the Brick's only; L3 and R3
+ * (the sticks' clicks) the RGB20 Pro's only. */
+static const struct { const char *name; int code; } buttons[] = {
+	{ "A", BTN_EAST }, { "B", BTN_SOUTH }, { "X", BTN_NORTH }, { "Y", BTN_WEST },
+	{ "UP", BTN_DPAD_UP }, { "DOWN", BTN_DPAD_DOWN }, { "LEFT", BTN_DPAD_LEFT },
+	{ "RIGHT", BTN_DPAD_RIGHT }, { "L1", BTN_TL }, { "R1", BTN_TR }, { "L2", BTN_TL2 },
+	{ "R2", BTN_TR2 }, { "SELECT", BTN_SELECT }, { "START", BTN_START }, { "MENU", BTN_MODE },
+	{ "F1", BTN_TRIGGER_HAPPY1 }, { "F2", BTN_TRIGGER_HAPPY2 }, { "L3", BTN_THUMBL },
+	{ "R3", BTN_THUMBR }, { "VOL+", KEY_VOLUMEUP }, { "VOL-", KEY_VOLUMEDOWN },
+};
+#define BUTTON_A	BTN_EAST
+#define BUTTON_B	BTN_SOUTH
+
+/* The buttons held now, from all the buttons' devices, into @bits (KEY_MAX / 8 + 1 bytes); returns
+ * how many devices were read. The state is current even right after opening (gpio-keys reads the
+ * buttons on open), and can be read while padbridge holds the Brick's device exclusively
+ * (EVIOCGRAB stops only its events). */
+static int keys_held(unsigned char *bits)
+{
+	unsigned char b[KEY_MAX / 8 + 1];
+	int i, n = 0;
+	size_t k;
+
+	memset(bits, 0, sizeof(b));
+	for (i = 0; i < ninputs; i++) {
+		memset(b, 0, sizeof(b));
+		if (!is_keys[i] || ioctl(inputs[i].fd, EVIOCGKEY(sizeof(b)), b) < 0)
+			continue;
+		for (k = 0; k < sizeof(b); k++)
+			bits[k] |= b[k];
+		n++;
+	}
+	return n;
+}
+
+/* Whether input device @i has the switch @sw; if so, @bits (SW_MAX / 8 + 1 bytes) holds the state
+ * of its switches. */
+static int switches(int i, int sw, unsigned char *bits)
+{
+	memset(bits, 0, SW_MAX / 8 + 1);
+	return ioctl(inputs[i].fd, EVIOCGBIT(EV_SW, SW_MAX / 8 + 1), bits) >= 0 && TEST(bits, sw) &&
+	       ioctl(inputs[i].fd, EVIOCGSW(SW_MAX / 8 + 1), bits) >= 0;
+}
+
+/* Held buttons, and the Brick's FN slider (a switch on its buttons' device). */
+static void show_buttons(void)
+{
+	unsigned char kbits[KEY_MAX / 8 + 1], sw[SW_MAX / 8 + 1];
+	char text[128] = "";
+	size_t i;
+	int j;
+
+	if (!keys_held(kbits)) {
+		line(RED, "Buttons  can't read them (BOARD_KEYS: \"%s\")", key_names);
+		return;
+	}
+	for (i = 0; i < sizeof(buttons) / sizeof(buttons[0]); i++)
+		if (TEST(kbits, buttons[i].code))
+			strcat(strcat(text, buttons[i].name), " ");
+	line(YELLOW, "Buttons  %s", text[0] ? text : "-");
+	for (j = 0; j < ninputs; j++)
+		if (is_keys[j] && switches(j, SW_TABLET_MODE, sw))
+			line(GREY, "  FN switch %s", TEST(sw, SW_TABLET_MODE) ? "on" : "off");
+}
+
+/* Headphone jack (the switches of the input device that has SW_HEADPHONE_INSERT) and, on the
+ * Brick, whether the speaker amplifier is powered (its enable pin, labelled "SPK" in debugfs's
+ * GPIO list). */
+static void show_audio(void)
+{
+	unsigned char sw[SW_MAX / 8 + 1];
+	char line_buf[256], amp[32] = "";
 	FILE *f = fopen("/sys/kernel/debug/gpio", "r");
+	int i;
 
 	while (f && fgets(line_buf, sizeof(line_buf), f))
 		if (strstr(line_buf, "|SPK "))
-			amp = strstr(line_buf, " hi") ? "on" : "off";
+			snprintf(amp, sizeof(amp), ", speaker amp %s", strstr(line_buf, " hi") ? "on" : "off");
 	if (f)
 		fclose(f);
-	if (jack_fd < 0 || ioctl(jack_fd, EVIOCGSW(sizeof(sbits)), sbits) < 0) {
-		line(WHITE, "Audio    jack unknown, speaker amp %s", amp);
+	for (i = 0; i < ninputs; i++) {
+		if (!switches(i, SW_HEADPHONE_INSERT, sw))
+			continue;
+		line(WHITE, "Audio    headphones %s%s%s", TEST(sw, SW_HEADPHONE_INSERT) ? "in" : "out",
+		     TEST(sw, SW_MICROPHONE_INSERT) ? " (with mic)" : "", amp);
 		return;
 	}
-	line(WHITE, "Audio    headphones %s%s, speaker amp %s",
-	     TEST(sbits, SW_HEADPHONE_INSERT) ? "in" : "out",
-	     TEST(sbits, SW_MICROPHONE_INSERT) ? " (with mic)" : "", amp);
+	line(WHITE, "Audio    jack unknown%s", amp);
 }
 
 static void show_sleep(void)
@@ -433,7 +576,7 @@ static void message_lines(char **lines, int n)
 	}
 }
 
-static void draw(int pad_fd, int jack_fd)
+static void draw(void)
 {
 	static long next_slow;
 	struct timespec up;
@@ -448,7 +591,7 @@ static void draw(int pad_fd, int jack_fd)
 		row++;
 	}
 	clock_gettime(CLOCK_BOOTTIME, &up);
-	line(GREEN, "Brick status          up %ld:%02ld:%02ld", up.tv_sec / 3600,
+	line(GREEN, "%s status   up %ld:%02ld:%02ld", board_name, up.tv_sec / 3600,
 	     up.tv_sec / 60 % 60, up.tv_sec % 60);
 	row++;
 	/* Every SLOW_REFRESH_MS read power and CPU afresh (each read wakes the power chip's I2C bus);
@@ -470,21 +613,61 @@ static void draw(int pad_fd, int jack_fd)
 	show_memory();
 	show_network();
 	row++;
-	show_buttons(pad_fd);
-	show_audio(jack_fd);
+	show_buttons();
+	show_audio();
 	row++;
 	show_sleep();
 	footer("POWER: sleep / wake");
 	show_frame();
 }
 
-static void set_backlight(int level)
+/* Allwinner display driver ioctl (include/video/sunxi_display2.h), for the Brick, whose kernel has
+ * no /sys/class/backlight. Arguments: screen, level (0-255). */
+#define DISP_LCD_SET_BRIGHTNESS	0x102
+
+/* Turn the backlight to half: the Brick's bootloader leaves it nearly dark, and the program that
+ * last ran may have dimmed it. The first backlight in /sys/class/backlight, or else the Brick's
+ * display driver. */
+static void set_backlight(void)
 {
-	unsigned long args[4] = { 0, (unsigned long)level };	/* screen 0 */
-	int fd = open("/dev/disp", O_RDWR);
+	struct dirent *e;
+	DIR *d = opendir("/sys/class/backlight");
+	char path[300];
+	FILE *f;
+	long max;
+
+	while (d && (e = readdir(d)) && e->d_name[0] == '.')
+		;
+	if (d && e) {
+		snprintf(path, sizeof(path), "/sys/class/backlight/%s/max_brightness", e->d_name);
+		max = readn(path);
+		snprintf(path, sizeof(path), "/sys/class/backlight/%s/brightness", e->d_name);
+		if (max > 0 && (f = fopen(path, "w"))) {
+			fprintf(f, "%ld\n", max / 2);
+			fclose(f);
+		}
+	} else {
+		unsigned long args[4] = { 0, 128 };	/* screen 0 */
+		int fd = open("/dev/disp", O_RDWR);
+
+		if (fd >= 0) {
+			ioctl(fd, DISP_LCD_SET_BRIGHTNESS, args);
+			close(fd);
+		}
+	}
+	if (d)
+		closedir(d);
+}
+
+/* Keep the kernel's text console (mainline boards: on the screen) from drawing its cursor and
+ * messages over ours. The console stays in graphics mode after status exits, which keeps a
+ * --message on screen. */
+static void console_off(void)
+{
+	int fd = open("/dev/tty0", O_RDWR);
 
 	if (fd >= 0) {
-		ioctl(fd, DISP_LCD_SET_BRIGHTNESS, args);
+		ioctl(fd, KDSETMODE, KD_GRAPHICS);
 		close(fd);
 	}
 }
@@ -513,38 +696,6 @@ static void sleep_now(void)
 		fprintf(stderr, "status: sleepnow failed\n");
 }
 
-/* Open every input device; returns how many, and the fds of the virtual gamepad in @pad and the
- * headphone jack in @jack (-1 if absent). Opened once: devices that appear later aren't seen. */
-static int open_inputs(struct pollfd *fds, int *pad, int *jack)
-{
-	struct dirent *e;
-	DIR *d = opendir("/dev/input");
-	int n = 0;
-
-	*pad = *jack = -1;
-	while (d && (e = readdir(d)) && n < MAX_INPUTS) {
-		char path[300], name[64] = "";
-		int fd;
-
-		if (strncmp(e->d_name, "event", 5))
-			continue;
-		snprintf(path, sizeof(path), "/dev/input/%s", e->d_name);
-		fd = open(path, O_RDONLY | O_NONBLOCK);
-		if (fd < 0)
-			continue;
-		ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-		if (!strcmp(name, "TRIMUI Player1"))
-			*pad = fd;
-		else if (strstr(name, "Audio Jack"))
-			*jack = fd;
-		fds[n].fd = fd;
-		fds[n++].events = POLLIN;
-	}
-	if (d)
-		closedir(d);
-	return n;
-}
-
 /* --message: show TITLE in red, then the lines. */
 static void show_message(char **lines, int n)
 {
@@ -553,88 +704,55 @@ static void show_message(char **lines, int n)
 	show_frame();
 }
 
-/* "brick-keys" codes for A (the right button) and B (the bottom one), as docs/input.md lists. */
-#define BUTTON_A	BTN_EAST
-#define BUTTON_B	BTN_SOUTH
-
-/* The buttons' input device, "brick-keys", opened non-blocking. */
-static int open_keys(void)
+/* Wait until one of the buttons is pressed and return its code (call open_inputs() first); exits with
+ * IDLE after IDLE_MS without one. Only presses made after the buttons were opened count. */
+static int next_press(void)
 {
-	struct dirent *e;
-	DIR *d = opendir("/dev/input");
-	int fd = -1;
-
-	while (d && fd < 0 && (e = readdir(d))) {
-		char path[300], name[64] = "";
-
-		if (strncmp(e->d_name, "event", 5))
-			continue;
-		snprintf(path, sizeof(path), "/dev/input/%s", e->d_name);
-		fd = open(path, O_RDONLY | O_NONBLOCK);
-		if (fd < 0)
-			continue;
-		ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-		if (strcmp(name, "brick-keys")) {
-			close(fd);
-			fd = -1;
-		}
-	}
-	if (d)
-		closedir(d);
-	if (fd < 0)
-		cant_run("no \"brick-keys\" input device");
-	return fd;
-}
-
-/* Wait until a button is pressed on @fd (from open_keys) and return its code; exits with IDLE
- * after IDLE_MS without one. Only presses made after @fd was opened count. */
-static int next_press(int fd)
-{
-	struct pollfd p = { .fd = fd, .events = POLLIN };
+	struct pollfd p[MAX_INPUTS];
 	struct input_event ev;
 	long left, deadline = now_ms() + IDLE_MS;
-	ssize_t n;
+	int i, n = 0;
+	ssize_t r;
 
+	for (i = 0; i < ninputs; i++)
+		if (is_keys[i])
+			p[n++] = inputs[i];
+	if (!n)
+		cant_run("no buttons: no input device named in BOARD_KEYS");
 	for (;;) {
-		while ((n = read(fd, &ev, sizeof(ev))) == sizeof(ev))
-			if (ev.type == EV_KEY && ev.value == 1)
-				return ev.code;
-		if (n >= 0 || errno != EAGAIN)
-			break;
+		for (i = 0; i < n; i++) {
+			while ((r = read(p[i].fd, &ev, sizeof(ev))) == sizeof(ev))
+				if (ev.type == EV_KEY && ev.value == 1)
+					return ev.code;
+			if (r >= 0 || errno != EAGAIN)
+				cant_run("can't read the buttons");
+		}
 		left = deadline - now_ms();
 		if (left <= 0)
 			exit(IDLE);
-		if (poll(&p, 1, left) < 0 && errno != EINTR)
-			break;
+		if (poll(p, n, left) < 0 && errno != EINTR)
+			cant_run("can't read the buttons");
 	}
-	cant_run("can't read the buttons");
-	return -1;
 }
 
-/* --held: the exit status for the button labelled @name (0: held, 1: not). Codes as "brick-keys"
- * sends them (docs/input.md). */
-static int held(const char *name)
+/* --held: the exit status for the buttons labelled @names (0: all held, 1: not). */
+static int held(int n, char **names)
 {
-	static const struct { const char *name; int code; } buttons[] = {
-		{ "A", BUTTON_A }, { "B", BUTTON_B }, { "X", BTN_NORTH }, { "Y", BTN_WEST },
-		{ "L1", BTN_TL }, { "R1", BTN_TR }, { "L2", BTN_TL2 }, { "R2", BTN_TR2 },
-		{ "SELECT", BTN_SELECT }, { "START", BTN_START }, { "MENU", BTN_MODE },
-		{ "F1", BTN_TRIGGER_HAPPY1 }, { "F2", BTN_TRIGGER_HAPPY2 }, { "UP", BTN_DPAD_UP },
-		{ "DOWN", BTN_DPAD_DOWN }, { "LEFT", BTN_DPAD_LEFT }, { "RIGHT", BTN_DPAD_RIGHT },
-	};
-	unsigned char bits[KEY_MAX / 8 + 1] = { 0 };
-	size_t i, n = sizeof(buttons) / sizeof(buttons[0]);
-	int fd;
+	unsigned char bits[KEY_MAX / 8 + 1];
+	size_t k, nb = sizeof(buttons) / sizeof(buttons[0]);
+	int i, all = 1;
 
-	for (i = 0; i < n && strcmp(buttons[i].name, name); i++)
-		;
-	if (i == n)
-		cant_run("no such button");
-	fd = open_keys();
-	/* brick-keys is a gpio-keys device, which reads the buttons when opened: this is current. */
-	if (ioctl(fd, EVIOCGKEY(sizeof(bits)), bits) < 0)
-		cant_run("can't read the buttons");
-	return TEST(bits, buttons[i].code) ? 0 : 1;
+	open_inputs();
+	if (!keys_held(bits))
+		cant_run("no buttons: no input device named in BOARD_KEYS");
+	for (i = 0; i < n; i++) {
+		for (k = 0; k < nb && strcmp(buttons[k].name, names[i]); k++)
+			;
+		if (k == nb)
+			cant_run("no such button");
+		all &= !!TEST(bits, buttons[k].code);
+	}
+	return all ? 0 : 1;
 }
 
 /* --menu: @argv is TITLE [-n NOTE | -b B-TEXT]... ITEM... */
@@ -642,7 +760,7 @@ static int menu(int argc, char **argv)
 {
 	const char *b_text = "back";
 	char foot[128];
-	int first = 1, notes = 0, sel = 0, n, fd, code, i;
+	int first = 1, notes = 0, sel = 0, n, code, i;
 
 	while (first + 1 < argc && (!strcmp(argv[first], "-n") || !strcmp(argv[first], "-b"))) {
 		if (argv[first][1] == 'b')
@@ -655,7 +773,7 @@ static int menu(int argc, char **argv)
 	n = argc - first;
 	if (n < 1)
 		cant_run("--menu needs at least one item");
-	fd = open_keys();
+	open_inputs();
 	for (;;) {
 		begin_titled(GREEN, argv[0]);
 		for (i = 1; i < first; i += 2)
@@ -674,7 +792,7 @@ static int menu(int argc, char **argv)
 		footer(foot);
 		show_frame();
 
-		code = next_press(fd);
+		code = next_press();
 		if (code == BTN_DPAD_UP)
 			sel = (sel + n - 1) % n;
 		else if (code == BTN_DPAD_DOWN)
@@ -775,7 +893,6 @@ static void draw_task(const char *title)
 static int task(const char *title)
 {
 	char s[512];
-	int fd;
 
 	draw_task(title);
 	while (t.result < 0 && fgets(s, sizeof(s), stdin)) {
@@ -789,8 +906,8 @@ static int task(const char *title)
 		t.result = 1;
 		draw_task(title);
 	}
-	fd = open_keys();
-	while (next_press(fd) != BUTTON_A)
+	open_inputs();
+	while (next_press() != BUTTON_A)
 		;
 	return t.result;
 }
@@ -798,11 +915,10 @@ static int task(const char *title)
 int main(int argc, char **argv)
 {
 	struct fb_fix_screeninfo fix;
-	struct pollfd fds[MAX_INPUTS];
-	int nfds, pad, jack, i;
+	int i;
 
 	if (argc > 2 && !strcmp(argv[1], "--held"))	/* needs no framebuffer */
-		return held(argv[2]);
+		return held(argc - 2, argv + 2);
 	fb_fd = open("/dev/fb0", O_RDWR);
 	if (fb_fd < 0 || ioctl(fb_fd, FBIOGET_VSCREENINFO, &var) < 0 ||
 	    ioctl(fb_fd, FBIOGET_FSCREENINFO, &fix) < 0 || var.bits_per_pixel != 32 ||
@@ -813,7 +929,8 @@ int main(int argc, char **argv)
 		  fb_fd, 0);
 	if (fb == MAP_FAILED)
 		cant_run("can't map /dev/fb0");
-	set_backlight(BACKLIGHT);
+	console_off();
+	set_backlight();
 	if (argc > 2 && !strcmp(argv[1], "--message")) {
 		show_message(argv + 2, argc - 2);
 		return 0;
@@ -827,18 +944,21 @@ int main(int argc, char **argv)
 		nbanner = argc - 2;
 	} else if (argc > 1) {
 		cant_run("usage: status [--banner TITLE [[-d] LINE]... | --message TITLE [[-d] LINE]... | "
-			 "--held BUTTON | --menu TITLE [-n NOTE | -b B-TEXT]... ITEM... | --task TITLE]");
+			 "--held BUTTON... | --menu TITLE [-n NOTE | -b B-TEXT]... ITEM... | --task TITLE]");
 	}
-	nfds = open_inputs(fds, &pad, &jack);
+	board_name = board("BOARD_NAME");
+	battery = board("BOARD_BATTERY");
+	charger = board("BOARD_CHARGER");
+	open_inputs();
 
 	for (;;) {
-		draw(pad, jack);
-		if (poll(fds, nfds, REFRESH_MS) <= 0)
+		draw();
+		if (poll(inputs, ninputs, REFRESH_MS) <= 0)
 			continue;
-		for (i = 0; i < nfds; i++) {
+		for (i = 0; i < ninputs; i++) {
 			struct input_event ev;
 
-			while (read(fds[i].fd, &ev, sizeof(ev)) == sizeof(ev)) {
+			while (read(inputs[i].fd, &ev, sizeof(ev)) == sizeof(ev)) {
 				if (ev.type != EV_KEY || ev.code != KEY_POWER || ev.value != 1 ||
 				    just_woke())
 					continue;
