@@ -70,3 +70,18 @@ CONFIG_LED=y
 CONFIG_LED_BOOT=y
 CONFIG_LED_PWM=y
 CONFIG_DM_PWM=y
+# U-Boot's settings: two copies, in the card's env and env-redund partitions (tools/mainline/
+# build-card.sh puts them at these places), in the redundant format that crystaline-install switches
+# (userspace/crystaline-install/src/env.rs). The settings come from the card U-Boot started from.
+CONFIG_ENV_IS_IN_MMC=y
+CONFIG_ENV_REDUNDANT=y
+CONFIG_ENV_SIZE=0x20000
+CONFIG_ENV_OFFSET=0x1000000
+CONFIG_ENV_OFFSET_REDUND=0x1020000
+# Start the boot slot the settings name (boot_a if they are lost): the partition boot_a or boot_b on
+# the first slot's card (mmc 1, by the device tree's aliases), whose boot.img is a FAT image with
+# extlinux.conf (tools/system/parts-mainline.sh). No automatic fall-back to the other slot
+# (docs/install-and-update.md). No pause before it: there is no serial console to stop it from.
+CONFIG_BOOTCOMMAND="test -n \"${boot_partition}\" || setenv boot_partition boot_a; part number mmc 1 ${boot_partition} slot && sysboot mmc 1:${slot} any ${scriptaddr} /extlinux/extlinux.conf"
+CONFIG_CMD_SYSBOOT=y
+CONFIG_BOOTDELAY=0

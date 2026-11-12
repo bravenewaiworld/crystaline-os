@@ -115,7 +115,7 @@ fn offer(paths: &Result<Paths>) -> serde_json::Value {
     };
     let backups: Vec<_> = backup::list(&p.data).iter()
         .map(|b| serde_json::json!({ "dir": b.dir, "created": b.created, "bytes": b.bytes, "holds": b.holds })).collect();
-    let updates: Vec<_> = update::list(&p.data, &p.keys, &p.version).iter()
+    let updates: Vec<_> = update::list(&p.data, &p.keys, &p.version, &p.family).iter()
         .map(|u| serde_json::json!({ "file": u.file, "version": u.version, "older": u.older, "problem": u.problem })).collect();
     let (slot, previous) = slots::offer(p);
     let on_card = p.on_card();
@@ -158,23 +158,32 @@ pub struct Paths {
     pub keys: PathBuf,
     /// The kernel's power supplies (sysfs's power_supply class), for the battery check.
     pub power: PathBuf,
+    /// The running version's family of boards ("brick", "mainline": `family`); versions of another
+    /// family are refused.
+    pub family: String,
 }
 
 impl Paths {
     /// The paths given (by option name, e.g. "--target"), the rest found on the device: the
-    /// internal storage is the disk on the eMMC controller (sdc2), the card the disk on the SD
-    /// card controller (sdc0); the system runs from the disk holding /system, which must be one
-    /// of them; the data partition is at /mnt/SDCARD; the version is /etc/crystaline-version.
+    /// internal storage is the disk on the board's eMMC controller and the card the disk on its SD
+    /// card controller (`controller`); the system runs from the disk holding /system, which must
+    /// be one of them; the data partition is at /mnt/SDCARD; the version is
+    /// /etc/crystaline-version; the family is the running version's (its manifest in images/).
     fn find(mut given: impl FnMut(&str) -> Option<String>) -> Result<Self> {
         let (target, source, running, system, data, version) =
             (given("--target"), given("--source"), given("--running"), given("--system"), given("--data"), given("--version"));
         let (slot, keys, power) = (given("--slot"), given("--keys"), given("--power-supply"));
         let path = |p: Option<String>, default: &str| PathBuf::from(p.unwrap_or_else(|| default.into()));
-        let internal = target.map(PathBuf::from).or_else(|| disk_on("sdc2")).ok_or_else(|| report::Failure {
-            message: "this device's internal storage isn't available".into(),
-            hint: format!("This version of Crystaline OS can't use the internal storage. Install a newer version from {}.", report::RELEASES),
-            detail: "no disk on the eMMC controller (sdc2): the device tree must enable it (system/family/brick/dt-tweaks.sh)".into() });
-        let card = source.map(PathBuf::from).or_else(|| disk_on("sdc0")).map_or_else(|| fail("there is no SD card in the device", "Insert the SD card, then try again."), Ok);
+        let internal = match (target, controller("BOARD_INTERNAL_CONTROLLER")) {
+            (Some(t), _) => Ok(PathBuf::from(t)),
+            (None, None) => fail("this device has no internal storage", ""),
+            (None, Some(c)) => disk_on(&c).ok_or_else(|| report::Failure {
+                message: "this device's internal storage isn't available".into(),
+                hint: format!("This version of Crystaline OS can't use the internal storage. Install a newer version from {}.", report::RELEASES),
+                detail: format!("no disk on the eMMC controller ({c}): the device tree must enable it (system/family/brick/dt-tweaks.sh)") }),
+        };
+        let card = source.map(PathBuf::from).or_else(|| disk_on(&controller("BOARD_CARD_CONTROLLER")?))
+            .map_or_else(|| fail("there is no SD card in the device", "Insert the SD card, then try again."), Ok);
         let running = match running {
             Some(r) => PathBuf::from(r),
             None => {
@@ -192,8 +201,11 @@ impl Paths {
             None => std::fs::read_to_string("/etc/crystaline-version").map(|v| v.trim().to_string())
                 .map_err(|e| report::Failure { message: format!("reading /etc/crystaline-version: {e}"), hint: format!("The system is damaged. {}", report::REWRITE_CARD), ..Default::default() })?,
         };
-        Ok(Self { internal, card, running, system: path(system, "/system"), data: path(data, "/mnt/SDCARD"), version, slot,
-                  keys: path(keys, "/etc/crystaline/update-keys"), power: path(power, "/sys/class/power_supply") })
+        let system = path(system, "/system");
+        let family = report::read_json(&system.join("images").join(&version).join("manifest.json"), "the running version's manifest")
+            .map(|m| family(&m).to_string()).unwrap_or_else(|_| "brick".into());
+        Ok(Self { internal, card, running, system, data: path(data, "/mnt/SDCARD"), version, slot,
+                  keys: path(keys, "/etc/crystaline/update-keys"), power: path(power, "/sys/class/power_supply"), family })
     }
 
     /// The internal storage, failing if there is none.
@@ -206,8 +218,26 @@ impl Paths {
     pub fn on_card(&self) -> bool { self.card.as_ref().ok() == Some(&self.running) }
 }
 
-/// The disk (e.g. /dev/mmcblk0) on the storage controller `controller` (a platform device: sdc0
-/// is the SD card's, sdc2 the eMMC's), if any.
+/// The family of boards a version's manifest says it is for; "brick" for manifests from before
+/// build-system.sh wrote it, which were all the Brick's.
+pub fn family(manifest: &serde_json::Value) -> &str { manifest["family"].as_str().unwrap_or("brick") }
+
+/// A storage controller the board's description names (`name`: BOARD_CARD_CONTROLLER,
+/// BOARD_INTERNAL_CONTROLLER), as /sys/bus/platform/devices names it; None if not named. The
+/// description is /run/crystaline/board.env once the system's start-up has copied it there, and
+/// before that (in the initramfs's recovery menu) the file board-env picks.
+fn controller(name: &str) -> Option<String> {
+    let run = Path::new("/run/crystaline/board.env");
+    let file = if run.is_file() { run.to_path_buf() } else {
+        let out = std::process::Command::new("/usr/libexec/crystaline/board-env").output().ok()?;
+        PathBuf::from(String::from_utf8_lossy(&out.stdout).trim())
+    };
+    std::fs::read_to_string(file).ok()?.lines()
+        .find_map(|l| l.strip_prefix(name)?.strip_prefix('=').map(|v| v.trim_matches(['\'', '"']).to_string()))
+}
+
+/// The disk (e.g. /dev/mmcblk0) on the storage controller `controller` (a platform device, e.g.
+/// the Brick's sdc0 for its SD card), if any.
 fn disk_on(controller: &str) -> Option<PathBuf> {
     let hosts = std::fs::read_dir(format!("/sys/bus/platform/devices/{controller}/mmc_host")).ok()?;
     for host in hosts.flatten() {

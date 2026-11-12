@@ -23,18 +23,40 @@ add_parts() {
 # messages go only to the kernel log, and there is no recovery menu.
 INITRAMFS_PROGRAMS=
 
-# make_boot INITRAMFS: this version's boot files in $V, named in BOOT_FILES for the manifest: the
-# kernel, INITRAMFS, and the device tree of each board of the family. A card's boot partition holds
-# them in a boot slot's folder (a/ or b/) that its extlinux.conf names (tools/mainline/build-card.sh).
+# make_boot INITRAMFS: this version's boot.img in $V (BOOT_FILES, for the manifest), what a boot slot
+# holds (the partition boot_a or boot_b, tools/mainline/build-card.sh): a FAT image that U-Boot
+# starts from with extlinux.conf, holding the kernel, INITRAMFS and the device tree of each board of
+# the family; each board's U-Boot names its own (fdtfile). In APPEND:
+# - root= and crystaline.boot=: the system partition and the slot, from U-Boot's settings (mmc_root,
+#   boot_partition), since one boot.img goes into either slot of any card;
+# - the serial console (1,500,000 baud on the RK3566) and the screen; the screen is last, so it is
+#   /dev/console;
+# - a 1 MiB kernel log buffer, and only warnings and worse on the consoles, as on the Brick;
+# - panic=10: restart 10 s after a panic; the kernel's log of it survives in RAM (ramoops) and the
+#   next start saves it in /system/logs/crash-*/.
 make_boot() {
-	cp "$KBUILD/arch/arm64/boot/Image" "$V/Image"
-	cp "$1" "$V/initramfs.cpio.gz"
-	BOOT_FILES="Image initramfs.cpio.gz"
-	for b in $("$ROOT/tools/system/family-boards.sh" mainline); do
-		dtb=$(sed -n 's/^DTB := //p' "$ROOT/system/board/$b/board.mk")
-		install -D -m 644 "$KBUILD/arch/arm64/boot/dts/$dtb" "$V/dtbs/$dtb"
-		BOOT_FILES="$BOOT_FILES dtbs/$dtb"
+	b=$TMP/boot
+	mkdir -p "$b/extlinux"
+	cp "$KBUILD/arch/arm64/boot/Image" "$1" "$b/"
+	for board in $("$ROOT/tools/system/family-boards.sh" mainline); do
+		dtb=$(sed -n 's/^DTB := //p' "$ROOT/system/board/$board/board.mk")
+		install -D -m 644 "$KBUILD/arch/arm64/boot/dts/$dtb" "$b/dtbs/$dtb"
 	done
+	cat >"$b/extlinux/extlinux.conf" <<-'EOF'
+	# Written by tools/system/parts-mainline.sh. U-Boot's settings fill in ${...}.
+	DEFAULT crystaline
+	LABEL crystaline
+	  LINUX /Image
+	  INITRD /initramfs.cpio.gz
+	  FDTDIR /dtbs
+	  APPEND root=${mmc_root} crystaline.boot=${boot_partition} console=ttyS2,1500000 console=tty0 log_buf_len=1M loglevel=4 panic=10
+	EOF
+	# Room for the files plus 2 MiB for the filesystem's own structures, in whole MiB.
+	kib=$(( $(du -sk "$b" | cut -f1) / 1024 * 1024 + 3072 ))
+	rm -f "$V/boot.img"
+	mkfs.vfat -C -n BOOT -i 0c7a5717 "$V/boot.img" $kib >/dev/null
+	MTOOLS_SKIP_CHECK=1 mcopy -s -m -i "$V/boot.img" "$b/extlinux" "$b/Image" "$b/initramfs.cpio.gz" "$b/dtbs" ::/
+	BOOT_FILES=boot.img
 }
 
 # manifest_extra: this family's fields in manifest.json: none.

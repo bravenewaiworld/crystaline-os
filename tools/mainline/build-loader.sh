@@ -9,7 +9,8 @@
 # One checkout builds the same bytes every time: the build time recorded is its last commit's.
 # Built with Buildroot's compiler for the family (make DEVICE=<board> buildroot first);
 # MAINLINE_CROSS_COMPILE overrides it.
-# Output: OUT/u-boot-rockchip.bin and OUT/versions.txt (what went into it), with the build logs.
+# Output: OUT/u-boot-rockchip.bin, OUT/u-boot-initial-env (U-Boot's built-in settings, as text) and
+# OUT/versions.txt (what went into it), with the build logs.
 # Usage: build-loader.sh <board> <out-dir>
 set -eu
 BOARD=$1
@@ -31,7 +32,7 @@ for f in "$UBOOT_SRC" "$DDR" ${BL31:-"$TFA_SRC" "$TFA_DTC_SRC"}; do
 	[ -e "$f" ] || { echo "missing $f (tools/fetch-third-party.sh, tools/env.sh)" >&2; exit 1; }
 done
 export SOURCE_DATE_EPOCH="$(git -C "$ROOT" log -1 --format=%ct)"
-rm -f "$OUT/u-boot-rockchip.bin" "$OUT/versions.txt"
+rm -f "$OUT/u-boot-rockchip.bin" "$OUT/u-boot-initial-env" "$OUT/versions.txt"
 
 # run LOG CMD...: run CMD with its output in OUT/LOG, shown only if it fails.
 run() {
@@ -66,8 +67,11 @@ run u-boot-config.log umake "$DEFCONFIG"
 # U-Boot's packer (binman) is Python and needs pyelftools: the build machine's Python, not
 # Buildroot's (which lacks it), so Buildroot's host/bin stays out of PATH.
 run u-boot.log umake -j"$(nproc)" BL31="$BL31" ROCKCHIP_TPL="$DDR"
+# Its built-in settings as text: the card builder starts the card's settings from them, since U-Boot
+# uses the card's copy whole, not merged with its own.
+run u-boot-env.log umake u-boot-initial-env
 
-cp "$OUT/u-boot/u-boot-rockchip.bin" "$OUT/"
+cp "$OUT/u-boot/u-boot-rockchip.bin" "$OUT/u-boot/u-boot-initial-env" "$OUT/"
 sum() { sha256sum <"$1" | cut -c1-16; }
 cat >"$OUT/versions.txt" <<EOF
 board  $BOARD ($DEFCONFIG)

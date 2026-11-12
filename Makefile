@@ -19,7 +19,7 @@ FAMILY_BOARDS := $(shell tools/system/family-boards.sh $(FAMILY))
 # Targets only the Brick family has so far: refused for other families, rather than built from the
 # Brick's inputs into the wrong folder.
 BRICK_ONLY := gpu userspace device-tools installer stock-fw deploy-specular run-specular \
-	update-file update-device debug-running-release test-installer test-xr829-attach test-dt-edits \
+	update-file update-device debug-running-release test-xr829-attach test-dt-edits \
 	test-exfat
 ifneq ($(FAMILY),brick)
 ifneq ($(filter $(BRICK_ONLY),$(MAKECMDGOALS)),)
@@ -243,13 +243,11 @@ system: buildroot kernel $(SYSTEM_PARTS_$(FAMILY))
 # The card image for DEVICE: the Brick's own layout, or a mainline board's (its DTB from board.mk).
 ifeq ($(FAMILY),mainline)
 # The board's loader (U-Boot, BL31, the SoC's DDR init), rebuilt from clean every time
-# (tools/mainline/build-loader.sh); RK3566_LOADER (tools/env.sh) puts another on the card instead.
+# (tools/mainline/build-loader.sh).
 loader:
 	tools/mainline/build-loader.sh $(DEVICE) $(B)/loader/$(DEVICE)
-RK3566_LOADER := $(call env,RK3566_LOADER)
-sd-card: system $(if $(RK3566_LOADER),,loader)
-	tools/mainline/build-card.sh $(B)/system/latest $(DTB) \
-		$(or $(RK3566_LOADER),$(B)/loader/$(DEVICE)/u-boot-rockchip.bin) $(B)/sd-card-$(DEVICE).img
+sd-card: system loader
+	tools/mainline/build-card.sh $(B)/system/latest $(DTB) $(B)/loader/$(DEVICE) $(B)/sd-card-$(DEVICE).img
 else
 sd-card: system
 	tools/system/build-sd-card.sh $(B)/system/latest $(B)/sd-card.img
@@ -277,7 +275,7 @@ run-specular: specular
 
 # Its own PC build of the installer has the test-only cut points (userspace/crystaline-install/src/cut.rs).
 test-installer:
-	tools/system/test-installer.sh
+	DEVICE=$(DEVICE) tools/system/test-installer.sh
 
 # These four run their script under a PC build of the device's BusyBox (build/brick/pc-busybox) once
 # Buildroot has built it, and under the PC's shell and tools before then.

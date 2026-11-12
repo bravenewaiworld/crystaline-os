@@ -25,10 +25,6 @@
 # Empty: the RK3566 loader runs open TF-A. Set to a BL31 file to use that instead, e.g. Rockchip's
 # closed one that ROCKNIX's cards carry: $ROOT/third-party/rkbin/rk3568_bl31_v1.45.elf.
 : "${RK3566_BL31:=}"
-# Empty: the card builder writes the loader build-loader.sh made. Set to another loader to write that
-# instead (what goes at sector 64), e.g. one taken from a ROCKNIX card for comparison:
-# dd if=<card> of=rocknix-loader.bin bs=512 skip=64 count=32704.
-: "${RK3566_LOADER:=}"
 # ARM's kernel driver for Mali Bifrost GPUs (mali_kbase), ROCKNIX's copy with its fixes for newer
 # kernels (github.com/rocknix/mali_kbase): the optional alternative to Panfrost on mainline boards,
 # for ARM's own GL ES and Vulkan libraries (tools/mainline/build-mali.sh).
@@ -39,4 +35,4 @@
 : "${RTL8723DS_BT:=$ROOT/third-party/rtl8723ds-bt}"
 # The OpenWrt gcc wrapper warns when this is unset; its value is unused.
 : "${STAGING_DIR:=/tmp}"
-export CROSS_COMPILE GPU_SRC DUFS STOCK_FW UBOOT_SRC TFA_SRC TFA_DTC_SRC RK3566_DDR RK3566_BL31 RK3566_LOADER MALI_KBASE_SRC RTL8723DS_BT STAGING_DIR
+export CROSS_COMPILE GPU_SRC DUFS STOCK_FW UBOOT_SRC TFA_SRC TFA_DTC_SRC RK3566_DDR RK3566_BL31 MALI_KBASE_SRC RTL8723DS_BT STAGING_DIR

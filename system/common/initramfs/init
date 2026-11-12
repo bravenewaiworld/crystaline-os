@@ -3,8 +3,8 @@
 # this version's read-only system image from it, and hands over to that system's init.
 #
 # Which version runs is decided by the initramfs alone, which U-Boot loads from one of two boot
-# slots: on the Brick, the partition boot_a or boot_b its settings name (passed on as brick.boot=);
-# on mainline boards, the folder a/ or b/ that extlinux.conf names (crystaline.boot=). Each
+# slots: the partition boot_a or boot_b its settings name, passed on as brick.boot= on the Brick
+# and as crystaline.boot= on mainline boards. Each
 # initramfs carries its own version (/etc/crystaline-version) and mounts images/<that version>/
 # from the system partition, so the kernel and its modules always match. The system partition is
 # found by its filesystem UUID, which the kernel command line gives as root=UUID=... (the same
@@ -237,9 +237,8 @@ recovery() {
 }
 
 # From the kernel command line, word by word (extlinux puts nothing before its APPEND, so a value
-# may be the first word): the boot slot this image was loaded from (see the top; brick.boot= from
-# the Brick's U-Boot settings, crystaline.boot= from other families' boot files) and the system
-# partition's UUID.
+# may be the first word): the boot slot this image was loaded from (see the top; both filled in
+# from U-Boot's settings) and the system partition's UUID.
 for a in $(cat /proc/cmdline); do
 	case $a in
 	brick.boot=* | crystaline.boot=*) slot=${a#*.boot=} ;;

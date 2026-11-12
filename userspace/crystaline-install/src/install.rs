@@ -75,7 +75,7 @@ pub fn install(p: &Paths, o: &Options, report: &mut Report) -> Result<String> {
     if target.size < MIN_SIZE { return fail(format!("the internal storage holds only {}", gb(target.size)), format!("The system needs at least {}.", gb(MIN_SIZE))); }
     battery_ok(&p.power, report)?;
     let images = p.system.join("images").join(&p.version);
-    let manifest = check_images(&images, report)?;
+    let manifest = check_images(&images, &p.family, report)?;
     if o.backup { backup_room(&p.data, target.size)?; }
 
     if o.backup {
@@ -237,23 +237,30 @@ fn write_system(p: &Paths, target: &Disk, (start, _): (u64, u64), uuid: &str, re
     result.map(|_| ())
 }
 
-/// Refuses a version whose kernel doesn't make our device-tree changes itself (its manifest lacks
-/// `"dt_edits": true`, which build-system.sh writes), for installs, activations and update files.
-/// The boot packages we write are TrimUI's, unchanged, so such a version would start without its
-/// buttons, internal storage or CPU voltage control. Devices installed before 2026-10-18 would
-/// still run it (their boot package has the changes), but get the same refusal: one rule for
-/// every device.
-pub fn require_dt_edits(manifest: &serde_json::Value) -> Result<()> {
-    if manifest["dt_edits"] == true { return Ok(()); }
-    fail(format!("version {} is too old to run on this system", manifest["version"].as_str().unwrap_or("(unnamed)")),
-         "Choose a newer version.")
+/// Refuses a version that can't run here, for installs, activations and update files: one built
+/// for another family of boards (its manifest's "family"; manifests from before it was written are
+/// the Brick's), or a Brick version whose kernel doesn't make our device-tree changes itself (its
+/// manifest lacks `"dt_edits": true`). The Brick's boot packages are TrimUI's, unchanged, so such a
+/// version would start without its buttons, internal storage or CPU voltage control. Devices
+/// installed before 2026-10-18 would still run it (their boot package has the changes), but get the
+/// same refusal: one rule for every device.
+pub fn require_runnable(manifest: &serde_json::Value, family: &str) -> Result<()> {
+    let version = manifest["version"].as_str().unwrap_or("(unnamed)");
+    if crate::family(manifest) != family {
+        return fail(format!("version {version} is for another kind of device ({}), not this one ({family})", crate::family(manifest)),
+                    format!("Download the update for this device from {}.", crate::report::RELEASES));
+    }
+    if family == "brick" && manifest["dt_edits"] != true {
+        return fail(format!("version {version} is too old to run on this system"), "Choose a newer version.");
+    }
+    Ok(())
 }
 
 /// Checks a version's files (in `dir`, images/<version>/) against its manifest; returns the
 /// manifest.
-pub fn check_images(dir: &Path, report: &mut Report) -> Result<serde_json::Value> {
+pub fn check_images(dir: &Path, family: &str, report: &mut Report) -> Result<serde_json::Value> {
     let m = read_json(&dir.join("manifest.json"), "the system's manifest")?;
-    require_dt_edits(&m)?;
+    require_runnable(&m, family)?;
     for (name, f) in m["files"].as_object().into_iter().flatten() {
         let mut sha = Sha256::new();
         let file = Disk::open(&dir.join(name), false)?;

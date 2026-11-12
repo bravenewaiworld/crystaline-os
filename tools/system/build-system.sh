@@ -4,7 +4,7 @@
 #   $OUT/<version>/rootfs.squashfs   the root filesystem (zstd), mounted read-only on the device
 #   $OUT/<version>/<boot files>      our kernel + initramfs (system/common/initramfs/init) as the
 #                                    family's boot chain loads them (make_boot in parts-$FAMILY.sh)
-#   $OUT/<version>/manifest.json     version, git commit, build time, release or development, the
+#   $OUT/<version>/manifest.json     version, family, git commit, build time, release or development, the
 #                                    family's own fields, sizes and SHA-256 of every file
 # and points $OUT/latest at it. Prints the version.
 #
@@ -206,7 +206,7 @@ files=
 for f in $BOOT_FILES rootfs.squashfs; do files="$files${files:+, }$(entry "$f")"; done
 extra=$(manifest_extra)
 cat >"$V/manifest.json" <<EOF
-{ "version": "$VERSION", "commit": "$commit$dirty", "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+{ "version": "$VERSION", "family": "$FAMILY", "commit": "$commit$dirty", "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "kernel": "$KERNEL_RELEASE", "release": $([ "$RELEASE" = 1 ] && echo true || echo false),${extra:+ $extra,}
   "files": { $files } }
 EOF
