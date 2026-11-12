@@ -2,8 +2,9 @@
 # sleepnow [minutes]: deep sleep until the power button is pressed or, if minutes > 0, until the
 # real-time clock's alarm after that long. Returns once the device is awake again, unless the
 # battery is empty (below).
-# The WiFi driver (XR829) refuses to suspend while connected, so WiFi is stopped first and, if
-# it was running, restarted afterwards.
+# The WiFi drivers refuse to suspend while connected (the Brick's XR829), or hang the suspend (the
+# RGB20 Pro's RTL8821CS under ROCKNIX), so WiFi is stopped and its driver (BOARD_WIFI_MODULE)
+# unloaded first and, if it was running, started again afterwards (its service loads the driver).
 # Not while an install or a restore runs (it holds a lock on its status file, see
 # userspace/crystaline-install/src/status.rs): sleeping would stop it partway.
 STATUS=/run/crystaline-install.status
@@ -29,6 +30,8 @@ poweroff_if_empty
 WIFI="wpa_supplicant wifi-dhcp" running=
 if sv status wpa_supplicant | grep -q '^run:'; then running=1; sv stop $WIFI >/dev/null; fi
 ifconfig wlan0 down 2>/dev/null
+. /run/crystaline/board.env
+[ ! -e /sys/module/$BOARD_WIFI_MODULE ] || rmmod $BOARD_WIFI_MODULE
 echo 0 >/sys/class/rtc/rtc0/wakealarm	# clear any old alarm: a new one can't be set over it
 [ "${1:-0}" -gt 0 ] && echo "+$(($1 * 60))" >/sys/class/rtc/rtc0/wakealarm
 echo mem >/sys/power/state

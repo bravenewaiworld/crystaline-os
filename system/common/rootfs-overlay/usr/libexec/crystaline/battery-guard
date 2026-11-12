@@ -41,7 +41,10 @@ read_sample() {
 	p=$(cat $BAT/present 2>&1) || { echo "error $p"; return; }
 	[ "$p" = 1 ] || { echo absent; return; }
 	set --
-	for f in capacity voltage_now current_now; do
+	# The voltage and current as the driver gives them: right now (the Brick's AXP2202), else
+	# averaged (the RGB20 Pro's RK817 has only voltage_avg and current_avg).
+	for f in capacity voltage current; do
+		[ $f = capacity ] || { [ -e $BAT/${f}_now ] && f=${f}_now || f=${f}_avg; }
 		v=$(cat $BAT/$f 2>&1) || { echo "error $v"; return; }
 		case $v in '' | *[!0-9]*) echo "error $f reads \"$v\""; return ;; esac
 		set -- "$@" "$v"
