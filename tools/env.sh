@@ -22,6 +22,10 @@
 # kernels (github.com/rocknix/mali_kbase): the optional alternative to Panfrost on mainline boards,
 # for ARM's own GL ES and Vulkan libraries (tools/mainline/build-mali.sh).
 : "${MALI_KBASE_SRC:=$ROOT/third-party/mali-kbase}"
+# The RTL8723DS's Bluetooth firmware and its UART settings (rtl8723ds_fw.bin, rtl8723ds_config.bin),
+# from Armbian's firmware collection (github.com/armbian/firmware, rtl_bt/): the RGB20 Pro's
+# Bluetooth, which linux-firmware has no files for.
+: "${RTL8723DS_BT:=$ROOT/third-party/rtl8723ds-bt}"
 # The OpenWrt gcc wrapper warns when this is unset; its value is unused.
 : "${STAGING_DIR:=/tmp}"
-export CROSS_COMPILE GPU_SRC DUFS STOCK_FW RK3566_UBOOT MALI_KBASE_SRC STAGING_DIR
+export CROSS_COMPILE GPU_SRC DUFS STOCK_FW RK3566_UBOOT MALI_KBASE_SRC RTL8723DS_BT STAGING_DIR

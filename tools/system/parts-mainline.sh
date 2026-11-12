@@ -7,12 +7,14 @@ kmake() { "$ROOT/tools/mainline/kmake.sh" "$KBUILD" "$@"; }
 # add_parts: what this family adds to the root filesystem besides the kernel's modules and the
 # parts every family has: ARM's GPU kernel driver, outside the module index so that mdev never loads
 # it (the start-up hooks do, when it is chosen), Specular, cardlog (Specular's log service) and
-# sleepnow. The WiFi and Bluetooth firmware come from Buildroot (linux-firmware); the installer and
-# the other device tools aren't built for this family yet.
+# sleepnow, and the RTL8723DS's Bluetooth firmware (tools/env.sh). The other WiFi and Bluetooth
+# firmware comes from Buildroot (linux-firmware); the installer and the other device tools aren't
+# built for this family yet.
 add_parts() {
 	put "$B/mali/mali_kbase.ko" /usr/lib/crystaline/mali_kbase.ko 644
 	put "$B/tools/cardlog" /usr/bin/cardlog 755
 	put "$ROOT/tools/device/sleepnow" /usr/bin/sleepnow 755
+	for f in rtl8723ds_fw.bin rtl8723ds_config.bin; do put "$RTL8723DS_BT/$f" /lib/firmware/rtl_bt/$f 644; done
 	# Specular, its cores and fonts, as its own Makefile installed them (SPECULAR_STAGE in the Makefile).
 	cp -R "$B/specular-install/." "$R/"
 }
