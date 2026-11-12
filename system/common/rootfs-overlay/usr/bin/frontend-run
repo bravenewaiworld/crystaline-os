@@ -18,6 +18,12 @@ FALLBACK=/tmp/frontend-fallback
 # (docs/boot.md).
 fallback() {
 	. /run/crystaline/board.env	# BOARD_NAME
+	# A family without the status screen yet (the mainline family) waits instead of restarting
+	# Specular, so the device stays reachable over SSH.
+	if [ ! -x /usr/bin/status ]; then
+		echo "frontend: Specular keeps failing, and this system has no status screen; waiting" >&2
+		exec sleep 2147483647
+	fi
 	exec /usr/bin/status --banner "The game menu stopped working" \
 		"Restart the $BOARD_NAME. If it keeps happening, hold MENU while turning it on: the recovery menu can start the previous version." \
 		-d "Log: logs/specular.log on the SD card."

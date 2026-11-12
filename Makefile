@@ -18,7 +18,7 @@ B := $(ROOT)/build/$(FAMILY)
 FAMILY_BOARDS := $(shell tools/system/family-boards.sh $(FAMILY))
 # Targets only the Brick family has so far: refused for other families, rather than built from the
 # Brick's inputs into the wrong folder.
-BRICK_ONLY := gpu userspace device-tools specular installer stock-fw deploy-specular run-specular \
+BRICK_ONLY := gpu userspace device-tools installer stock-fw deploy-specular run-specular \
 	update-file update-device debug-running-release test-installer test-xr829-attach test-dt-edits \
 	test-exfat
 ifneq ($(FAMILY),brick)
@@ -162,13 +162,18 @@ $(B)/userspace/padbridge $(B)/userspace/xr829-attach:
 	$(CC) $(CFLAGS) -o $@ $< $(STATIC)
 
 # --- Specular (the frontend) -----------------------------------------------------------------
-# Specular's own Makefile (specular/) builds it and its emulator cores for the Brick into
+# Specular's own Makefile (specular/) builds it and its emulator cores for the family into
 # $(B)/specular, and installs them into $(SPECULAR_STAGE): the files build-system.sh copies into the
 # system and deploy-specular sends to a device. SPECULAR_PREFIX is where frontend-run starts it.
-# It is built with Buildroot's toolchain, which matches the C and C++ libraries on the device
-# (the kernel's GCC 6.4 lacks the C++17 that SwanStation needs).
-SPECULAR := $(MAKE) -C specular OUT=$(B)/specular DEVICE=brick TARGET=aarch64-unknown-linux-gnu \
-	CROSS_COMPILE=$(B)/buildroot/host/bin/aarch64-buildroot-linux-gnu- CORE_CFLAGS=-mcpu=cortex-a53
+# It is built with the family's Buildroot toolchain, which matches the C and C++ libraries on the
+# device (the Brick kernel's GCC 6.4 lacks the C++17 that SwanStation needs). Each family has its
+# own Specular device crate (specular/devices/<name>) and the CPU its cores are tuned for.
+SPECULAR_DEVICE_brick := brick
+SPECULAR_CPU_brick := cortex-a53
+SPECULAR_DEVICE_mainline := mainline
+SPECULAR_CPU_mainline := cortex-a55
+SPECULAR := $(MAKE) -C specular OUT=$(B)/specular DEVICE=$(SPECULAR_DEVICE_$(FAMILY)) TARGET=aarch64-unknown-linux-gnu \
+	CROSS_COMPILE=$(B)/buildroot/host/bin/aarch64-buildroot-linux-gnu- CORE_CFLAGS=-mcpu=$(SPECULAR_CPU_$(FAMILY))
 SPECULAR_STAGE := $(B)/specular-install
 SPECULAR_PREFIX := /usr/lib/specular
 specular:
@@ -229,7 +234,7 @@ $(B)/stock-root/.done: $(B)/stock-fw/rootfs.fex
 RELEASE ?= 0
 # What each family's system is made of (tools/system/parts-<family>.sh adds them to the image).
 SYSTEM_PARTS_brick := gpu userspace device-tools specular installer $(B)/stock-root/.done
-SYSTEM_PARTS_mainline := mali
+SYSTEM_PARTS_mainline := mali specular $(B)/tools/cardlog
 system: buildroot kernel $(SYSTEM_PARTS_$(FAMILY))
 	FAMILY=$(FAMILY) RELEASE=$(RELEASE) tools/system/build-system.sh $(B)/system
 

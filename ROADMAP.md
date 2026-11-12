@@ -268,14 +268,24 @@ Done:
 
 TODO:
 - Updates and the second boot slot for the mainline family (the installer's extlinux method, `make DEVICE=rgb20pro update-device`)
-- The installer, device tools (status screen, cardlog) and Specular built for the mainline family
+- The installer and the device tools (status screen) built for the mainline family; until the status screen is, a Specular that keeps failing leaves the screen as it was (frontend-run waits instead)
 - mali_kbase: quiet its interrupt-name lookup, fix the regulator warning at runtime suspend
 - An OpenGL benchmark on our image (glmark2's DRM build needs udev)
+
+### Specular on screen (stage 3)
+
+Done:
+- Specular built for the mainline family (`make DEVICE=rgb20pro specular`; Specular's `devices/mainline`, cores for the Cortex-A55) and started as the frontend, with cardlog; the frontend service no longer waits for padbridge outside the Brick family
+- On the RGB20 Pro, Specular draws through KMS/GBM with page flips (59.33 Hz measured; Specular's docs/mainline.md)
+
+TODO:
+- FN as Specular's Menu button: `adc-keys` on SARADC channel 0 in our device tree (built; a press on the device to confirm)
+- A GBA game at one frame per refresh, checked on the device
+- The Brick checked on Specular's shared drawing loop and Crystaline OS services (with stage 2's Brick check)
 
 ### Later stages
 
 TODO:
-- Stage 3: Specular on screen (KMS/GBM display, the RGB20 Pro's device crate)
 - Stage 4: exact panel modes (display clock; 90 and 120 Hz are blank), sticks, rumble, WiFi and Bluetooth, sleep, second SD slot, CPU/GPU clock profiles
 - Stage 5: our own loader and U-Boot
 
