@@ -89,7 +89,8 @@ git_source mali-kbase https://github.com/rocknix/mali_kbase.git \
 download trimui-firmware-v1.1.1/trimui_tg3040.awimg "${TRIMUI_FW_URL:-}" \
 	d9189936b941c39160cd33f2993c1f3ab0e3648f87b203fb6290ec835f2f8d98
 # The mainline boards' loader sources (tools/env.sh, UBOOT_SRC, TFA_SRC, TFA_DTC_SRC). TF-A's tree ID
-# is of its files without its submodules (empty folders here); the one it builds with is dtc's.
+# leaves out its submodules (empty folders here); the one it builds with, contrib/dtc, is fetched on
+# its own as dtc-8f48565e, at the commit TF-A names.
 git_source u-boot-v2026.10 https://github.com/u-boot/u-boot.git \
 	5508406582f6f7120dce0c4b3059819a41788db2 . c54aa18f1c43c1b8b292434cc74cdc11e002f851
 git_source tf-a-d70b52de https://github.com/ARM-software/arm-trusted-firmware.git \

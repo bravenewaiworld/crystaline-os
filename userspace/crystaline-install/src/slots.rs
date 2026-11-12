@@ -3,9 +3,9 @@
 //! (`brick.boot=` on the Brick, `crystaline.boot=` on mainline boards); each slot holds one
 //! version's boot.img, whose initramfs starts that version (docs/boot.md). On the Brick a boot.img
 //! is an Android boot image, on mainline boards a FAT image U-Boot reads extlinux.conf from; here
-//! both are only bytes to write and compare. Making another version start next writes it to the slot not running, then
-//! switches the settings (env::switch), so the running version stays the one that starts until
-//! the settings are switched, and remains the one to go back to after that.
+//! both are only bytes to write and compare. Making another version start next writes it to the
+//! slot not running, then switches the settings (env::switch), so the running version stays the
+//! one that starts until the settings are switched, and remains the one to go back to after that.
 //!
 //! What a slot holds needs no record of its own: it holds version V when its first bytes are V's
 //! boot.img (the size and SHA-256 images/V/manifest.json gives); otherwise it is unknown.

@@ -54,7 +54,7 @@ make_boot() {
 	kib=$(( $(du -sk "$b" | cut -f1) / 1024 * 1024 + 3072 ))
 	rm -f "$V/boot.img"
 	mkfs.vfat -C -n BOOT -i 0c7a5717 "$V/boot.img" $kib >/dev/null
-	MTOOLS_SKIP_CHECK=1 mcopy -s -m -i "$V/boot.img" "$b/extlinux" "$b/Image" "$b/initramfs.cpio.gz" "$b/dtbs" ::/
+	MTOOLS_SKIP_CHECK=1 mcopy -s -m -i "$V/boot.img" "$b"/* ::/
 	BOOT_FILES=boot.img
 }
 

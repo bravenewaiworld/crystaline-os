@@ -24,6 +24,7 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 VERSION=$(basename "$(readlink -f "$V")")
 MiB=2048	# sectors
 ENV_AT=16 ENV_KiB=128 BOOTA_AT=17 BOOTB_AT=81 BOOT_MiB=64 SYSTEM_AT=145
+ENV_SECTORS=$((ENV_KiB * 2))
 
 [ -f "$V/boot.img" ] || { echo "$V has no boot.img" >&2; exit 1; }
 MTOOLS_SKIP_CHECK=1 mdir -i "$V/boot.img" "::dtbs/$DTB" >/dev/null 2>&1 ||
@@ -58,7 +59,6 @@ python3 -I "$ROOT/tools/sdboot/mkenv.py" "text:$LOADER/u-boot-initial-env" "$TMP
 rm -f "$OUT"; truncate -s $((SYSTEM_AT + SYSTEM_MiB + 1))M "$OUT"	# +1 MiB for the backup GPT
 put() { dd if="$1" of="$OUT" bs=512 seek="$2" conv=notrunc status=none; }
 put "$LOADER/u-boot-rockchip.bin" 64
-ENV_SECTORS=$((ENV_KiB * 2))
 sfdisk --quiet --no-reread --no-tell-kernel "$OUT" <<EOF
 label: gpt
 first-lba: $((ENV_AT * MiB))

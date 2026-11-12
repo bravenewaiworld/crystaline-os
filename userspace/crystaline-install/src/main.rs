@@ -164,8 +164,8 @@ pub struct Paths {
     pub keys: PathBuf,
     /// The kernel's power supplies (sysfs's power_supply class), for the battery check.
     pub power: PathBuf,
-    /// The running version's family of boards ("brick", "mainline": `family`); versions of another
-    /// family are refused.
+    /// The running version's family of boards ("brick", "mainline"; see `family`): versions of
+    /// another family are refused.
     pub family: String,
 }
 
@@ -174,7 +174,8 @@ impl Paths {
     /// internal storage is the disk on the board's eMMC controller and the card the disk on its SD
     /// card controller (`controller`); the system runs from the disk holding /system, which must
     /// be one of them; the data partition is at /mnt/SDCARD; the version is
-    /// /etc/crystaline-version; the family is the running version's (its manifest in images/).
+    /// /etc/crystaline-version; the family is the running version's (its manifest in images/;
+    /// "brick" if that can't be read).
     fn find(mut given: impl FnMut(&str) -> Option<String>) -> Result<Self> {
         let (target, source, running, system, data, version) =
             (given("--target"), given("--source"), given("--running"), given("--system"), given("--data"), given("--version"));
@@ -188,7 +189,7 @@ impl Paths {
             (None, Some(c)) => disk_on(&c).ok_or_else(|| report::Failure {
                 message: "this device's internal storage isn't available".into(),
                 hint: format!("This version of Crystaline OS can't use the internal storage. Install a newer version from {}.", report::RELEASES),
-                detail: format!("no disk on the eMMC controller ({c}): the device tree must enable it (system/family/brick/dt-tweaks.sh)") }),
+                detail: format!("no disk on the eMMC controller ({c}): the device tree must enable it (on the Brick: system/family/brick/dt-tweaks.sh)") }),
         };
         let card = source.map(PathBuf::from).or_else(|| disk_on(&controller("BOARD_CARD_CONTROLLER")?))
             .map_or_else(|| fail("there is no SD card in the device", "Insert the SD card, then try again."), Ok);

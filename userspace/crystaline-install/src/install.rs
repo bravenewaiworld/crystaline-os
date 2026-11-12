@@ -238,16 +238,16 @@ fn write_system(p: &Paths, target: &Disk, (start, _): (u64, u64), uuid: &str, re
 }
 
 /// Refuses a version that can't run here, for installs, activations and update files: one built
-/// for another family of boards (its manifest's "family"; manifests from before it was written are
-/// the Brick's), or a Brick version whose kernel doesn't make our device-tree changes itself (its
-/// manifest lacks `"dt_edits": true`). The Brick's boot packages are TrimUI's, unchanged, so such a
-/// version would start without its buttons, internal storage or CPU voltage control. Devices
-/// installed before 2026-10-18 would still run it (their boot package has the changes), but get the
-/// same refusal: one rule for every device.
+/// for another family of boards (`crate::family`), or a Brick version whose kernel doesn't make our
+/// device-tree changes itself (its manifest lacks `"dt_edits": true`). The Brick's boot packages
+/// are TrimUI's, unchanged, so such a version would start without its buttons, internal storage or
+/// CPU voltage control. Devices installed before 2026-10-18 would still run it (their boot package
+/// has the changes), but get the same refusal: one rule for every device.
 pub fn require_runnable(manifest: &serde_json::Value, family: &str) -> Result<()> {
     let version = manifest["version"].as_str().unwrap_or("(unnamed)");
-    if crate::family(manifest) != family {
-        return fail(format!("version {version} is for another kind of device ({}), not this one ({family})", crate::family(manifest)),
+    let its_family = crate::family(manifest);
+    if its_family != family {
+        return fail(format!("version {version} is for another kind of device ({its_family}), not this one ({family})"),
                     format!("Download the update for this device from {}.", crate::report::RELEASES));
     }
     if family == "brick" && manifest["dt_edits"] != true {
