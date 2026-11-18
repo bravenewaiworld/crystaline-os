@@ -268,7 +268,8 @@ static const char *board(const char *name)
 	return "";
 }
 
-/* The status screen's board names (BOARD_NAME, BOARD_BATTERY, BOARD_CHARGER), read by main(). */
+/* The board's name (BOARD_NAME), and its battery's and charger input's power supplies (""
+ * without one), found by main(). */
 static const char *board_name, *battery, *charger;
 
 /* Power supply @name's property @prop, as readf() reads it ("" if it has none). */
@@ -278,6 +279,27 @@ static const char *ps(const char *name, const char *prop)
 
 	snprintf(path, sizeof(path), "/sys/class/power_supply/%s/%s", name, prop);
 	return readf(path);
+}
+
+/* The first power supply whose type is one of @types (e.g. "Battery", or "USB Mains"), as Specular
+ * and crystaline-install find the battery; "" if there is none. */
+static const char *supply_of_type(const char *types)
+{
+	DIR *d = opendir("/sys/class/power_supply");
+	struct dirent *e;
+	char *found = NULL, padded[80], type[64];
+
+	snprintf(padded, sizeof(padded), " %s ", types);
+	while (d && !found && (e = readdir(d))) {
+		if (e->d_name[0] == '.')
+			continue;
+		snprintf(type, sizeof(type), " %s ", ps(e->d_name, "type"));
+		if (strcmp(type, "  ") && strstr(padded, type))
+			found = strdup(e->d_name);
+	}
+	if (d)
+		closedir(d);
+	return found ? found : "";
 }
 
 /* The battery's property @a, or else @b ("" if it has neither). */
@@ -300,6 +322,10 @@ static void show_power(void)
 	long cap = atol(ps(battery, "capacity")), empty;
 	int n = 0;
 
+	if (!*battery) {
+		line(WHITE, "Battery  none");
+		return;
+	}
 	line(WHITE, "Battery  %ld%%  %s", cap, ps(battery, "status"));
 	if (*(v = bat_prop("voltage_now", "voltage_avg")))
 		n += snprintf(text + n, sizeof(text) - n, "  %.2f V", atol(v) / 1e6);
@@ -314,6 +340,8 @@ static void show_power(void)
 		line(GREY, "  to empty %ld min, to full %ld min", empty / 60,
 		     atol(ps(battery, "time_to_full_now")) / 60);
 	}
+	if (!*charger)
+		return;
 	if (*(v = ps(charger, "input_current_limit")))
 		snprintf(limit, sizeof(limit), ", input limit %ld mA", atol(v) / 1000);
 	line(GREY, "USB      %s%s", atol(ps(charger, "online")) ? "connected" : "unplugged", limit);
@@ -947,8 +975,8 @@ int main(int argc, char **argv)
 			 "--held BUTTON... | --menu TITLE [-n NOTE | -b B-TEXT]... ITEM... | --task TITLE]");
 	}
 	board_name = board("BOARD_NAME");
-	battery = board("BOARD_BATTERY");
-	charger = board("BOARD_CHARGER");
+	battery = supply_of_type("Battery");
+	charger = supply_of_type("USB Mains");
 	open_inputs();
 
 	for (;;) {
