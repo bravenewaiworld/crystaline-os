@@ -21,7 +21,7 @@
 set -u
 CPU=/sys/devices/system/cpu/cpufreq
 PLAT=/sys/bus/platform
-# BOARD_CPU_EFFICIENT_MHZ; the top port's controllers BOARD_USB_TOP_EHCI and BOARD_USB_TOP_OHCI
+# BOARD_CPU_EFFICIENT_MHZ (optional: without it, performance holds the CPU's top speed); the top port's controllers BOARD_USB_TOP_EHCI and BOARD_USB_TOP_OHCI
 # (USB 2.0, USB 1.1; "driver:device"), and BOARD_USB_TOP_VBUS, its 5 V regulator.
 . /run/crystaline/board.env
 EHCI=${BOARD_USB_TOP_EHCI:-} OHCI=${BOARD_USB_TOP_OHCI:-}
@@ -44,7 +44,8 @@ usage() {
 
 # range PROFILE: its minimum and maximum CPU speed, in kHz.
 range() {
-	set -- "$1" $(cat $CPU/policy0/cpuinfo_min_freq $CPU/policy0/cpuinfo_max_freq) $((BOARD_CPU_EFFICIENT_MHZ * 1000))
+	set -- "$1" $(cat $CPU/policy0/cpuinfo_min_freq $CPU/policy0/cpuinfo_max_freq)
+	set -- "$@" $((${BOARD_CPU_EFFICIENT_MHZ:-$(($3 / 1000))} * 1000))
 	case $1 in
 	# performance's minimum, the board's efficient speed, is the fastest at about the lowest
 	# voltage: holding it costs little and spares games slow speed-ups.

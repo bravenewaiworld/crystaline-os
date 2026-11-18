@@ -31,7 +31,7 @@ WIFI="wpa_supplicant wifi-dhcp" running=
 if sv status wpa_supplicant | grep -q '^run:'; then running=1; sv stop $WIFI >/dev/null; fi
 ifconfig wlan0 down 2>/dev/null
 . /run/crystaline/board.env
-[ ! -e /sys/module/$BOARD_WIFI_MODULE ] || rmmod $BOARD_WIFI_MODULE
+[ -z "${BOARD_WIFI_MODULE:-}" ] || [ ! -e /sys/module/$BOARD_WIFI_MODULE ] || rmmod $BOARD_WIFI_MODULE
 echo 0 >/sys/class/rtc/rtc0/wakealarm	# clear any old alarm: a new one can't be set over it
 [ "${1:-0}" -gt 0 ] && echo "+$(($1 * 60))" >/sys/class/rtc/rtc0/wakealarm
 echo mem >/sys/power/state
