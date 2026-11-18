@@ -8,6 +8,7 @@ sv -w 10 force-stop $(ls -d /etc/service/* | grep -v -e '/syslogd$' -e '/klogd$'
 # the card is unmounted (the line above stops services, not their log services).
 sv -w 3 force-stop /etc/service/frontend/log >/dev/null 2>&1
 sync
+/usr/libexec/crystaline/mount-card games stop
 /usr/libexec/crystaline/mount-card stop
 # This run ended in order (poweroff, reboot, battery-guard, sleepnow all end here, through init).
 /usr/libexec/crystaline/last-shutdown stop

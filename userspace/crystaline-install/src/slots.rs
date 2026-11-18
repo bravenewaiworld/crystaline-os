@@ -1,9 +1,11 @@
 //! The two boot slots, boot_a and boot_b, on the disk the system runs from. U-Boot loads the one
-//! its settings name (`boot_partition`) and tells the kernel which with `brick.boot=` on the
-//! command line; each slot holds one version's boot.img, whose initramfs starts that version
-//! (docs/boot.md). Making another version start next writes it to the slot not running, then
-//! switches the settings (env::switch), so the running version stays the one that starts until
-//! the settings are switched, and remains the one to go back to after that.
+//! its settings name (`boot_partition`) and tells the kernel which on the command line
+//! (`brick.boot=` on the Brick, `crystaline.boot=` on mainline boards); each slot holds one
+//! version's boot.img, whose initramfs starts that version (docs/boot.md). On the Brick a boot.img
+//! is an Android boot image, on mainline boards a FAT image U-Boot reads extlinux.conf from; here
+//! both are only bytes to write and compare. Making another version start next writes it to the
+//! slot not running, then switches the settings (env::switch), so the running version stays the
+//! one that starts until the settings are switched, and remains the one to go back to after that.
 //!
 //! What a slot holds needs no record of its own: it holds version V when its first bytes are V's
 //! boot.img (the size and SHA-256 images/V/manifest.json gives); otherwise it is unknown.
@@ -19,7 +21,7 @@ use crate::env;
 use crate::install;
 use crate::report::{Context, REWRITE_CARD, Report, Result, SEE_LOG, fail, hex};
 
-/// The boot slots' partition names, as U-Boot's `boot_partition` and `brick.boot=` give them.
+/// The boot slots' partition names, as U-Boot's `boot_partition` and the command line give them.
 pub const SLOTS: [&str; 2] = ["boot_a", "boot_b"];
 
 /// What each slot holds: a version in images/, or None (unknown: no installed version matches).
@@ -63,10 +65,11 @@ fn installed(system: &Path) -> Vec<(String, u64, String)> {
 }
 
 /// The slot the running system was started from (index into `held`): `--slot` if given, else
-/// `brick.boot=` on the kernel command line; checked to hold the running version.
+/// `brick.boot=` or `crystaline.boot=` on the kernel command line; checked to hold the running
+/// version.
 pub fn running(p: &Paths, held: &Holdings) -> Result<usize> {
     let slot = p.slot.clone().or_else(|| std::fs::read_to_string("/proc/cmdline").unwrap_or_default().split_whitespace()
-        .find_map(|a| a.strip_prefix("brick.boot=").map(str::to_string)));
+        .find_map(|a| a.strip_prefix("brick.boot=").or_else(|| a.strip_prefix("crystaline.boot=")).map(str::to_string)));
     let Some(slot) = slot else {
         return fail("the start-up settings don't say which boot slot started",
                     format!("They are from an older version of Crystaline OS. If the system is on the SD card: {REWRITE_CARD} If it is on the internal storage, start from a newly written SD card and install again."));
@@ -92,7 +95,7 @@ pub fn activate(p: &Paths, version: &str, report: &mut Report) -> Result<String>
     if version.ends_with(".part") || !dir.join("manifest.json").is_file() {
         return fail(format!("version {version} isn't installed"), "Choose a version from crystaline-install slots, or install an update.");
     }
-    install::check_images(&dir, report)?;
+    install::check_images(&dir, &p.family, report)?;
     let (disk, parts, held, this) = target(p, true, report)?;
     let (other, slot) = (1 - this, SLOTS[1 - this]);
     if held[other].1.as_deref() == Some(version) {

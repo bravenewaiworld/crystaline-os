@@ -1,0 +1,13 @@
+config BR2_PACKAGE_VULKAN_WSI_LAYER
+	bool "vulkan-wsi-layer"
+	depends on BR2_PACKAGE_VULKAN_LOADER
+	depends on BR2_INSTALL_LIBSTDCPP
+	select BR2_PACKAGE_LIBDRM
+	select BR2_PACKAGE_VULKAN_HEADERS
+	help
+	  ARM's Vulkan layer that adds window-system support (here: the
+	  panel through KMS, VK_KHR_display, and headless surfaces) to
+	  Vulkan drivers without their own, such as ARM's libmali.
+	  Built with ROCKNIX's choice of fork and commit.
+
+	  https://github.com/ginkage/vulkan-wsi-layer

@@ -49,7 +49,7 @@ pub struct Update {
 /// Reads and checks an update file against the keys in `keys`: its layout, the signature, the
 /// version's name, and that its files' sizes match the signed manifest (their contents are
 /// checked as they are copied).
-pub fn open(path: &Path, keys: &Path) -> Result<Update> {
+pub fn open(path: &Path, keys: &Path, family: &str) -> Result<Update> {
     let file = Disk::open(path, false)?;
     let damaged = |why: &str| damaged(path, why);
     let m = member(&file, 0, "manifest.json")?;
@@ -64,7 +64,7 @@ pub fn open(path: &Path, keys: &Path) -> Result<Update> {
     let json: serde_json::Value = serde_json::from_slice(&manifest).ctx("reading the update's manifest")?;
     let version = json["version"].as_str().unwrap_or_default().to_string();
     if !valid_version(&version) { return damaged(&format!("version name {version:?}")); }
-    install::require_dt_edits(&json)?;
+    install::require_runnable(&json, family)?;
     let mut at = next(sig_m);
     let mut images = Vec::new();
     for name in ["boot.img", "rootfs.squashfs"] {
@@ -150,7 +150,7 @@ pub fn apply(p: &Paths, path: &Path, report: &mut Report) -> Result<String> {
     let meta = std::fs::metadata(path).ctx(&format!("reading {}", path.display()))?;
     let mtime = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
     report.log(&format!("update file {}: {} bytes, modified at {mtime} (seconds since 1970, UTC)", path.display(), meta.len()));
-    let u = open(path, &p.keys)?;
+    let u = open(path, &p.keys, &p.family)?;
     report.log(&format!("version {}, manifest sha256 {}, signed with {}", u.version, hex(&Sha256::digest(&u.manifest)), u.key));
     if u.version == p.version { return fail(format!("version {} is running now", u.version), "This update is already installed."); }
     // Version names start with the build date and time, so they sort by age.
@@ -165,7 +165,7 @@ pub fn apply(p: &Paths, path: &Path, report: &mut Report) -> Result<String> {
     let need: u64 = u.images.iter().map(|i| i.2).sum::<u64>() + SPARE;
     let free = install::free_bytes(&p.system) + leftovers(&images).iter().map(|d| install::dir_bytes(d)).sum::<u64>();
     report.log(&format!("system partition: {free} bytes free (counting copies cut short), {need} needed"));
-    let have = complete(&images.join(&u.version), &u, report);
+    let have = complete(&images.join(&u.version), &u, &p.family, report);
     if !have && free < need {
         // Only two versions are kept, so this takes a developer layer (overlay/) or an image built
         // bigger than the storage was made for; neither is something a user can clear.
@@ -225,8 +225,8 @@ fn copy_into(dir: &Path, u: &Update, report: &mut Report) -> Result<()> {
 }
 
 /// Whether `dir` holds this update's version completely: the same manifest, and files that match it.
-fn complete(dir: &Path, u: &Update, report: &mut Report) -> bool {
-    std::fs::read(dir.join("manifest.json")).is_ok_and(|m| m == u.manifest) && install::check_images(dir, report).is_ok()
+fn complete(dir: &Path, u: &Update, family: &str, report: &mut Report) -> bool {
+    std::fs::read(dir.join("manifest.json")).is_ok_and(|m| m == u.manifest) && install::check_images(dir, family, report).is_ok()
 }
 
 /// Copies cut short (`*.part`) in `images`.
@@ -254,10 +254,10 @@ pub struct Found {
 /// The update files in `<data>/updates/` (`*.update`), newest version first, those that can't
 /// be read last. Only each file's manifest and signature are checked (`open`), not its contents'
 /// hashes.
-pub fn list(data: &Path, keys: &Path, running: &str) -> Vec<Found> {
+pub fn list(data: &Path, keys: &Path, running: &str, family: &str) -> Vec<Found> {
     let mut found: Vec<Found> = std::fs::read_dir(data.join("updates")).into_iter().flatten().flatten().map(|e| e.path())
         .filter(|f| f.extension().is_some_and(|e| e == "update"))
-        .map(|file| match open(&file, keys) {
+        .map(|file| match open(&file, keys, family) {
             Ok(u) => Found { older: u.version.as_str() < running, problem: (u.version == running).then(|| "this version is running now".into()), version: Some(u.version), file },
             Err(e) => Found { file, version: None, older: false, problem: Some(e.message) },
         })

@@ -1,6 +1,6 @@
 # Crystaline OS Development Guide
 
-`make help` lists every build and device target. Commands that reach the device take its address from `ADDR` (default `192.168.7.2`, the USB network link).
+`make help` lists every build and device target. Commands that reach the device take its address from `ADDR`, by default the board's end of its USB network link (`BOARD_USB_NET` in its board file, plus `.2`): `192.168.7.2` on the Brick, `192.168.8.2` on the RGB20 Pro.
 
 ## Third-party inputs
 
@@ -18,10 +18,21 @@
 - **WebDAV and a browser page** serve the SD card's data partition on port 80, over WiFi or the USB link, while Specular's File transfer screen is open, or after `sv up webdav` over SSH (`sv down webdav` stops it). There is no login.
 - **ADB is not available.** Our system has no ADB server (`adbd`); use SSH.
 
+## Other boards
+
+`DEVICE=<board>` (a folder in `system/board/`, default `brick`) picks what is built; output goes to `build/<family>/` ([docs/boards.md](docs/boards.md)). Targets only the Brick has so far are refused for other boards. For the Powkiddy RGB20 Pro ([docs/mainline.md](docs/mainline.md)):
+
+- **Build:** `make DEVICE=rgb20pro sd-card` → `build/mainline/sd-card-rgb20pro.img` (`make DEVICE=rgb20pro buildroot` first; the first run also builds LLVM for the build machine, an hour or more). It builds the loader from source too (`make DEVICE=rgb20pro loader`; its sources come from `tools/fetch-third-party.sh`).
+- **Write the card:** `dd if=build/mainline/sd-card-rgb20pro.img of=/dev/sdX bs=4M conv=fsync` with the card's partitions unmounted; it boots from the slot the device starts from.
+- **Reach it:** the DC port (not the OTG port) with a USB-A end on the PC, at `192.168.8.2` (the default `ADDR` for `DEVICE=rgb20pro`). Its development layer and SSH work as on the Brick.
+- **Updates and recovery** work as on the Brick (below): `make DEVICE=rgb20pro update-device` or `update-file`; the recovery menu opens with SELECT and START held while turning it on.
+- **A start that fails** prints the reason and the start-up log's last lines on the screen, and the green LED blinks. The progress codes are kernel log lines (`crystaline-progress`), kept across a warm restart in `/sys/fs/pstore` and copied to `/system/logs/crash-*/`.
+- **GPU driver:** `crystaline-gpu` shows the driver in use and the one chosen; `crystaline-gpu mali` or `panfrost` switches from the next start. PanVK needs `PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1`. `kmscube`, `vulkaninfo`, `vkcube` (panel) and `vkmark` (`--winsys display|kms|headless`; `VKMARK_DISPLAY_HZ=60` picks the panel mode) are in development images; ARM's window layer logs with `VULKAN_WSI_DEBUG_LEVEL=1..3`.
+
 ## Changing what runs on the device
 
 - **Full update in one command** (`make update-device`): builds a new system version, signs it as an update file with this checkout's update key (`build/ssh-host-keys/update_key.pem`, made once like the SSH keys; `KEY=<key.pem>` for another), copies it to `/tmp` on the device and runs `crystaline-install update` there, as Settings does, then reboots. It is written to the boot slot not running, so a power cut leaves the running version starting. The device keeps the new version and the previous one; nothing older. To go back: `crystaline-install activate <previous version>` over SSH and reboot, or "Start the previous version" in the recovery menu. Nothing rolls back on its own. A device still on the layout from before the two boot slots can't be updated this way: write a card (`make sd-card`) and install from it.
-- **Update files** (`make update-file`, `KEY=` as above): `build/brick/updates/crystaline-<version>.update`, for Settings or the recovery menu (put it in `updates/` on the card's data partition). Development images accept files signed with this checkout's key or the release key; release images only the release key (`system/common/update-keys/release.pub`, a placeholder until the release key exists: until then `RELEASE=1` doesn't build). `crystaline-install slots` (over SSH) shows what each boot slot holds and which starts next.
+- **Update files** (`make update-file`, `KEY=` as above): `build/<family>/updates/crystaline-<version>.update`, for Settings or the recovery menu (put it in `updates/` on the card's data partition). Development images accept files signed with this checkout's key or the release key; release images only the release key (`system/common/update-keys/release.pub`, a placeholder until the release key exists: until then `RELEASE=1` doesn't build). `crystaline-install slots` (over SSH) shows what each boot slot holds and which starts next.
 - **Release images** (`RELEASE=1` with `make system`, `sd-card` or `update-device`) have no development access: no checkout keys, no login on the serial console, and no debugging or hardware test tools ("Debugging a release image", below). SSH is off, and accepts only login keys imported on the device: put an `authorized_keys` at the root of the SD card's data partition, then `crystaline-ssh import` and `crystaline-ssh on` on the device (Specular's developer settings will do this; until then a release image can't be reached over SSH). Each device makes its own host keys on its first start, so the PC warns once that the host key changed. A version's `manifest.json` says which kind it is (`"release"`). Once a device runs a release image, `make update-device` needs `KEY=<release key>` (or write a card).
 - **Developer layer.** A writable layer over the read-only system image. Create it with `mkdir /system/overlay/$(cat /etc/crystaline-version)`; it is used from the next boot. Changes in it persist across reboots until the next full update, which starts with an empty layer.
 - **GPU modules from a build, without installing** (`make gpu`: `build/brick/gpu/*.ko`): copy them to `/tmp`, then `sv stop frontend; rmmod dc_sunxi pvrsrvkm; insmod /tmp/pvrsrvkm.ko; insmod /tmp/dc_sunxi.ko`. Back: `rmmod dc_sunxi pvrsrvkm; modprobe pvrsrvkm; modprobe dc_sunxi; sv start frontend`, or reboot. Unloading works only with modules that have `tools/gpu-patches/0006`; with an older one loaded, nothing can power the GPU afterwards until a reboot.
@@ -41,7 +52,7 @@
 - **Start-up logs** are kept on the system partition. A copy goes to a FAT partition a PC can read (`crystaline-log/`: log, kernel messages, process list), refreshed every second during start-up, so a start that ends in a reset still leaves them.
 - **Start-up progress codes** are written to a clock-chip register that survives resets. Boot another card and read it to see how far a failed start got.
 - **Start-up failures** are shown on screen; once the system partition is mounted, as the recovery menu (below).
-- **Recovery menu:** hold MENU while turning the device on, until the menu appears (a few seconds after the boot logo). D-pad and A choose; B checks the SD card again (on the update list, goes back). It can continue starting, start the previous version, install an update file from `updates/` on the SD card's data partition (signed with the release key or, on development images, this checkout's key), or power off; it powers off by itself after 10 minutes without a press. Its log is `/system/logs/recovery-<time>.log`, and crystaline-install's is in `logs/` on the card ([docs/boot.md](docs/boot.md)).
+- **Recovery menu:** hold the board's recovery buttons (`BOARD_RECOVERY_BUTTONS`: MENU on the Brick, SELECT and START on the RGB20 Pro) while turning the device on, until the menu appears (a few seconds after the boot logo). D-pad and A choose; B checks the SD card again (on the update list, goes back). It can continue starting, start the previous version, install an update file from `updates/` on the SD card's data partition (signed with the release key or, on development images, this checkout's key), or power off; it powers off by itself after 10 minutes without a press. Its log is `/system/logs/recovery-<time>.log`, and crystaline-install's is in `logs/` on the card ([docs/boot.md](docs/boot.md)).
 - **Installer logs** go to `logs/` on the SD card: every task (install, restore, update, activate), with each write to a boot slot or the start-up settings and the settings' state before and after.
 - **Start-up settings:** `tools/sdboot/uboot-env.py <image or /dev/mmcblkN> [key]` shows which copy of U-Boot's settings U-Boot will use and what it says (it runs on the PC; on the device, `crystaline-install slots` gives the slot that starts next).
 - **SD card:** `cat /run/card/state` says how the card stands (docs/storage.md); `/run/card/check.log` has the last check's output; `logread | grep mount-card` shows each run (why it ran, what it chose, the check, each state); `logs/card-check.log` on the card keeps every repair. `touch /run/card/trace` traces every following run command by command into that file (`rm` it to stop). `touch /dev/mdev.log` makes mdev log each device event there (`rm` to stop). After pulling a card or a test, `/usr/libexec/crystaline/mount-card` makes the mount match the slot again.
@@ -123,15 +134,15 @@ In development images. Release images have only `sleepnow`, `status` and `cardlo
 
 | Tool | What it does |
 |---|---|
-| `dispctl` | Backlight level and panel on/off |
-| `dispcap` | Save what the display engine sends to the panel (consecutive frames, PPM), e.g. to check for tearing |
-| `glspin` | GPU test that reports fps |
+| `dispctl` | Backlight level and panel on/off (Brick) |
+| `dispcap` | Save what the display engine sends to the panel (consecutive frames, PPM), e.g. to check for tearing (Brick) |
+| `glspin` | GPU test that reports fps (Brick) |
 | `rumble` | Rumble test |
 | `i2creg` | Read/write a register over I2C |
 | `memreg` | Read/write a physical memory register |
 | `blkro` | Mark a block device read-only |
 | `sleepnow` | Deep sleep now (stops WiFi first; powers off instead with the battery empty) |
-| `powertest` | Overnight power test |
+| `powertest` | Overnight power test (Brick) |
 | `status` | Hardware status screen; also the fallback frontend, the start-up error screen and the recovery menu |
 | `cardlog` | Specular's log service: each line to the system log, and batched to `logs/specular.log` on the card |
 
