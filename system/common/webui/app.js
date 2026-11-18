@@ -29,8 +29,7 @@ const VIEWS = {
 const FAT32_MAX = 2 ** 32 - 1;
 /** Uploads are written under their name plus this, and renamed once complete. */
 const PARTIAL = ".uploading";
-/** The page's title is the device's name (index.html). */
-const UNREACHABLE = `Can't reach the ${document.title}. Is its File transfer screen open, and is this device on the same network?`;
+const UNREACHABLE = "Can't reach the device. Is its File transfer screen open, and is this computer on the same network?";
 
 const $ = id => document.getElementById(id);
 

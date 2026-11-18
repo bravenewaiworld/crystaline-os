@@ -15,8 +15,9 @@
 # its log makes the same decisions.
 # Asleep, the power chip's low-battery interrupt wakes the device when the gauge drops to EMPTY %
 # (dt-tweaks.sh sets the chip's level to match), and sleepnow powers off.
-# The battery is the first power supply whose type is Battery, as Specular and crystaline-install
-# find it; a device without one samples "absent", and the service just keeps sampling.
+# The battery is the first power supply whose type is Battery, as Specular finds it, leaving out
+# those of connected devices (scope Device, e.g. a Bluetooth pad's); a device without one samples
+# "absent", and the service just keeps sampling.
 # For testing (tools/system/test-battery-guard.sh): PSU, the power-supply directory to read instead
 # of /sys/class/power_supply; DRY_RUN=1, log the power-off instead of doing it; INTERVAL, the
 # seconds between samples.
@@ -42,7 +43,10 @@ volts() { printf '%d.%02d V' $(($1 / 1000000)) $(($1 / 10000 % 100)); }
 
 read_sample() {
 	BAT=
-	for d in "$PSU"/*; do [ "$(cat "$d/type" 2>/dev/null)" != Battery ] || { BAT=$d; break; }; done
+	for d in "$PSU"/*; do
+		[ "$(cat "$d/type" 2>/dev/null)" = Battery ] && [ "$(cat "$d/scope" 2>/dev/null)" != Device ] &&
+			{ BAT=$d; break; }
+	done
 	[ -n "$BAT" ] || { echo absent; return; }
 	p=$(cat $BAT/present 2>&1) || { echo "error $p"; return; }
 	[ "$p" = 1 ] || { echo absent; return; }

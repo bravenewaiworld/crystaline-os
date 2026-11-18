@@ -82,6 +82,9 @@ expect "replay of logread lines" '^battery empty: powering off' "$out"
 # A fake battery directory; battery FILE VALUE writes one of its files.
 B=$T/psu/axp2202-battery
 mkdir -p "$B"
+# Supplies sorting before it that aren't the device's battery: a charger and a Bluetooth pad's.
+mkdir -p $T/psu/ac $T/psu/a-pad; echo Mains >$T/psu/ac/type
+echo Battery >$T/psu/a-pad/type; echo Device >$T/psu/a-pad/scope; echo 5 >$T/psu/a-pad/capacity
 battery() { echo "$2" >"$B/$1"; }
 state() { PSU=$T/psu $SH "$GUARD" state; }
 battery type Battery; battery present 1; battery capacity 54; battery voltage_now 3920000; battery current_now 0
