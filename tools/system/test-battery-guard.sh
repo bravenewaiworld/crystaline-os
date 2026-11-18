@@ -9,7 +9,6 @@
 # Usage: test-battery-guard.sh
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-export BOARD_ENV=$ROOT/system/board/brick/rootfs-overlay/usr/share/crystaline/boards/brick.env	# the board's names, as rcS copies them
 GUARD=$ROOT/system/common/rootfs-overlay/usr/libexec/crystaline/battery-guard
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -83,9 +82,12 @@ expect "replay of logread lines" '^battery empty: powering off' "$out"
 # A fake battery directory; battery FILE VALUE writes one of its files.
 B=$T/psu/axp2202-battery
 mkdir -p "$B"
+# Supplies sorting before it that aren't the device's battery: a charger and a Bluetooth pad's.
+mkdir -p $T/psu/ac $T/psu/a-pad; echo Mains >$T/psu/ac/type
+echo Battery >$T/psu/a-pad/type; echo Device >$T/psu/a-pad/scope; echo 5 >$T/psu/a-pad/capacity
 battery() { echo "$2" >"$B/$1"; }
 state() { PSU=$T/psu $SH "$GUARD" state; }
-battery present 1; battery capacity 54; battery voltage_now 3920000; battery current_now 0
+battery type Battery; battery present 1; battery capacity 54; battery voltage_now 3920000; battery current_now 0
 battery status Discharging
 [ "$(state)" = "ok 54 % 3.92 V, charge 0 mA, Discharging" ] || fail "state: $(state)"
 battery status "Not charging"
@@ -100,6 +102,9 @@ rm "$B/voltage_now"
 [[ "$(state)" == "error "* ]] || fail "state with a missing file: $(state)"
 battery present 0
 [ "$(state)" = absent ] || fail "state without a battery: $(state)"
+battery present 1; battery type USB
+[ "$(state)" = absent ] || fail "state with only a charger: $(state)"
+battery type Battery
 
 # The service loop, dry run, against the empty battery: it must decide to power off.
 battery present 1; battery voltage_now 3600000

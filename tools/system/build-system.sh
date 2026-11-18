@@ -61,6 +61,12 @@ put() { install -D -m "$3" "$1" "$R$2"; }
 # lists for modprobe.
 kmake modules_install INSTALL_MOD_PATH="$R" INSTALL_MOD_STRIP=1 DEPMOD=true >/dev/null
 add_parts
+# Each board's own files, from its optional system/board/<board>/parts.sh (sourced, with put and
+# the names above): firmware and the like its hardware needs that no package carries. The root
+# filesystem serves every board of the family, so it holds every board's.
+for board in $("$ROOT/tools/system/family-boards.sh" "$FAMILY"); do
+	[ ! -e "$ROOT/system/board/$board/parts.sh" ] || . "$ROOT/system/board/$board/parts.sh"
+done
 rm -f "$R/lib/modules/$KERNEL_RELEASE/build" "$R/lib/modules/$KERNEL_RELEASE/source"
 "$HOST/depmod" -b "$R" "$KERNEL_RELEASE"
 

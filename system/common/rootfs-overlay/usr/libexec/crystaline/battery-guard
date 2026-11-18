@@ -15,12 +15,14 @@
 # its log makes the same decisions.
 # Asleep, the power chip's low-battery interrupt wakes the device when the gauge drops to EMPTY %
 # (dt-tweaks.sh sets the chip's level to match), and sleepnow powers off.
-# For testing (tools/system/test-battery-guard.sh): BOARD_ENV, the board's names to use; PSU, the
-# power-supply directory to read instead of /sys/class/power_supply; DRY_RUN=1, log the power-off
-# instead of doing it; INTERVAL, the seconds between samples.
+# The battery is the first power supply whose type is Battery, as Specular finds it, leaving out
+# those of connected devices (scope Device, e.g. a Bluetooth pad's); a device without one samples
+# "absent", and the service just keeps sampling.
+# For testing (tools/system/test-battery-guard.sh): PSU, the power-supply directory to read instead
+# of /sys/class/power_supply; DRY_RUN=1, log the power-off instead of doing it; INTERVAL, the
+# seconds between samples.
 set -u
-. "${BOARD_ENV:-/run/crystaline/board.env}"	# BOARD_BATTERY (board-env)
-BAT=${PSU:-/sys/class/power_supply}/$BOARD_BATTERY
+PSU=${PSU:-/sys/class/power_supply}
 INTERVAL=${INTERVAL:-30}
 # Empty: the gauge at or below EMPTY % with the voltage at or below EMPTY_UV, or the voltage at or
 # below FLOOR_UV whatever the gauge says. The voltage check keeps a confused gauge (e.g. 0-1 % at
@@ -30,7 +32,9 @@ INTERVAL=${INTERVAL:-30}
 # Never empty while at least CHARGING_UA flows into the battery. This goes by the current, not the
 # charger's status: with a cable that can't keep up with the load, the status says Charging while
 # the battery still drains.
-# The levels are first guesses, to be refined from a logged discharge.
+# The levels are first guesses, to be refined from a logged discharge. They suit one lithium cell
+# and the Brick's power chip's 3.2 V cut-off; a battery or power chip with other limits will need
+# them from its board.
 EMPTY=1 EMPTY_UV=3700000 FLOOR_UV=3300000 CHARGING_UA=50000
 LOG_BELOW=10	# every sample is logged under this capacity (%) or at or below EMPTY_UV
 
@@ -38,6 +42,12 @@ LOG_BELOW=10	# every sample is logged under this capacity (%) or at or below EMP
 volts() { printf '%d.%02d V' $(($1 / 1000000)) $(($1 / 10000 % 100)); }
 
 read_sample() {
+	BAT=
+	for d in "$PSU"/*; do
+		[ "$(cat "$d/type" 2>/dev/null)" = Battery ] && [ "$(cat "$d/scope" 2>/dev/null)" != Device ] &&
+			{ BAT=$d; break; }
+	done
+	[ -n "$BAT" ] || { echo absent; return; }
 	p=$(cat $BAT/present 2>&1) || { echo "error $p"; return; }
 	[ "$p" = 1 ] || { echo absent; return; }
 	set --

@@ -1,0 +1,13 @@
+#!/bin/sh
+# A login on the kernel's serial console (UART pads on the board), run by init (/etc/inittab): the
+# first serial port among the kernel's consoles, at the speed the command line's console= gives it,
+# else at the speed it is set to now (getty's speed 0). Root without a password on development images; on release
+# images no password matches root's, so nobody can log in here (tools/system/build-system.sh).
+# Without a serial console it sleeps, so init doesn't start it again every second.
+for t in $(cat /sys/class/tty/console/active 2>/dev/null); do
+	case $t in tty|tty[0-9]*) continue ;; esac	# virtual terminals
+	[ -c /dev/$t ] || continue
+	speed=$(tr ' ' '\n' </proc/cmdline | sed -n "s/^console=$t,\([0-9]*\).*/\1/p" | tail -n 1)
+	exec /sbin/getty -L $t "${speed:-0}" vt100
+done
+exec sleep 2147483647
