@@ -218,9 +218,10 @@ impl Paths {
             .map(|m| family(&m).to_string())
             .map_err(|e| report::Failure { hint: format!("The system is damaged. {}", report::REWRITE_CARD), ..e })?;
         // Installing onto internal storage is the Brick's procedure (install.rs: TrimUI's eMMC
-        // layout), so the other families have none for now, whatever the board names.
+        // layout), so the other families have none for now, even if the board names
+        // BOARD_INTERNAL_CONTROLLER.
         let (internal, has_internal) = if family == "brick" || target_given { (internal, has_internal) }
-            else { (fail("this device has no internal storage", ""), false) };
+            else { (fail("installing onto internal storage isn't available on this device yet", ""), false) };
         Ok(Self { internal, has_internal, card, running, system, data: path(data, "/mnt/SDCARD"), version, slot,
                   keys: path(keys, "/etc/crystaline/update-keys"), power: path(power, "/sys/class/power_supply"), family })
     }

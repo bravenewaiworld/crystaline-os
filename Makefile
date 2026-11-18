@@ -155,9 +155,9 @@ $(BUILDROOT_SRC)/.done: $(BUILDROOT_PATCHES)
 # The configuration is regenerated every time from system/common/buildroot.config, then
 # system/family/$(FAMILY)/buildroot.config, then each SoC's and each board's of the family, if it
 # has one (e.g. the SoC's GPU blob, the board's chips' firmware from linux-firmware), so those
-# files are the only place to change it. The
-# root filesystem's overlays are added to it: common, the family's, and every board's of the
-# family (each board's names are picked at start-up, so all must be there).
+# files are the only place to change it. The root filesystem's overlays are added to it: common,
+# the family's, and every board's of the family (each board's names are picked at start-up, so all
+# must be there).
 BR_OVERLAYS := $(foreach l,common family/$(FAMILY) $(addprefix board/,$(FAMILY_BOARDS)),$$(BR2_EXTERNAL_CRYSTALINE_PATH)/$(l)/rootfs-overlay)
 # Buildroot doesn't rebuild a package whose options changed; that needs
 # `make -C $(BUILDROOT_SRC) O=$(B)/buildroot <package>-dirclean` first.

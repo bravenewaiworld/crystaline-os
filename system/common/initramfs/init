@@ -123,7 +123,7 @@ finish() {
 	$1 -f
 }
 
-# card_options, system_partition: the SD card's mount options and our partitions, shared with
+# card_options, is_system_partition: the SD card's mount options and our partitions, shared with
 # mount-card. (A missing file would end this script, the kernel's first program, if sourced
 # unchecked.)
 [ ! -f /usr/libexec/crystaline/card-options ] || . /usr/libexec/crystaline/card-options
@@ -131,7 +131,7 @@ finish() {
 # mount_card: mount the SD card's data partition at /card, as the system's
 # /usr/libexec/crystaline/mount-card does (but never making or formatting one, which stays its job): on
 # the disk on the SD card's controller, the partition named "sdcard", else the first FAT32 or
-# exFAT one other than our system partitions (system_partition). Without one, prints why (shown as
+# exFAT one other than our system partitions (is_system_partition). Without one, prints why (shown as
 # a note) and fails.
 mount_card() {
 	grep -q ' /card ' /proc/mounts && return
@@ -140,7 +140,7 @@ mount_card() {
 	for p in $(grep -l '^PARTNAME=sdcard$' /sys/block/$c/${c}p*/uevent 2>/dev/null |
 		sed 's|.*/\(.*\)/uevent|\1|') $(ls /sys/block/$c | sed -n "s/^${c}p//p" | sort -n |
 		sed "s/^/${c}p/") $c; do
-		system_partition /sys/block/$c/$p/uevent && continue
+		is_system_partition /sys/block/$c/$p/uevent && continue
 		for t in vfat exfat; do
 			mount -t $t -o $(card_options $t $(cat /etc/crystaline/www-data-gid)) /dev/$p /card \
 				2>/dev/null && { log "data partition $p ($t) mounted at /card"; return; }

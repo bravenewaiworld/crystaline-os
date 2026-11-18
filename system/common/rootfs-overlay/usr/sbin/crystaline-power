@@ -45,7 +45,8 @@ usage() {
 # range PROFILE: its minimum and maximum CPU speed, in kHz.
 range() {
 	set -- "$1" $(cat $CPU/policy0/cpuinfo_min_freq $CPU/policy0/cpuinfo_max_freq)
-	set -- "$@" $((${BOARD_CPU_EFFICIENT_MHZ:-$(($3 / 1000))} * 1000))
+	eff=$3; [ -z "${BOARD_CPU_EFFICIENT_MHZ:-}" ] || eff=$((BOARD_CPU_EFFICIENT_MHZ * 1000))
+	set -- "$@" $eff
 	case $1 in
 	# performance's minimum, the board's efficient speed, is the fastest at about the lowest
 	# voltage: holding it costs little and spares games slow speed-ups.

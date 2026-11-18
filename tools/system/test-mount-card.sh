@@ -447,9 +447,9 @@ rm -rf $R/run/card-games $R/mnt/GAMES; run games start	# the Brick's names: no g
 
 case_ "17b. games card: one of our cards (its boot slots hold FAT images) is never written to"
 system_card ours
-truncate -s 32M $T/cards/ours/p4.img; mkfs.fat -n BOOT $T/cards/ours/p4.img >/dev/null	# boot_a, as the mainline family writes it
+truncate -s 32M $T/cards/ours/p4.img; mkfs.fat -n BOOT $T/cards/ours/p4.img >/dev/null	# a FAT image in boot_a (p4), as mainline cards have
 new_root 179:5
-SDC0=$R/sys/bus/platform/devices/sdc1/mmc_host/mmc2/mmc2:0001/block; mkdir -p $SDC0
+SDC0=$R/sys/bus/platform/devices/sdc1/mmc_host/mmc2/mmc2:0001/block; mkdir -p $SDC0	# the games slot, as in 17
 insert ours 64
 BOARD_ENV=$GAMES_ENV run games start
 ! awk -v m=$R/mnt/GAMES '$5 == m' $R/proc/self/mountinfo | grep -q . || fail "a system partition of our card mounted as the games card"

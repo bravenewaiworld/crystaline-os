@@ -23,11 +23,11 @@ card_options() {
 	esac
 }
 
-# system_partition UEVENT: whether the partition whose sysfs uevent file is UEVENT is one of our
+# is_system_partition UEVENT: whether the partition whose sysfs uevent file is UEVENT is one of our
 # cards' system partitions, by its GPT name (the Brick's layout, tools/sdboot/build_sd_image.sh, and
 # the mainline family's, tools/mainline/build-card.sh): never a data partition, even when it holds
 # a FAT filesystem, as the boot slots' images do.
-system_partition() {
+is_system_partition() {
 	case $(sed -n 's/^PARTNAME=//p' "$1" 2>/dev/null) in
 	bootloader | env | env-redund | boot_a | boot_b | pstore | system) return 0 ;;
 	esac

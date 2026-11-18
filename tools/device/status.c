@@ -268,9 +268,9 @@ static const char *board(const char *name)
 	return "";
 }
 
-/* The board's name (BOARD_NAME), and its battery's and charger input's power supplies (""
- * without one), found by main(). */
-static const char *board_name, *battery, *charger;
+/* The board's name (BOARD_NAME), read by main(), and its battery's and charger input's power
+ * supplies ("" while there is none), looked for by show_power() until found. */
+static const char *board_name, *battery = "", *charger = "";
 
 /* Power supply @name's property @prop, as readf() reads it ("" if it has none). */
 static const char *ps(const char *name, const char *prop)
@@ -282,7 +282,8 @@ static const char *ps(const char *name, const char *prop)
 }
 
 /* The first power supply whose type is one of @types (e.g. "Battery", or "USB Mains"), as Specular
- * and crystaline-install find the battery; "" if there is none. */
+ * finds the battery, leaving out those of connected devices (scope Device, e.g. a Bluetooth pad's);
+ * "" if there is none. */
 static const char *supply_of_type(const char *types)
 {
 	DIR *d = opendir("/sys/class/power_supply");
@@ -294,7 +295,7 @@ static const char *supply_of_type(const char *types)
 		if (e->d_name[0] == '.')
 			continue;
 		snprintf(type, sizeof(type), " %s ", ps(e->d_name, "type"));
-		if (strcmp(type, "  ") && strstr(padded, type))
+		if (strcmp(type, "  ") && strstr(padded, type) && strcmp(ps(e->d_name, "scope"), "Device"))
 			found = strdup(e->d_name);
 	}
 	if (d)
@@ -319,9 +320,14 @@ static void show_power(void)
 {
 	char text[128] = "", limit[48] = "";
 	const char *v;
-	long cap = atol(ps(battery, "capacity")), empty;
+	long cap, empty;
 	int n = 0;
 
+	if (!*battery)	/* its driver may come after the screen starts */
+		battery = supply_of_type("Battery");
+	if (!*charger)
+		charger = supply_of_type("USB Mains");
+	cap = atol(ps(battery, "capacity"));
 	if (!*battery) {
 		line(WHITE, "Battery  none");
 		return;
@@ -975,8 +981,6 @@ int main(int argc, char **argv)
 			 "--held BUTTON... | --menu TITLE [-n NOTE | -b B-TEXT]... ITEM... | --task TITLE]");
 	}
 	board_name = board("BOARD_NAME");
-	battery = supply_of_type("Battery");
-	charger = supply_of_type("USB Mains");
 	open_inputs();
 
 	for (;;) {
