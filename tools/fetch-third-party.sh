@@ -84,8 +84,35 @@ git_source sonic-pad-toolchain https://github.com/CrealityTech/sonic_pad_os.git 
 	47693a0161e02b402250084ec61096131870c762
 git_source gpu-km-tsp https://github.com/pocketforge-os/gpu-km-tsp.git \
 	fbb38f3f712a9b151f7482450bafd939b8269ae8 . 07036e416a7556bde03b16432f8d841ffa8ab0d3
+git_source mali-kbase https://github.com/rocknix/mali_kbase.git \
+	39da994bb6fc8819e5e8c1873907dd21d17e53c1 product/kernel 69cd175a8405fa06545af962eb5c3e6654f160e2
 download trimui-firmware-v1.1.1/trimui_tg3040.awimg "${TRIMUI_FW_URL:-}" \
 	d9189936b941c39160cd33f2993c1f3ab0e3648f87b203fb6290ec835f2f8d98
+# The mainline boards' loader sources (tools/env.sh, UBOOT_SRC, TFA_SRC, TFA_DTC_SRC). TF-A's tree ID
+# leaves out its submodules (empty folders here); the one it builds with, contrib/dtc, is fetched on
+# its own as dtc-8f48565e, at the commit TF-A names.
+git_source u-boot-v2026.10 https://github.com/u-boot/u-boot.git \
+	5508406582f6f7120dce0c4b3059819a41788db2 . c54aa18f1c43c1b8b292434cc74cdc11e002f851
+git_source tf-a-d70b52de https://github.com/ARM-software/arm-trusted-firmware.git \
+	d70b52dedc4eba74386098a9033eec1e9cb522fa . 339024a923a49b4a1a87c7e7b41e52c4c084569d
+git_source dtc-8f48565e https://github.com/dgibson/dtc.git \
+	8f48565e5cfedc74d3f7512f1e0188e9d85dc1de . bf074fb822c6c54a969f93dfdcd2abc4c8910ebc
+# Rockchip's RK3566 binaries (tools/env.sh, RK3566_DDR, RK3566_BL31), each at the rkbin commit that
+# added it.
+RKBIN=https://raw.githubusercontent.com/rockchip-linux/rkbin
+download rkbin/rk3566_ddr_1056MHz_v1.23.bin \
+	$RKBIN/fd73dcf27702e1efc2065055215320adeaadee84/bin/rk35/rk3566_ddr_1056MHz_v1.23.bin \
+	20e4bb076847bd019fcdeb7bdc15bd249890f07ecc76e9937101f22e50950982
+download rkbin/rk3568_bl31_v1.45.elf \
+	$RKBIN/ef49d0c2852b16ce0d72d7ee4849638cb5de27b7/bin/rk35/rk3568_bl31_v1.45.elf \
+	76634f10e535bbe981fb9132fd6815a71586cc1b96aae1159bec6797579e5b9f
+# The RTL8723DS's Bluetooth firmware (the RGB20 Pro's), which linux-firmware doesn't carry: Armbian's
+# firmware collection (tools/env.sh, RTL8723DS_BT).
+RTL_BT=https://raw.githubusercontent.com/armbian/firmware/bf5f7a802b8e1998e6bf95daed5ea965441af83d/rtl_bt
+download rtl8723ds-bt/rtl8723ds_fw.bin $RTL_BT/rtl8723ds_fw.bin \
+	19c1bed7a9359b1a021c20f81b525bdebf5067f9021716991d94be9101f76e63
+download rtl8723ds-bt/rtl8723ds_config.bin $RTL_BT/rtl8723ds_config.bin \
+	7d1e18df7654da8f6382520841bb535f2d1246fc8495e3ae652f7b23e820168d
 
 DUFS_TAR=dufs-v0.46.0/dufs-v0.46.0-aarch64-unknown-linux-musl.tar.gz
 download $DUFS_TAR https://github.com/sigoden/dufs/releases/download/v0.46.0/${DUFS_TAR#*/} \

@@ -17,9 +17,9 @@ FALLBACK=/tmp/frontend-fallback
 # recovery menu "can" start the previous version: it offers that only when one is installed
 # (docs/boot.md).
 fallback() {
-	. /run/crystaline/board.env	# BOARD_NAME
+	. /run/crystaline/board.env	# BOARD_NAME, BOARD_RECOVERY_BUTTONS (e.g. "SELECT START")
 	exec /usr/bin/status --banner "The game menu stopped working" \
-		"Restart the $BOARD_NAME. If it keeps happening, hold MENU while turning it on: the recovery menu can start the previous version." \
+		"Restart the $BOARD_NAME. If it keeps happening, hold $(echo $BOARD_RECOVERY_BUTTONS | sed 's/ / and /g') while turning it on: the recovery menu can start the previous version." \
 		-d "Log: logs/specular.log on the SD card."
 }
 [ -e $FALLBACK ] && fallback

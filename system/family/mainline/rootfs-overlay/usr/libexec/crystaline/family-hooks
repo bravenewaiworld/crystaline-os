@@ -1,0 +1,43 @@
+# What start-up does differently in the mainline family ("hooks"). The shared start-up scripts (the
+# initramfs's init, rcS) source this file and call these functions where families differ; every
+# family defines all of them.
+
+# progress CODE: record how far start-up got (the codes are listed in the initramfs's init) as a
+# kernel log line. The kernel keeps its log in RAM across a warm reset (ramoops), so after a start
+# that failed without a message, the next start's /system/logs/crash-*/ or /sys/fs/pstore has it:
+# grep 'crystaline-progress'.
+progress() { printf 'crystaline-progress %04x\n' $(($1)) >/dev/kmsg 2>/dev/null; }
+
+# start_hardware: rcS, before the data card is mounted: the balanced CPU profile (Specular applies its
+# own when it starts), Bluetooth's UART driver (hci_uart, which takes the controller the device tree
+# puts on a serial port and loads its firmware), and the GPU's driver (mdev loads only the
+# drivers of devices with a node in /dev, which the GPU has only once its driver is in). Mesa's
+# panfrost, or, when /system/state/gpu-driver says "mali" (crystaline-gpu), ARM's driver: its kernel
+# module (kept out of the module index, so nothing else loads it), its libraries over Mesa's, and
+# its Vulkan driver and window-system layer as the only ones the Vulkan loader sees. Bind mounts, so
+# nothing changes on disk. If ARM's kernel module doesn't load, Mesa's driver is used.
+start_hardware() {
+	crystaline-power profile balanced
+	modprobe hci_uart
+	if [ "$(cat /system/state/gpu-driver 2>/dev/null)" = mali ]; then
+		if insmod /usr/lib/crystaline/mali_kbase.ko; then
+			for l in /usr/lib/mali/lib*.so.*; do
+				[ -e "/usr/lib/${l##*/}" ] && mount --bind "$l" "/usr/lib/${l##*/}"
+			done
+			mount --bind /usr/share/crystaline/mali/vulkan /usr/share/vulkan
+			echo "GPU driver: mali (ARM's libmali)"
+			return
+		fi
+		echo "GPU driver: mali_kbase didn't load; using panfrost"
+	fi
+	modprobe panfrost && echo "GPU driver: panfrost (Mesa)"
+}
+
+# rescue: the initramfs's start-up has failed for good; its message is already on screen. The last
+# chance to make the failure visible another way: the board's status LED blinks, so a failure shows
+# even when the screen doesn't.
+rescue() {
+	for led in /sys/class/leds/*:status; do
+		[ -e "$led/trigger" ] && echo timer >"$led/trigger"
+	done
+}

@@ -15,22 +15,41 @@ include system/board/$(DEVICE)/board.mk
 # inherit it from the command line.
 MAKEOVERRIDES := $(filter-out DEVICE=%,$(MAKEOVERRIDES))
 B := $(ROOT)/build/$(FAMILY)
-BUILDROOT_DEFCONFIG := $(FAMILY)_defconfig
+FAMILY_BOARDS := $(shell tools/system/family-boards.sh $(FAMILY))
+# Targets only the Brick family has so far: refused for other families, rather than built from the
+# Brick's inputs into the wrong folder.
+BRICK_ONLY := gpu userspace stock-fw deploy-specular run-specular debug-running-release \
+	test-xr829-attach test-dt-edits test-exfat
+ifneq ($(FAMILY),brick)
+ifneq ($(filter $(BRICK_ONLY),$(MAKECMDGOALS)),)
+$(error $(filter $(BRICK_ONLY),$(MAKECMDGOALS)): not available for DEVICE=$(DEVICE) ($(FAMILY) family) yet)
+endif
+endif
 # $(call env,NAME): NAME's value from tools/env.sh (which keeps any value set in the environment).
 env = $(shell ROOT='$(ROOT)' && . '$(ROOT)/tools/env.sh' && echo "$$$(1)")
 CROSS_COMPILE := $(call env,CROSS_COMPILE)
 STOCK_FW := $(call env,STOCK_FW)
 export STAGING_DIR := $(call env,STAGING_DIR)
 
-CC := $(CROSS_COMPILE)gcc
+# The C compiler for our programs that run on the device (also the installer's linker): the Brick's
+# from tools/env.sh; for mainline boards, the family's Buildroot compiler, as for their kernel
+# (tools/mainline/kmake.sh), so `make DEVICE=<board> buildroot` comes first.
+CC_brick := $(CROSS_COMPILE)gcc
+CC_mainline := $(B)/buildroot/host/bin/aarch64-buildroot-linux-gnu-gcc
+CC := $(CC_$(FAMILY))
 # DEBUG=1 (any value) keeps symbols and adds debug information to our C programs, for gdb
 # (DEVELOPMENT.md). The code is the same as without it.
 CFLAGS := -O2 -Wall -Wextra $(if $(DEBUG),-g)
-# Static, so on-device tools don't depend on the device's libraries. This toolchain's static
-# glibc also needs the unwinder (-lgcc_eh).
+# Static, so on-device tools don't depend on the device's libraries. Static glibc also needs the
+# unwinder (-lgcc_eh).
 STATIC := -static $(if $(DEBUG),,-s) -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group
+# The device's address for the commands that reach it (tools/system/ssh.sh). Default: the board's
+# end of its USB network link (BOARD_USB_NET in its description, plus .2).
+ifndef ADDR
+export ADDR := $(shell sed -n 's/^BOARD_USB_NET=//p' system/board/$(DEVICE)/rootfs-overlay/usr/share/crystaline/boards/*.env).2
+endif
 
-.PHONY: help all kernel gpu userspace specular installer device-tools buildroot system \
+.PHONY: help all kernel mali loader gpu userspace specular installer device-tools buildroot system \
 	sd-card update-file update-device debug-running-release deploy-specular run-specular test-installer test-battery-guard \
 	test-mount-card test-board-env test-last-shutdown test-cardlog test-xr829-attach test-timezone test-dt-edits test-exfat stock-fw install-image clean
 
@@ -41,11 +60,15 @@ help:
 	@echo '                   rootfs.squashfs, manifest.json), also build/<family>/system/latest;'
 	@echo '                   RELEASE=1: a release image (no development SSH key, serial login,'
 	@echo '                   debugging or hardware test tools)'
-	@echo '  sd-card          build/<family>/sd-card.img: an SD card that runs the latest version'
+	@echo '  sd-card          an SD card image that runs the latest version: build/brick/sd-card.img,'
+	@echo '                   or build/<family>/sd-card-<board>.img for other families'
+	@echo '  loader           a mainline board'"'"'s loader (U-Boot, BL31, DDR init), built from source:'
+	@echo '                   build/<family>/loader/<board>/u-boot-rockchip.bin (sd-card builds it)'
 	@echo '  update-file      build/<family>/updates/crystaline-<version>.update: the latest version as a'
 	@echo '                   signed update file (KEY=<key.pem>, default the development key)'
-	@echo '  update-device    build system, install it on a Brick running our system as an update,'
-	@echo '                   reboot (SSH; ADDR=<address>, default 192.168.7.2 over USB; KEY= as above)'
+	@echo '  update-device    build system, install it on a device running our system as an update,'
+	@echo '                   reboot (SSH; ADDR=<address>, default the board'"'"'s USB network address,'
+	@echo '                   192.168.7.2 on the Brick, 192.168.8.2 on the RGB20 Pro; KEY= as above)'
 	@echo '  debug-running-release  copy the debugging and hardware test tools a release image'
 	@echo '                   leaves out (strace, perf, gdbserver, memreg, ...) to a Brick running'
 	@echo '                   a release image, in memory until it restarts (SSH switched on there'
@@ -70,7 +93,7 @@ help:
 	@echo '  specular       Specular and its emulator cores (the specular/ submodule'"'"'s own build)'
 	@echo '  buildroot      the base system (C library, BusyBox, daemons) with Buildroot'
 	@echo '  stock-fw       TrimUI'"'"'s stock firmware, unpacked into build/brick/stock-fw'
-	@echo '  clean          remove build/<family>/ (build/brick/ for DEVICE=brick)'
+	@echo '  clean          remove build/<family>/'
 
 all: sd-card
 
@@ -78,13 +101,25 @@ install-image:
 	@echo '$@: not available yet (see ROADMAP.md)'; exit 1
 
 # --- Kernel and GPU driver ------------------------------------------------------------------
-# Always run: the kernel's own build decides what is out of date. Its device-tree edits are made
-# from the device tree in TrimUI's boot package (tools/kmake.sh).
-# The configuration is regenerated from trimui_brick_defconfig every time, as Buildroot's is, so
-# that file is the only place to change it; unchanged options rebuild nothing.
+# Always run: the kernel's own build decides what is out of date.
+ifeq ($(FAMILY),mainline)
+# One kernel (Image, device trees, modules) for every mainline board, built with Buildroot's
+# compiler; its configuration is merged from the family's, SoCs' and boards' parts every time
+# (tools/mainline/kmake.sh).
+kernel:
+	tools/mainline/kmake.sh $(B)/kernel
+
+# ARM's Mali kernel driver, the optional alternative to Panfrost (tools/mainline/build-mali.sh).
+mali: kernel
+	tools/mainline/build-mali.sh
+else
+# The Brick's device-tree edits are made from the device tree in TrimUI's boot package
+# (tools/kmake.sh). The configuration is regenerated from trimui_brick_defconfig every time, as
+# Buildroot's is, so that file is the only place to change it; unchanged options rebuild nothing.
 kernel: $(B)/stock-fw/rootfs.fex
 	tools/kmake.sh $(B)/kernel trimui_brick_defconfig
 	tools/kmake.sh $(B)/kernel Image modules
+endif
 
 gpu: kernel
 	tools/build-gpu.sh
@@ -101,19 +136,32 @@ BUILDROOT_SRC := $(ROOT)/build/buildroot-$(BUILDROOT_VERSION)
 BR := $(MAKE) -C $(BUILDROOT_SRC) O=$(B)/buildroot BR2_EXTERNAL=$(ROOT)/system \
 	BR2_DL_DIR=$(DL)/buildroot
 
-$(BUILDROOT_SRC)/.done:
+# Our changes to Buildroot itself (its package definitions; patches to the packages' own sources
+# are in system/patches/). The source tree is extracted afresh whenever they change, so each applies
+# once to a clean tree.
+BUILDROOT_PATCHES := $(sort $(wildcard system/buildroot-patches/*.patch))
+$(BUILDROOT_SRC)/.done: $(BUILDROOT_PATCHES)
 	@mkdir -p $(DL)
-	curl -sSfL -o $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz \
+	[ -f $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz ] || curl -sSfL -o $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz \
 		https://buildroot.org/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz
 	echo '$(BUILDROOT_SHA256)  $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz' | sha256sum -c --quiet
+	rm -rf $(BUILDROOT_SRC)
 	tar xf $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz -C $(ROOT)/build
+	for p in $(BUILDROOT_PATCHES); do patch -s -p1 -d $(BUILDROOT_SRC) <$$p || exit 1; done
 	@touch $@
 
-# The configuration is regenerated from system/configs/$(BUILDROOT_DEFCONFIG) every time, so that
-# file is the only place to change it. Buildroot doesn't rebuild a package whose options changed;
-# that needs `make -C $(BUILDROOT_SRC) O=$(B)/buildroot <package>-dirclean` first.
+# The configuration is regenerated every time from system/common/buildroot.config followed by
+# system/family/$(FAMILY)/buildroot.config, so those files are the only place to change it. The
+# root filesystem's overlays are added to it: common, the family's, and every board's of the
+# family (each board's names are picked at start-up, so all must be there).
+BR_OVERLAYS := $(foreach l,common family/$(FAMILY) $(addprefix board/,$(FAMILY_BOARDS)),$$(BR2_EXTERNAL_CRYSTALINE_PATH)/$(l)/rootfs-overlay)
+# Buildroot doesn't rebuild a package whose options changed; that needs
+# `make -C $(BUILDROOT_SRC) O=$(B)/buildroot <package>-dirclean` first.
 buildroot: $(BUILDROOT_SRC)/.done
-	$(BR) -s $(BUILDROOT_DEFCONFIG)
+	@mkdir -p $(B)
+	cat system/common/buildroot.config system/family/$(FAMILY)/buildroot.config >$(B)/buildroot.defconfig
+	echo 'BR2_ROOTFS_OVERLAY="$(BR_OVERLAYS)"' >>$(B)/buildroot.defconfig
+	$(BR) -s BR2_DEFCONFIG=$(B)/buildroot.defconfig defconfig
 	$(BR)
 
 # --- Userspace services -------------------------------------------------------------------
@@ -126,13 +174,18 @@ $(B)/userspace/padbridge $(B)/userspace/xr829-attach:
 	$(CC) $(CFLAGS) -o $@ $< $(STATIC)
 
 # --- Specular (the frontend) -----------------------------------------------------------------
-# Specular's own Makefile (specular/) builds it and its emulator cores for the Brick into
+# Specular's own Makefile (specular/) builds it and its emulator cores for the family into
 # $(B)/specular, and installs them into $(SPECULAR_STAGE): the files build-system.sh copies into the
 # system and deploy-specular sends to a device. SPECULAR_PREFIX is where frontend-run starts it.
-# It is built with Buildroot's toolchain, which matches the C and C++ libraries on the device
-# (the kernel's GCC 6.4 lacks the C++17 that SwanStation needs).
-SPECULAR := $(MAKE) -C specular OUT=$(B)/specular DEVICE=brick TARGET=aarch64-unknown-linux-gnu \
-	CROSS_COMPILE=$(B)/buildroot/host/bin/aarch64-buildroot-linux-gnu- CORE_CFLAGS=-mcpu=cortex-a53
+# It is built with the family's Buildroot toolchain, which matches the C and C++ libraries on the
+# device (the Brick kernel's GCC 6.4 lacks the C++17 that SwanStation needs). Each family has its
+# own Specular device crate (specular/devices/<name>) and the CPU its cores are tuned for.
+SPECULAR_DEVICE_brick := brick
+SPECULAR_CPU_brick := cortex-a53
+SPECULAR_DEVICE_mainline := mainline
+SPECULAR_CPU_mainline := cortex-a55
+SPECULAR := $(MAKE) -C specular OUT=$(B)/specular DEVICE=$(SPECULAR_DEVICE_$(FAMILY)) TARGET=aarch64-unknown-linux-gnu \
+	CROSS_COMPILE=$(B)/buildroot/host/bin/aarch64-buildroot-linux-gnu- CORE_CFLAGS=-mcpu=$(SPECULAR_CPU_$(FAMILY))
 SPECULAR_STAGE := $(B)/specular-install
 SPECULAR_PREFIX := /usr/lib/specular
 specular:
@@ -149,16 +202,19 @@ installer:
 
 # --- Development tools that run on the device -----------------------------------------------
 # Also status and cardlog (Specular's log service), which the system itself uses; all go to /usr/bin.
-DEVICE_TOOLS := dispctl dispcap glspin rumble i2creg memreg status blkro cardlog
-device-tools: $(addprefix $(B)/tools/,$(DEVICE_TOOLS))
+# Brick only: dispctl and dispcap use Allwinner's display driver, glspin TrimUI's GPU libraries.
+DEVICE_TOOLS := status cardlog rumble i2creg memreg blkro
+DEVICE_TOOLS_brick := dispctl dispcap glspin
+device-tools: $(addprefix $(B)/tools/,$(DEVICE_TOOLS) $(DEVICE_TOOLS_$(FAMILY)))
 
 # status: a plain screen of the device's state, which frontend-run falls back to when Specular keeps
-# crashing; the initramfs also shows its errors with it. It draws text with the kernel's 8x16
-# console font, extracted from the kernel source (linux-brick/) into a header.
-$(B)/include/font8x16.h: linux-brick/lib/fonts/font_8x16.c
+# crashing; the initramfs also shows its errors and its recovery menu with it. It draws text with
+# the kernel's 8x16 console font: the font's bytes, taken from the family's kernel source
+# (linux-<family>/), in a header.
+$(B)/include/font8x16.h: linux-$(FAMILY)/lib/fonts/font_8x16.c
 	@mkdir -p $(@D)
-	sed -n '/^static const unsigned char fontdata_8x16/,/^};/p' $< | \
-		sed '1s/.*/static const unsigned char font8x16[4096] = {/' > $@
+	{ echo 'static const unsigned char font8x16[4096] = {'; \
+		LC_ALL=C sed -n '/^[[:space:]]*0x[0-9a-fA-F][0-9a-fA-F],/p' $<; echo '};'; } >$@
 
 $(B)/tools/status: tools/device/status.c $(B)/include/font8x16.h
 	@mkdir -p $(@D)
@@ -191,11 +247,24 @@ $(B)/stock-root/.done: $(B)/stock-fw/rootfs.fex
 # Always run: each build is a new version (named by time and git commit). RELEASE=1 makes a
 # release image (build-system.sh says what differs); sd-card and update-device take it too.
 RELEASE ?= 0
-system: buildroot kernel gpu userspace device-tools specular installer $(B)/stock-root/.done
-	RELEASE=$(RELEASE) tools/system/build-system.sh $(B)/system
+# What each family's system is made of (tools/system/parts-<family>.sh adds them to the image).
+SYSTEM_PARTS_brick := gpu userspace device-tools specular installer $(B)/stock-root/.done
+SYSTEM_PARTS_mainline := mali specular installer device-tools
+system: buildroot kernel $(SYSTEM_PARTS_$(FAMILY))
+	FAMILY=$(FAMILY) RELEASE=$(RELEASE) tools/system/build-system.sh $(B)/system
 
+# The card image for DEVICE: the Brick's own layout, or a mainline board's (its DTB from board.mk).
+ifeq ($(FAMILY),mainline)
+# The board's loader (U-Boot, BL31, the SoC's DDR init), rebuilt from clean every time
+# (tools/mainline/build-loader.sh).
+loader:
+	tools/mainline/build-loader.sh $(DEVICE) $(B)/loader/$(DEVICE)
+sd-card: system loader
+	tools/mainline/build-card.sh $(B)/system/latest $(DTB) $(B)/loader/$(DEVICE) $(B)/sd-card-$(DEVICE).img
+else
 sd-card: system
 	tools/system/build-sd-card.sh $(B)/system/latest $(B)/sd-card.img
+endif
 
 # KEY: the private key that signs update files (sign-update.sh); without it, this checkout's
 # development key, which only development systems trust.
@@ -219,7 +288,7 @@ run-specular: specular
 
 # Its own PC build of the installer has the test-only cut points (userspace/crystaline-install/src/cut.rs).
 test-installer:
-	tools/system/test-installer.sh
+	DEVICE=$(DEVICE) tools/system/test-installer.sh
 
 # These four run their script under a PC build of the device's BusyBox (build/brick/pc-busybox) once
 # Buildroot has built it, and under the PC's shell and tools before then.

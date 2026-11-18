@@ -1,0 +1,14 @@
+#!/bin/sh
+# Chooses the GPU driver used from the next start: panfrost (Mesa's open driver, the default) or
+# mali (ARM's closed libmali with its kernel driver mali_kbase). The start-up hooks
+# (/usr/libexec/crystaline/family-hooks, start_hardware) read the choice.
+#   crystaline-gpu              prints the driver in use now and the one chosen
+#   crystaline-gpu panfrost|mali
+F=/var/state/gpu-driver
+case $1 in
+'')
+	now=panfrost; grep -q '^mali_kbase ' /proc/modules && now=mali
+	echo "in use: $now, chosen: $(cat $F 2>/dev/null || echo panfrost)" ;;
+panfrost | mali) echo "$1" >$F && sync && echo "$1 from the next start" ;;
+*) echo "usage: crystaline-gpu [panfrost|mali]" >&2; exit 2 ;;
+esac

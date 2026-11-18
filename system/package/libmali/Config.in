@@ -1,0 +1,14 @@
+config BR2_PACKAGE_LIBMALI
+	bool "libmali"
+	depends on BR2_aarch64
+	depends on BR2_TOOLCHAIN_USES_GLIBC
+	depends on BR2_INSTALL_LIBSTDCPP
+	select BR2_PACKAGE_LIBDRM
+	help
+	  ARM's closed GL ES, EGL, GBM and Vulkan driver for Mali GPUs
+	  (needs ARM's kernel driver, mali_kbase), as Rockchip ships
+	  it: the Mali-G52 (Bifrost) build g29p1 that ROCKNIX uses on
+	  the RK3566. Installed beside Mesa in /usr/lib/mali; the
+	  device uses it only when chosen (start-up hooks).
+
+	  https://github.com/JeffyCN/mirrors/tree/libmali

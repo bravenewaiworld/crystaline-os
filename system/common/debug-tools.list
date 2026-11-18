@@ -3,7 +3,7 @@
 # `make debug-running-release` copies them into a running release's memory
 # (tools/system/debug-running-release.sh).
 # One shell pattern per line, relative to the root filesystem; each must match at least one file,
-# or the release build and the copy fail.
+# or the release build and the copy fail. "<family>: <pattern>" applies to that family only.
 usr/bin/strace
 usr/bin/strace-log-merge
 usr/bin/perf
@@ -16,11 +16,11 @@ usr/lib/libdw[.-]*
 usr/lib/libelf[.-]*
 usr/lib/libasm[.-]*
 # Our hardware test tools (tools/device; DEVELOPMENT.md, "On-device tools")
-usr/bin/dispctl
-usr/bin/dispcap
-usr/bin/glspin
+brick: usr/bin/dispctl
+brick: usr/bin/dispcap
+brick: usr/bin/glspin
 usr/bin/rumble
 usr/bin/i2creg
 usr/bin/memreg
 usr/bin/blkro
-usr/bin/powertest
+brick: usr/bin/powertest

@@ -1,0 +1,14 @@
+The layer's manifest names its library by file name alone, so the loader finds it in the library
+path wherever the manifest is installed (ROCKNIX carries the same change).
+
+--- a/layer/VkLayer_window_system_integration.json
++++ b/layer/VkLayer_window_system_integration.json
+@@ -4,7 +4,7 @@
+     "layer": {
+         "name": "VK_LAYER_window_system_integration",
+         "type": "GLOBAL",
+-        "library_path": "./libVkLayer_window_system_integration.so",
++        "library_path": "libVkLayer_window_system_integration.so",
+         "api_version": "1.4.356",
+         "implementation_version": "1",
+         "description": "Window system integration layer",

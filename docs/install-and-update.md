@@ -1,6 +1,6 @@
 # Install and update
 
-Status: In progress · Updated: 2026-10-18
+Status: In progress · Updated: 2026-11-12
 
 How a system version is named, checked, switched to and kept; update files; how the system moves from the SD card onto the internal storage (eMMC); and how TrimUI's system is backed up first and put back later. These are the operations that can leave a device unable to start, so each is ordered to be recognisable and repeatable if cut short, and everything written is read back.
 
@@ -77,7 +77,7 @@ crystaline-<version>.update     ustar tar, exactly these regular files in this o
 
 ### Activating a version (`crystaline-install activate V`)
 
-S is the slot the system started from (`brick.boot=` on the kernel command line, checked to hold the running version's `boot.img`), O the other one.
+S is the slot the system started from (`brick.boot=`, or `crystaline.boot=` on mainline boards, on the kernel command line, checked to hold the running version's `boot.img`), O the other one.
 
 1. Check V's files against its manifest.
 2. Unless O already holds V: check `boot.img` fits O; if the settings name O (an earlier activate not followed by a restart), switch them back to S first; write it, read it back. A cut here leaves the settings naming S.

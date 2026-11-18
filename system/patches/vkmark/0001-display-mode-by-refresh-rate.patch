@@ -1,0 +1,49 @@
+display window system: VKMARK_DISPLAY_HZ picks the mode with the closest refresh rate (the default
+is the fastest one), and the chosen mode is printed. To compare a panel's modes.
+
+--- a/src/ws/display_native_system.cpp	2026-11-11 17:11:13.083611914 -0500
++++ b/src/ws/display_native_system.cpp	2026-11-11 17:11:13.093506933 -0500
+@@ -24,6 +24,10 @@
+ 
+ #include "vulkan_state.h"
+ 
++#include <cmath>
++#include <cstdlib>
++#include <cstdio>
++
+ vk::DisplaySurfaceCreateInfoKHR DisplayNativeSystem::get_display_surface_create_info(
+     vk::PhysicalDevice const& physical_device, unsigned int display_index)
+ {
+@@ -67,17 +71,26 @@
+         throw std::runtime_error{"Failed to find any planes supported by display"};
+ 
+     // Find the mode with the largest refresh rate that matches the physical
+-    // resolution of the displya.
++    // resolution of the display, or, with VKMARK_DISPLAY_HZ set (e.g. 60), the
++    // one whose refresh rate is closest to it.
++    char const* const want_env = std::getenv("VKMARK_DISPLAY_HZ");
++    long const want_mhz = want_env ? std::lround(std::atof(want_env) * 1000) : 0;
+     vk::DisplayModePropertiesKHR mode;
+     for (auto& m : modes)
+     {
+-        if (m.parameters.visibleRegion == displays[display_index].physicalResolution &&
+-            (!mode.displayMode ||
+-             m.parameters.refreshRate > mode.parameters.refreshRate))
+-        {
++        if (m.parameters.visibleRegion != displays[display_index].physicalResolution)
++            continue;
++        bool const better = want_mhz
++            ? std::labs(long(m.parameters.refreshRate) - want_mhz) <
++                  std::labs(long(mode.parameters.refreshRate) - want_mhz)
++            : m.parameters.refreshRate > mode.parameters.refreshRate;
++        if (!mode.displayMode || better)
+             mode = m;
+-        }
+     }
++    if (mode.displayMode)
++        std::fprintf(stderr, "Display mode: %ux%u at %.3f Hz\n",
++                     mode.parameters.visibleRegion.width, mode.parameters.visibleRegion.height,
++                     mode.parameters.refreshRate / 1000.0);
+ 
+     if (!mode.displayMode)
+         throw std::runtime_error{"Failed to find any modes matching the physical resolution"};

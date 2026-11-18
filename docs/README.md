@@ -4,6 +4,8 @@ Why Crystaline OS works the way it does: decisions, designs and research, one do
 
 | Doc | Covers |
 |---|---|
+| [boards.md](boards.md) | Building for more than one device: boards, families and SoCs, the layers in `system/`, board names picked at start-up, start-up hooks |
+| [mainline.md](mainline.md) | The mainline family and the Powkiddy RGB20 Pro: kernel, card and boot, GPU drivers (Panfrost, ARM's libmali), panel modes |
 | [platform.md](platform.md) | The chip and the board, the vendor kernel versus mainline, TrimUI's stock firmware, related projects |
 | [boot.md](boot.md) | Boot chain, bootloaders and their settings, boot images, start-up, watchdog |
 | [system-image.md](system-image.md) | The Buildroot image, services, user data on the SD card, file transfer, development access |

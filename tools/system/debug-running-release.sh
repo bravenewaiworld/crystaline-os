@@ -51,7 +51,7 @@ match() { (cd "$1" && for f in $2; do if [ -e "$f" ]; then echo "$f"; fi; done);
 # loader fails or misses a library or symbol version ("not found").
 tar_args= checks=
 CHECK='check() { out=$("$@" 2>&1) && ! echo "$out" | grep -q "not found" || { echo "$out"; exit 1; }; }'
-grep -v -e '^#' -e '^$' "$ROOT/system/common/debug-tools.list" >"$TMP/list"
+grep -v -e '^#' -e '^$' "$ROOT/system/common/debug-tools.list" | sed -n -e '/^[a-z]*: /{s/^brick: //p;d}' -e p >"$TMP/list"
 while read -r p; do
 	f=
 	for src in "$T" "$TMP/ours"; do

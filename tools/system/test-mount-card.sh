@@ -425,5 +425,25 @@ run stop; run
 cmp -s $G/README.txt $R/mnt/SDCARD/README.txt || fail "outdated README.txt not replaced"
 cmp -s $G/backups/README.txt $R/mnt/SDCARD/backups/README.txt || fail "backups/README.txt not written"
 
-case_ "17. no state.new left behind: checked after every run above"
+case_ "17. games card: its own slot, mount and state; only roms/ made; nothing on a board without one"
+GAMES_ENV=$T/games.env; { cat $BOARD_ENV; echo BOARD_GAMES_CARD_CONTROLLER=sdc1; } >$GAMES_ENV
+fat_card games mbr
+new_root 179:5
+SDC0=$R/sys/bus/platform/devices/sdc1/mmc_host/mmc2/mmc2:0001/block; mkdir -p $SDC0	# insert and pull use it
+insert games 64
+BOARD_ENV=$GAMES_ENV run games start
+g=$R/run/card-games/state
+[ "$(sed -n 1p $g)" = mounted ] || fail "games card state '$(sed -n 1p $g 2>/dev/null)', expected mounted"
+awk -v m=$R/mnt/GAMES '$5 == m' $R/proc/self/mountinfo | grep -q . || fail "games card not mounted at /mnt/GAMES"
+[ -d $R/mnt/GAMES/roms ] && [ ! -e $R/mnt/GAMES/saves ] && [ ! -e $R/mnt/GAMES/README.txt ] || fail "games card: more than roms/ written"
+[ ! -e $R/run/card/state ] || fail "the system card's state was touched"
+not_called mkfs.fat
+pull; SEQNUM=1 ACTION=remove MDEV=mmcblk1 BOARD_ENV=$GAMES_ENV run games event
+[ "$(sed -n 1p $g)" = absent ] || fail "games card state '$(sed -n 1p $g)' after removal, expected absent"
+sed -n 2p $g | grep -q "games card" || fail "games card message '$(sed -n 2p $g)'"
+! awk -v m=$R/mnt/GAMES '$5 == m' $R/proc/self/mountinfo | grep -q . || fail "removed games card still mounted"
+rm -rf $R/run/card-games $R/mnt/GAMES; run games start	# the Brick's names: no games slot
+[ ! -e $R/run/card-games ] && [ ! -e $R/mnt/GAMES ] || fail "a board without a games slot ran the games card"
+
+case_ "18. no state.new left behind: checked after every run above"
 echo PASS

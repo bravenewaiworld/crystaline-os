@@ -1,0 +1,27 @@
+Build without the xcb and X11 client headers when the X11 backend is off: the layer's shared
+header includes them unconditionally, only for the native types the Vulkan xcb/xlib headers name.
+Without the X11 backend, opaque stand-ins for those types are enough.
+
+--- a/layer/private_data.hpp	2026-11-11 16:06:17.085162268 -0500
++++ b/layer/private_data.hpp	2026-11-11 16:06:17.092165835 -0500
+@@ -39,9 +39,19 @@
+ #include <vulkan/vulkan_wayland.h>
+ /* The Vulkan xcb/xlib headers need the native platform types in scope first. These are Vulkan headers
+  * (always available); the xcb/X11 client headers come from libxcb/libX11. */
++#ifdef BUILD_WSI_X11
+ #include <xcb/xcb.h>
+-#include <vulkan/vulkan_xcb.h>
+ #include <X11/Xlib.h>
++#else
++#include <stdint.h>
++typedef struct xcb_connection_t xcb_connection_t;
++typedef uint32_t xcb_window_t;
++typedef uint32_t xcb_visualid_t;
++typedef struct _XDisplay Display;
++typedef unsigned long Window;
++typedef unsigned long VisualID;
++#endif
++#include <vulkan/vulkan_xcb.h>
+ #include <vulkan/vulkan_xlib.h>
+ 
+ #include <memory>

@@ -2,14 +2,17 @@
 # crystaline-power: applies power settings; Specular decides which ones to use, and when.
 #   crystaline-power                    prints the settings in effect, read back from the hardware
 #                                  (cpu-min: as last set)
-#   crystaline-power profile NAME       the CPU's speed range: performance (1200-2000 MHz), balanced
-#                                  (408-2000) or saver (408-1200); resets cpu-min
+#   crystaline-power profile NAME       the CPU's speed range: performance (the board's efficient
+#                                  speed to the fastest), balanced (slowest to fastest) or saver
+#                                  (slowest to the efficient speed); resets cpu-min. On the Brick:
+#                                  1200-2000, 408-2000 and 408-1200 MHz
 #   crystaline-power cpu-min MHZ|default
 #                                  sets the CPU's minimum speed to its slowest speed step at or
 #                                  above MHZ, kept within the profile's range, and prints the speed
 #                                  set, in MHz; default goes back to the profile's minimum
 #   crystaline-power usb-top on|off     the top USB-C port: its 5 V output to attached devices and its
-#                                  host controllers; off is refused while a USB device is attached
+#                                  host controllers; off is refused while a USB device is attached,
+#                                  and on boards without one (BOARD_USB_TOP_EHCI unset)
 # Exit status: 0 done, 1 refused or failed (the reason on stderr and in the system log, tag
 # crystaline-power), 2 usage. Nothing persists: start-up (rcS) applies balanced, and the top port
 # starts on; Specular applies its own choices when it starts.
@@ -18,13 +21,18 @@
 set -u
 CPU=/sys/devices/system/cpu/cpufreq
 PLAT=/sys/bus/platform
-EHCI=5200000.ehci1-controller OHCI=5200000.ohci1-controller	# the top port's (USB 2.0, USB 1.1)
+# BOARD_CPU_EFFICIENT_MHZ; the top port's controllers BOARD_USB_TOP_EHCI and BOARD_USB_TOP_OHCI
+# (USB 2.0, USB 1.1; "driver:device"), and BOARD_USB_TOP_VBUS, its 5 V regulator.
+. /run/crystaline/board.env
+EHCI=${BOARD_USB_TOP_EHCI:-} OHCI=${BOARD_USB_TOP_OHCI:-}
+EHCI=${EHCI#*:} OHCI=${OHCI#*:}
 # Holds "profile" (the name of the last profile applied), "cpu-min" (the speed cpu-min set, in MHz;
 # absent after profile or cpu-min default) and "lock".
 STATE=/run/crystaline-power
-# How often the ondemand governor re-evaluates the CPU's speed. The kernel's default on this device
-# is 2 s (1000 times the CPU's 2 ms speed-change time), so a game could wait 2 s for full speed.
-# It samples only while a CPU is busy, so a shorter interval costs no wake-ups at idle.
+# How often the ondemand governor (the Brick's) re-evaluates the CPU's speed. The kernel's default
+# on the Brick is 2 s (1000 times the CPU's 2 ms speed-change time), so a game could wait 2 s for
+# full speed. It samples only while a CPU is busy, so a shorter interval costs no wake-ups at idle.
+# schedutil (the mainline family's) follows the scheduler's load and has no sampling to set.
 SAMPLING_US=50000
 
 log() { logger -s -t crystaline-power "$*"; }
@@ -36,12 +44,13 @@ usage() {
 
 # range PROFILE: its minimum and maximum CPU speed, in kHz.
 range() {
+	set -- "$1" $(cat $CPU/policy0/cpuinfo_min_freq $CPU/policy0/cpuinfo_max_freq) $((BOARD_CPU_EFFICIENT_MHZ * 1000))
 	case $1 in
-	# performance's minimum, 1200 MHz, is the fastest speed at about the lowest voltage: holding it
-	# costs little and spares games slow speed-ups.
-	performance) echo 1200000 2000000 ;;
-	balanced) echo 408000 2000000 ;;
-	saver) echo 408000 1200000 ;;
+	# performance's minimum, the board's efficient speed, is the fastest at about the lowest
+	# voltage: holding it costs little and spares games slow speed-ups.
+	performance) echo $4 $3 ;;
+	balanced) echo $2 $3 ;;
+	saver) echo $2 $4 ;;
 	*) return 1 ;;
 	esac
 }
@@ -51,10 +60,10 @@ profile() {	# $1: name
 	set -- "$1" $r
 	rm -f $STATE/profile $STATE/cpu-min	# a failure part-way leaves no profile named
 	# The kernel refuses a minimum above the maximum, so the minimum is lowered first.
-	echo 408000 >$CPU/policy0/scaling_min_freq && echo $3 >$CPU/policy0/scaling_max_freq &&
+	echo $(cat $CPU/policy0/cpuinfo_min_freq) >$CPU/policy0/scaling_min_freq && echo $3 >$CPU/policy0/scaling_max_freq &&
 		echo $2 >$CPU/policy0/scaling_min_freq || fail "profile $1: the CPU refused its speed range"
-	echo $SAMPLING_US >$CPU/ondemand/sampling_rate ||
-		fail "profile $1: can't set the governor's sampling (governor $(cat $CPU/policy0/scaling_governor))"
+	[ "$(cat $CPU/policy0/scaling_governor)" != ondemand ] || echo $SAMPLING_US >$CPU/ondemand/sampling_rate ||
+		fail "profile $1: can't set the ondemand governor's sampling"
 	echo $1 >$STATE/profile
 	log "profile $1: $(cpu)"
 }
@@ -106,11 +115,13 @@ top_devices() {
 # of its regulator, usb1-vbus), and their clocks and the clock of the port's PHY (its USB signalling
 # circuit) with it.
 usb_top() {	# $1: on | off
+	[ -n "${BOARD_USB_TOP_EHCI:-}" ] || fail "usb-top: this board has no switchable USB port"
+	e=${BOARD_USB_TOP_EHCI%%:*} o=${BOARD_USB_TOP_OHCI%%:*}	# the drivers
 	case $1 in
-	on) driver sunxi-ehci $EHCI bind && driver sunxi-ohci $OHCI bind || fail "usb-top on failed" ;;
+	on) driver $e $EHCI bind && driver $o $OHCI bind || fail "usb-top on failed" ;;
 	off)
 		[ "$(top_devices)" = 0 ] || fail "usb-top off: a USB device is attached to the top port"
-		driver sunxi-ohci $OHCI unbind && driver sunxi-ehci $EHCI unbind || fail "usb-top off failed"
+		driver $o $OHCI unbind && driver $e $EHCI unbind || fail "usb-top off failed"
 		;;
 	*) usage ;;
 	esac
@@ -125,7 +136,8 @@ cpu() {
 status() {
 	echo "profile   $(cat $STATE/profile 2>/dev/null || echo "none applied since start-up")"
 	for c in /sys/class/thermal/cooling_device*; do
-		[ "$(cat $c/type 2>/dev/null)" = thermal-cpufreq-0 ] && cooling="$(cat $c/cur_state)/$(cat $c/max_state)"
+		# thermal-cpufreq-0 on the Brick's kernel, cpufreq-cpu0 on mainline
+		case "$(cat $c/type 2>/dev/null)" in thermal-cpufreq-0 | cpufreq-cpu0) cooling="$(cat $c/cur_state)/$(cat $c/max_state)" ;; esac
 	done
 	echo "cpu       $(cpu), thermal limit step ${cooling:-unknown} (0: not limited)"
 	echo "cpu-min   $(cat $STATE/cpu-min 2>/dev/null || echo default)"
@@ -134,13 +146,17 @@ status() {
 	g=$(cat $CPU/policy0/scaling_governor)
 	s=$(cat $CPU/$g/sampling_rate 2>/dev/null) && g="$g, sampling $((s / 1000)) ms"
 	echo "governor  $g"
-	r=$(cat /sys/kernel/debug/clk/gpu/clk_rate 2>/dev/null) && r="$((r / 1000000)) MHz" || r=unknown
+	# The GPU's speed: from its devfreq (mainline), else its clock (the Brick's).
+	r=$(cat /sys/class/devfreq/*.gpu/cur_freq 2>/dev/null || cat /sys/kernel/debug/clk/gpu/clk_rate 2>/dev/null) &&
+		r="$((r / 1000000)) MHz" || r=unknown
 	echo "gpu       $r"
-	for x in /sys/class/regulator/*; do [ "$(cat $x/name)" = usb1-vbus ] && v=$(cat $x/state); done
-	bound $EHCI && e=on || e=off
-	bound $OHCI && o=on || o=off
-	[ $e = $o ] && t=$e || t="ehci $e, ohci $o"
-	echo "usb-top   $t (5 V ${v:-unknown}, devices attached: $(top_devices))"
+	if [ -n "${BOARD_USB_TOP_EHCI:-}" ]; then
+		for x in /sys/class/regulator/*; do [ "$(cat $x/name)" = "$BOARD_USB_TOP_VBUS" ] && v=$(cat $x/state); done
+		bound $EHCI && e=on || e=off
+		bound $OHCI && o=on || o=off
+		[ $e = $o ] && t=$e || t="ehci $e, ohci $o"
+		echo "usb-top   $t (5 V ${v:-unknown}, devices attached: $(top_devices))"
+	fi
 	echo "battery   $(/usr/libexec/crystaline/battery-guard state)"
 }
 
