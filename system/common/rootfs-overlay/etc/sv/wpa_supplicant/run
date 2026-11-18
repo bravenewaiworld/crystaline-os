@@ -1,5 +1,5 @@
 #!/bin/sh
-# WiFi: loads the board's WiFi driver (BOARD_WIFI_MODULE) and runs wpa_supplicant with the saved networks in
+# WiFi: loads the board's WiFi driver (BOARD_WIFI_MODULE, if it names one) and runs wpa_supplicant with the saved networks in
 # /var/state/wifi/wpa_supplicant.conf (made at start-up by /usr/libexec/crystaline/state; networks
 # joined in Specular are saved there by wpa_supplicant itself). Down at start-up (the `down`
 # file): Specular brings WiFi up and down as its setting says, unloading the driver when off. By
@@ -8,5 +8,5 @@
 exec 2>&1
 umask 077	# the saved networks' passwords, when it saves them
 . /run/crystaline/board.env
-modprobe "$BOARD_WIFI_MODULE"
+[ -z "${BOARD_WIFI_MODULE:-}" ] || modprobe "$BOARD_WIFI_MODULE"
 exec wpa_supplicant -i wlan0 -D nl80211 -c /var/state/wifi/wpa_supplicant.conf
