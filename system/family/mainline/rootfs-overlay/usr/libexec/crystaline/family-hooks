@@ -9,17 +9,19 @@
 progress() { printf 'crystaline-progress %04x\n' $(($1)) >/dev/kmsg 2>/dev/null; }
 
 # start_hardware: rcS, before the data card is mounted: the balanced CPU profile (Specular applies its
-# own when it starts), Bluetooth's UART driver (hci_uart, which takes the controller the device tree
-# puts on a serial port and loads its firmware), and the GPU's driver (mdev loads only the
-# drivers of devices with a node in /dev, which the GPU has only once its driver is in). Mesa's
-# panfrost, or, when /system/state/gpu-driver says "mali" (crystaline-gpu), ARM's driver: its kernel
+# own when it starts), the modules the board names that nothing else loads (BOARD_MODULES, e.g.
+# hci_uart for Bluetooth on a serial port), and the GPU's driver (mdev loads only the drivers of
+# devices with a node in /dev, which the GPU has only once its driver is in). The open driver the
+# board names (BOARD_GPU_MODULE, e.g. panfrost), or, when /system/state/gpu-driver says "mali"
+# (crystaline-gpu) and the image has it, ARM's driver: its kernel
 # module (kept out of the module index, so nothing else loads it), its libraries over Mesa's, and
 # its Vulkan driver and window-system layer as the only ones the Vulkan loader sees. Bind mounts, so
-# nothing changes on disk. If ARM's kernel module doesn't load, Mesa's driver is used.
+# nothing changes on disk. If ARM's kernel module doesn't load, the open driver is used.
 start_hardware() {
 	crystaline-power profile balanced
-	modprobe hci_uart
-	if [ "$(cat /system/state/gpu-driver 2>/dev/null)" = mali ]; then
+	[ ! -e /run/crystaline/board.env ] || . /run/crystaline/board.env
+	for m in ${BOARD_MODULES:-}; do modprobe "$m"; done
+	if [ "$(cat /system/state/gpu-driver 2>/dev/null)" = mali ] && [ -e /usr/lib/crystaline/mali_kbase.ko ]; then
 		if insmod /usr/lib/crystaline/mali_kbase.ko; then
 			for l in /usr/lib/mali/lib*.so.*; do
 				[ -e "/usr/lib/${l##*/}" ] && mount --bind "$l" "/usr/lib/${l##*/}"
@@ -28,9 +30,9 @@ start_hardware() {
 			echo "GPU driver: mali (ARM's libmali)"
 			return
 		fi
-		echo "GPU driver: mali_kbase didn't load; using panfrost"
+		echo "GPU driver: mali_kbase didn't load; using ${BOARD_GPU_MODULE:-none}"
 	fi
-	modprobe panfrost && echo "GPU driver: panfrost (Mesa)"
+	[ -z "${BOARD_GPU_MODULE:-}" ] || { modprobe "$BOARD_GPU_MODULE" && echo "GPU driver: $BOARD_GPU_MODULE (Mesa)"; }
 }
 
 # rescue: the initramfs's start-up has failed for good; its message is already on screen. The last

@@ -16,6 +16,8 @@ include system/board/$(DEVICE)/board.mk
 MAKEOVERRIDES := $(filter-out DEVICE=%,$(MAKEOVERRIDES))
 B := $(ROOT)/build/$(FAMILY)
 FAMILY_BOARDS := $(shell tools/system/family-boards.sh $(FAMILY))
+# The SoCs of the family's boards (each board.mk's SOC; none in the Brick's).
+FAMILY_SOCS := $(sort $(foreach b,$(FAMILY_BOARDS),$(shell sed -n 's/^SOC := //p' system/board/$(b)/board.mk)))
 # Targets only the Brick family has so far: refused for other families, rather than built from the
 # Brick's inputs into the wrong folder.
 BRICK_ONLY := gpu userspace stock-fw deploy-specular run-specular debug-running-release \
@@ -151,8 +153,9 @@ $(BUILDROOT_SRC)/.done: $(BUILDROOT_PATCHES)
 	@touch $@
 
 # The configuration is regenerated every time from system/common/buildroot.config, then
-# system/family/$(FAMILY)/buildroot.config, then each board's of the family, if it has one (e.g.
-# its chips' firmware from linux-firmware), so those files are the only place to change it. The
+# system/family/$(FAMILY)/buildroot.config, then each SoC's and each board's of the family, if it
+# has one (e.g. the SoC's GPU blob, the board's chips' firmware from linux-firmware), so those
+# files are the only place to change it. The
 # root filesystem's overlays are added to it: common, the family's, and every board's of the
 # family (each board's names are picked at start-up, so all must be there).
 BR_OVERLAYS := $(foreach l,common family/$(FAMILY) $(addprefix board/,$(FAMILY_BOARDS)),$$(BR2_EXTERNAL_CRYSTALINE_PATH)/$(l)/rootfs-overlay)
@@ -161,7 +164,8 @@ BR_OVERLAYS := $(foreach l,common family/$(FAMILY) $(addprefix board/,$(FAMILY_B
 buildroot: $(BUILDROOT_SRC)/.done
 	@mkdir -p $(B)
 	cat system/common/buildroot.config system/family/$(FAMILY)/buildroot.config \
-		$(wildcard $(foreach b,$(FAMILY_BOARDS),system/board/$(b)/buildroot.config)) >$(B)/buildroot.defconfig
+		$(wildcard $(foreach s,$(FAMILY_SOCS),system/soc/$(s)/buildroot.config) \
+			$(foreach b,$(FAMILY_BOARDS),system/board/$(b)/buildroot.config)) >$(B)/buildroot.defconfig
 	echo 'BR2_ROOTFS_OVERLAY="$(BR_OVERLAYS)"' >>$(B)/buildroot.defconfig
 	$(BR) -s BR2_DEFCONFIG=$(B)/buildroot.defconfig defconfig
 	$(BR)

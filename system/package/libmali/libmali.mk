@@ -4,10 +4,10 @@
 #
 ################################################################################
 
-# Rockchip's builds, from the mirror (and commit) ROCKNIX uses for the RK3566. Only the one library
-# is downloaded.
+# Rockchip's builds, from the mirror (and commit) ROCKNIX uses. Only the SoC's library
+# (BR2_PACKAGE_LIBMALI_LIB) is downloaded; its hash is in libmali.hash.
 LIBMALI_VERSION = 4233031d818e97a19e8a9cdbbd5c15795ededd93
-LIBMALI_LIB = libmali-bifrost-g52-g29p1.so
+LIBMALI_LIB = $(call qstrip,$(BR2_PACKAGE_LIBMALI_LIB))
 LIBMALI_SITE = https://github.com/JeffyCN/mirrors/raw/$(LIBMALI_VERSION)/lib/aarch64-linux-gnu
 LIBMALI_SOURCE = $(LIBMALI_LIB)
 LIBMALI_LICENSE = ARM Mali EULA (closed)
