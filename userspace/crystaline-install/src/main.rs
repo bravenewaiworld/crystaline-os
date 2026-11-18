@@ -182,7 +182,8 @@ impl Paths {
         let (slot, keys, power) = (given("--slot"), given("--keys"), given("--power-supply"));
         let path = |p: Option<String>, default: &str| PathBuf::from(p.unwrap_or_else(|| default.into()));
         let internal_controller = controller("BOARD_INTERNAL_CONTROLLER");
-        let has_internal = target.is_some() || internal_controller.is_some();
+        let target_given = target.is_some();
+        let has_internal = target_given || internal_controller.is_some();
         let internal = match (target, internal_controller) {
             (Some(t), _) => Ok(PathBuf::from(t)),
             (None, None) => fail("this device has no internal storage", ""),
@@ -216,6 +217,10 @@ impl Paths {
         let family = report::read_json(&system.join("images").join(&version).join("manifest.json"), "the running version's manifest")
             .map(|m| family(&m).to_string())
             .map_err(|e| report::Failure { hint: format!("The system is damaged. {}", report::REWRITE_CARD), ..e })?;
+        // Installing onto internal storage is the Brick's procedure (install.rs: TrimUI's eMMC
+        // layout), so the other families have none for now, whatever the board names.
+        let (internal, has_internal) = if family == "brick" || target_given { (internal, has_internal) }
+            else { (fail("this device has no internal storage", ""), false) };
         Ok(Self { internal, has_internal, card, running, system, data: path(data, "/mnt/SDCARD"), version, slot,
                   keys: path(keys, "/etc/crystaline/update-keys"), power: path(power, "/sys/class/power_supply"), family })
     }
