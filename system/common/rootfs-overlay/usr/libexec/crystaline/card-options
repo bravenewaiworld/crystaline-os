@@ -1,5 +1,5 @@
-# Sourced by mount-card and by the initramfs's init (its recovery menu), so that both mount the SD
-# card's data partition the same way.
+# Sourced by mount-card and by the initramfs's init (its recovery menu), so that both find and mount
+# the SD card's data partition the same way.
 # card_options TYPE GID: mount options for a data partition of TYPE (vfat or exfat) whose files are
 # to belong to group GID (www-data's).
 # Not "sync" (TrimUI's choice), which writes everything through at once: about 10x slower uploads
@@ -21,4 +21,15 @@ card_options() {
 	vfat)	echo rw,noatime,flush,iocharset=iso8859-1,utf8,errors=remount-ro,$owner ;;
 	exfat)	echo rw,noatime,iocharset=utf8,errors=remount-ro,sys_tz,$owner ;;
 	esac
+}
+
+# system_partition UEVENT: whether the partition whose sysfs uevent file is UEVENT is one of our
+# cards' system partitions, by its GPT name (the Brick's layout, tools/sdboot/build_sd_image.sh, and
+# the mainline family's, tools/mainline/build-card.sh): never a data partition, even when it holds
+# a FAT filesystem, as the boot slots' images do.
+system_partition() {
+	case $(sed -n 's/^PARTNAME=//p' "$1" 2>/dev/null) in
+	bootloader | env | env-redund | boot_a | boot_b | pstore | system) return 0 ;;
+	esac
+	return 1
 }

@@ -75,10 +75,11 @@ card_disk() {
 
 # on_card: whether the system being started is on the SD card: whether $disk, the disk holding the
 # system partition, is the card's. Before that is found, a guess: whether the card in the slot has
-# a bootloader partition (it is one of ours, and the device starts from the card when it can).
+# a partition named "system" (it is one of ours, in either family's layout, and the device starts
+# from the card when it can).
 on_card() {
 	c=$(card_disk) || return 1
-	if [ -n "$disk" ]; then [ "$disk" = "$c" ]; else grep -qs '^PARTNAME=bootloader$' /sys/block/$c/${c}p*/uevent; fi
+	if [ -n "$disk" ]; then [ "$disk" = "$c" ]; else grep -qs '^PARTNAME=system$' /sys/block/$c/${c}p*/uevent; fi
 }
 
 # fail TITLE [DETAIL]: report why the system can't start, then wait for good (the watchdog daemon
@@ -122,14 +123,16 @@ finish() {
 	$1 -f
 }
 
-# card_options: the SD card's mount options, shared with mount-card. (A missing file would end this
-# script, the kernel's first program, if sourced unchecked.)
+# card_options, system_partition: the SD card's mount options and our partitions, shared with
+# mount-card. (A missing file would end this script, the kernel's first program, if sourced
+# unchecked.)
 [ ! -f /usr/libexec/crystaline/card-options ] || . /usr/libexec/crystaline/card-options
 
 # mount_card: mount the SD card's data partition at /card, as the system's
 # /usr/libexec/crystaline/mount-card does (but never making or formatting one, which stays its job): on
 # the disk on the SD card's controller, the partition named "sdcard", else the first FAT32 or
-# exFAT one other than "bootloader". Without one, prints why (shown as a note) and fails.
+# exFAT one other than our system partitions (system_partition). Without one, prints why (shown as
+# a note) and fails.
 mount_card() {
 	grep -q ' /card ' /proc/mounts && return
 	c=$(card_disk) || { echo "No SD card"; return 1; }
@@ -137,7 +140,7 @@ mount_card() {
 	for p in $(grep -l '^PARTNAME=sdcard$' /sys/block/$c/${c}p*/uevent 2>/dev/null |
 		sed 's|.*/\(.*\)/uevent|\1|') $(ls /sys/block/$c | sed -n "s/^${c}p//p" | sort -n |
 		sed "s/^/${c}p/") $c; do
-		grep -q '^PARTNAME=bootloader$' /sys/block/$c/$p/uevent 2>/dev/null && continue
+		system_partition /sys/block/$c/$p/uevent && continue
 		for t in vfat exfat; do
 			mount -t $t -o $(card_options $t $(cat /etc/crystaline/www-data-gid)) /dev/$p /card \
 				2>/dev/null && { log "data partition $p ($t) mounted at /card"; return; }

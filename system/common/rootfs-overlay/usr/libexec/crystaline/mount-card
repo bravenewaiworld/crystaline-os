@@ -164,7 +164,7 @@ named() {
 
 # data_partition: prints the card's data partition: the one named "sdcard" (our cards); on the card
 # holding /system, one made over the rest of the card; else the lowest-numbered FAT or exFAT
-# partition other than our boot pictures' ("bootloader"), or the whole card when it has no
+# partition other than our system partitions (system_partition), or the whole card when it has no
 # partitions. Formatting happens only on the card holding /system, and only to an "sdcard"
 # partition with no filesystem (one this script added). Returns 1 if there is none, 2 if making it
 # failed, 3 if the card has too little room left for it. On the games card: any_partition only.
@@ -187,14 +187,14 @@ data_partition() {
 	any_partition
 }
 
-# any_partition: prints the lowest-numbered FAT or exFAT partition other than the one named
-# "bootloader" (a Crystaline OS card's boot files), or the whole card when it has no partitions;
-# returns 1 if there is none.
+# any_partition: prints the lowest-numbered FAT or exFAT partition other than a Crystaline OS card's
+# system partitions (system_partition: its boot files and slots), or the whole card when it has no
+# partitions; returns 1 if there is none.
 any_partition() {
 	parts=$(ls $R/sys/block/$disk | sed -n "s/^${disk}p//p" | sort -n)
 	[ -n "$parts" ] || { usable $disk && echo $disk; return; }
 	for n in $parts; do
-		grep -q '^PARTNAME=bootloader$' $R/sys/block/$disk/${disk}p$n/uevent && continue
+		system_partition $R/sys/block/$disk/${disk}p$n/uevent && continue
 		usable ${disk}p$n && { echo ${disk}p$n; return; }
 	done
 	return 1
