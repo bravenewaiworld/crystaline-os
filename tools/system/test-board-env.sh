@@ -35,7 +35,7 @@ for f in "$ROOT"/system/board/*/rootfs-overlay/usr/share/crystaline/boards/*.env
 	(
 		set +u
 		. "$f"
-		for v in BOARD_COMPATIBLE BOARD_NAME BOARD_CARD_CONTROLLER BOARD_CARD_LABEL BOARD_BATTERY; do
+		for v in BOARD_COMPATIBLE BOARD_NAME BOARD_CARD_CONTROLLER BOARD_CARD_LABEL BOARD_BATTERY BOARD_WIFI_MODULE; do
 			[ -n "${!v}" ] || echo "FAIL: ${f#$ROOT/}: $v is empty"
 		done
 		[ ${#BOARD_CARD_LABEL} -le 11 ] || echo "FAIL: ${f#$ROOT/}: BOARD_CARD_LABEL is over 11 characters"

@@ -1,11 +1,12 @@
 #!/bin/sh
-# WiFi: loads the XR829 driver and runs wpa_supplicant with the saved networks in
+# WiFi: loads the board's WiFi driver (BOARD_WIFI_MODULE) and runs wpa_supplicant with the saved networks in
 # /var/state/wifi/wpa_supplicant.conf (made at start-up by /usr/libexec/crystaline/state; networks
 # joined in Specular are saved there by wpa_supplicant itself). Down at start-up (the `down`
 # file): Specular brings WiFi up and down as its setting says, unloading the driver when off. By
 # hand: sv up wpa_supplicant wifi-dhcp.
-# The XR829 is 2.4 GHz only. Started before the driver has made wlan0, it exits and is retried.
+# Started before the driver has made wlan0, it exits and is retried.
 exec 2>&1
 umask 077	# the saved networks' passwords, when it saves them
-modprobe xr829_wlan
+. /run/crystaline/board.env
+modprobe "$BOARD_WIFI_MODULE"
 exec wpa_supplicant -i wlan0 -D nl80211 -c /var/state/wifi/wpa_supplicant.conf

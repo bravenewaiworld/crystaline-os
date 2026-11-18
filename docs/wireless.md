@@ -29,7 +29,7 @@ power: BLDO1 3.3 V (main), ALDO3 3.3 V (I/O); WiFi enable PL5; Bluetooth reset P
 Services (runit, `/etc/sv`):
 
 ```
-wpa_supplicant  modprobe xr829_wlan; wpa_supplicant -i wlan0 -D nl80211 -c /var/state/wifi/wpa_supplicant.conf   down at start-up
+wpa_supplicant  modprobe $BOARD_WIFI_MODULE (xr829_wlan); wpa_supplicant -i wlan0 -D nl80211 -c /var/state/wifi/wpa_supplicant.conf   down at start-up
 wifi-dhcp       udhcpc -f -i wlan0, once wpa_supplicant runs                                                     down at start-up
 xr829-attach    xr829-attach                   Bluetooth: power, firmware upload, address, attach as hci0
 bluetoothd      BlueZ, once D-Bus runs
