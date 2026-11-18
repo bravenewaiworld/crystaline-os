@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copy the debugging tools a release image leaves out (system/board/brick/debug-tools.list) to a
+# Copy the debugging tools a release image leaves out (system/common/debug-tools.list) to a
 # Brick running a release image, over SSH, into /run/debug (in memory), so they are gone at the
 # next restart and nothing on the device's storage changes. They come from where build-system.sh
 # takes them (this checkout's Buildroot build, and our device tools) and use the device's C library
@@ -7,43 +7,43 @@
 # it (ld.so --list): it names any library or symbol version the device lacks, and then all of
 # /run/debug is removed again.
 # Logs in with the checkout's key, which only development images accept, and otherwise with the
-# user's own key, the only kind a release image accepts (imported on the device with brick-ssh):
+# user's own key, the only kind a release image accepts (imported on the device with crystaline-ssh):
 # SSH_KEY=<private key file> (then the checkout's isn't tried), or else the keys ssh offers by
-# default (agent, ~/.ssh/id_*). BRICK: as in ssh.sh.
+# default (agent, ~/.ssh/id_*). ADDR: as in ssh.sh.
 # Usage: [SSH_KEY=<key>] debug-running-release.sh
 set -eu
 . "$(dirname "$0")/ssh.sh"
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-T=$ROOT/build/buildroot/target
-READELF=$ROOT/build/buildroot/host/bin/aarch64-buildroot-linux-gnu-readelf
+T=$ROOT/build/brick/buildroot/target
+READELF=$ROOT/build/brick/buildroot/host/bin/aarch64-buildroot-linux-gnu-readelf
 D=/run/debug
 
-if [ -n "${SSH_KEY:-}" ] || ! on_brick true 2>/dev/null; then
+if [ -n "${SSH_KEY:-}" ] || ! on_device true 2>/dev/null; then
 	SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=5${SSH_KEY:+ -i $SSH_KEY -o IdentitiesOnly=yes}"
-	on_brick true || {
+	on_device true || {
 		cat >&2 <<EOF
-can't log in to root@$BRICK over SSH (ssh's message above; BRICK=<address> for another address).
+can't log in to root@$ADDR over SSH (ssh's message above; ADDR=<address> for another address).
 On a release image, SSH is off until it is switched on on the device, with your own key:
   1. put your public key in authorized_keys at the root of the SD card's data partition;
-  2. on the device, run brick-ssh import, then brick-ssh on (Specular's developer settings will;
+  2. on the device, run crystaline-ssh import, then crystaline-ssh on (Specular's developer settings will;
      until they do, a release image can't be reached over SSH);
   3. give your private key here with SSH_KEY=<file>, unless ssh offers it by itself.
 Release images make host keys of their own: if ssh says the host key has changed (the address
-was a development image's), remove the old one with ssh-keygen -R $BRICK.
+was a development image's), remove the old one with ssh-keygen -R $ADDR.
 EOF
 		exit 1
 	}
 fi
-# brick-ssh prints image=release on a release image; systems from before it are all development ones.
-if [ "$(on_brick 'brick-ssh 2>/dev/null' | sed -n 's/^image=//p')" != release ]; then
-	echo "$BRICK runs a development image, which has the debugging tools already"
+# crystaline-ssh prints image=release on a release image; systems from before it are all development ones.
+if [ "$(on_device 'crystaline-ssh 2>/dev/null' | sed -n 's/^image=//p')" != release ]; then
+	echo "$ADDR runs a development image, which has the debugging tools already"
 	exit 0
 fi
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 # Our device tools, laid out as build-system.sh installs them.
 mkdir -p "$TMP/ours/usr/bin"
-cp "$ROOT"/build/tools/* "$ROOT/tools/device/powertest" "$TMP/ours/usr/bin/"
+cp "$ROOT"/build/brick/tools/* "$ROOT/tools/device/powertest" "$TMP/ours/usr/bin/"
 # match DIR PATTERN: the paths under DIR that PATTERN matches.
 match() { (cd "$1" && for f in $2; do if [ -e "$f" ]; then echo "$f"; fi; done); }
 # tar_args: "-C <source> <its files>" for each line of the list; checks: the loader's check of
@@ -51,7 +51,7 @@ match() { (cd "$1" && for f in $2; do if [ -e "$f" ]; then echo "$f"; fi; done);
 # loader fails or misses a library or symbol version ("not found").
 tar_args= checks=
 CHECK='check() { out=$("$@" 2>&1) && ! echo "$out" | grep -q "not found" || { echo "$out"; exit 1; }; }'
-grep -v -e '^#' -e '^$' "$ROOT/system/board/brick/debug-tools.list" >"$TMP/list"
+grep -v -e '^#' -e '^$' "$ROOT/system/common/debug-tools.list" >"$TMP/list"
 while read -r p; do
 	f=
 	for src in "$T" "$TMP/ours"; do
@@ -67,20 +67,20 @@ while read -r p; do
 done <"$TMP/list"
 [ -n "$checks" ] || { echo "no programs in debug-tools.list (does $READELF run?)" >&2; exit 1; }
 tar --owner=0 --group=0 -cf - $tar_args |
-	on_brick "rm -rf $D && mkdir -p $D && tar -xf - -C $D &&
+	on_device "rm -rf $D && mkdir -p $D && tar -xf - -C $D &&
 		echo 'export PATH=$D/usr/bin:\$PATH LD_LIBRARY_PATH=$D/usr/lib' >$D/env"
-if ! on_brick "export LD_LIBRARY_PATH=$D/usr/lib; $CHECK; $checks"; then
-	on_brick "rm -rf $D"
+if ! on_device "export LD_LIBRARY_PATH=$D/usr/lib; $CHECK; $checks"; then
+	on_device "rm -rf $D"
 	cat >&2 <<EOF
-This checkout's debugging tools don't suit $BRICK's system (the loader's message above), so they
-are removed again. Check out the commit its version ends with ($(on_brick cat /etc/brick-version),
+This checkout's debugging tools don't suit $ADDR's system (the loader's message above), so they
+are removed again. Check out the commit its version ends with ($(on_device cat /etc/crystaline-version),
 <date>-<time>-<commit>[-dirty]), and try again.
 EOF
 	exit 1
 fi
 cat <<EOF
-The debugging tools are in $D on $BRICK until it restarts. In an SSH session there:
+The debugging tools are in $D on $ADDR until it restarts. In an SSH session there:
   . $D/env    puts them on PATH, and their libraries where the loader looks
 then use them as in DEVELOPMENT.md ("Debugging programs", "On-device tools"). Unlike the tools,
-SSH stays on across restarts until it is switched off on the device (brick-ssh off).
+SSH stays on across restarts until it is switched off on the device (crystaline-ssh off).
 EOF

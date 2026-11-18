@@ -8,7 +8,7 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=${1:?usage: pc-busybox.sh OUT_DIR}
-SRC=$(ls -d "$ROOT"/build/buildroot/build/busybox-[0-9]*/ 2>/dev/null | tail -1 || true)	# ls fails when nothing matches
+SRC=$(ls -d "$ROOT"/build/brick/buildroot/build/busybox-[0-9]*/ 2>/dev/null | tail -1 || true)	# ls fails when nothing matches
 [ -n "$SRC" ] && [ -f "$SRC/.config" ] ||
 	{ echo "pc-busybox: Buildroot hasn't built BusyBox yet (make buildroot)" >&2; exit 0; }
 

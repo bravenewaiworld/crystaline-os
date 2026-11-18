@@ -1,5 +1,5 @@
 """Show which U-Boot settings TrimUI's U-Boot will use on a disk (an image file or a device such
-as /dev/mmcblk0), read independently of brick-install: for tests, and to look at a card or a dump.
+as /dev/mmcblk0), read independently of crystaline-install: for tests, and to look at a card or a dump.
 
 Usage: uboot-env.py DISK [KEY]
 Finds the env and env-redund partitions by GPT name and prints each copy's state ("env: crc ok

@@ -19,11 +19,11 @@ How the Brick gets from power-on to our system: Allwinner's boot ROM, TrimUI's f
 - **Start-up progress is written to the clock chip's spare register 7** (2026-10-10 for kernel debugging, 2026-10-14 for start-up). It survives resets and power-off, and stock doesn't use it.
 - **The start-up log is copied every second to the FAT "bootloader" partition** of the disk the system is on (2026-10-14), so a PC can read it, and a start that ends in a reset still leaves it.
 - **A failed start shows its reason on screen and waits** (2026-10-14), using the `status` program from the initramfs; the watchdog daemon keeps the device from resetting. Once the system partition is mounted, the screen is the recovery menu (2026-10-18).
-- **The initramfs has a recovery menu: hold MENU while turning the device on** (2026-10-18). It starts the previous version, installs an update file from the SD card, or powers off, so a version that won't start can be left without a PC. It draws with `status`, which reads the buttons' input device, "brick-keys" ([input.md](input.md)), itself, since padbridge doesn't run there. Its actions are `brick-install`'s, the same code Specular's Settings and SSH use. Rejected: a recovery system of its own (one more partition and image to keep up to date, when the other boot slot already holds a working version).
+- **The initramfs has a recovery menu: hold MENU while turning the device on** (2026-10-18). It starts the previous version, installs an update file from the SD card, or powers off, so a version that won't start can be left without a PC. It draws with `status`, which reads the buttons' input device, "brick-keys" ([input.md](input.md)), itself, since padbridge doesn't run there. Its actions are `crystaline-install`'s, the same code Specular's Settings and SSH use. Rejected: a recovery system of its own (one more partition and image to keep up to date, when the other boot slot already holds a working version).
 - **No framebuffer console** (2026-10-10): it hangs the display driver's take-over of U-Boot's logo.
 - **Serial console at warnings only** (2026-10-12). At 115200 baud each line holds a CPU and the console lock for about 5 ms, and the GPU's display module takes that lock on every flip. Rejected: TrimUI's `loglevel=8`.
 - **Our boot logo replaces TrimUI's inside the bootloader partition's FAT image** (2026-10-14), by overwriting the stock `bootlogo.bmp` bytes in place (same size: 396×66, 24-bit), so no FAT tools or root rights are needed.
-- **The boot logo is the Crystaline OS wordmark: three hexagons beside "CRYSTALINE", in Specular's look** (2026-10-18): Geist SemiBold, letter-spaced, Specular's teal and coral accents on black. It is drawn by `system/board/brick/logo/make-logo.py`, and the resulting `bootlogo.bmp` is committed, so building needs no font or image library. Rejected: TrimUI's logo redrawn (it shows TrimUI's name on our system).
+- **The boot logo is the Crystaline OS wordmark: three hexagons beside "CRYSTALINE", in Specular's look** (2026-10-18): Geist SemiBold, letter-spaced, Specular's teal and coral accents on black. It is drawn by `system/family/brick/logo/make-logo.py`, and the resulting `bootlogo.bmp` is committed, so building needs no font or image library. Rejected: TrimUI's logo redrawn (it shows TrimUI's name on our system).
 - **No FEL (USB recovery) mode** (2026-10-18). The boot ROM tries the SD card first, so any of our cards recovers a device. Rejected for now: finding the board's FEL pads or using `fel-sdboot.sunxi` (only needed if starting from the SD card stops being enough).
 - **Kernel crash records (pstore) go to a 1 MiB `pstore` partition on the disk the system starts from** (2026-10-18), on both the SD card image and the installed eMMC layout. U-Boot's settings name it as `pstore_blk.blkdev=PARTUUID=<its GPT UUID>`, so it is found on whichever disk holds it. At a panic our writer drives that card's own controller by polling its registers (no interrupts, DMA or locks); rcS copies the records to `/system/logs/` on the next start. A panic stops the CPUs (`PANIC_TIMEOUT=0`) and the watchdog resets the device within 16 s. Rejected: pstore/blk's `best_effort` mode (it writes nothing at a panic, because its normal write refuses with interrupts off, and it registers at `late_initcall`, possibly before the SD card is found).
 
@@ -44,10 +44,10 @@ boot ROM ─ SD card first, then eMMC; boot0 at sector 16, copy at 256
 ### Device-tree edits
 
 ```
-build: tools/kmake.sh → tools/system/dt-edits.sh build/stock-fw/boot_package.fex <kernel build>/dt-edits.c
+build: tools/kmake.sh → tools/system/dt-edits.sh build/brick/stock-fw/boot_package.fex <kernel build>/dt-edits.c
          runs dt-tweaks.sh on TrimUI's DTB with fdtput/fdtget replaced by dt-edits-record, which runs
          the real tool and logs each step with the bytes it left in the tree (and TrimUI's value
-         before a set); the log becomes the table (CONFIG_OF_EDITS_TABLE, linux/drivers/of/fdt_edits.h)
+         before a set); the log becomes the table (CONFIG_OF_EDITS_TABLE, linux-brick/drivers/of/fdt_edits.h)
 boot:  unflatten_device_tree() → copy U-Boot's tree with 64 KiB to spare → apply the table in order
          set      already ours: in place · TrimUI's: applied · something else: replaced (logged),
                   or kept (logged) when marked KEEP_UBOOT_VALUE
@@ -76,7 +76,7 @@ boot:  unflatten_device_tree() → copy U-Boot's tree with 64 KiB to spare → a
 16           boot0                      (byte 8 KiB: where the boot ROM looks first)
 256          boot0 copy                 (byte 128 KiB: if the first is bad)
 32800        boot package               (fixed in boot0 and U-Boot; at most 8160 sectors)
-40960        bootloader  24 MiB  FAT    boot logo, battery pictures; brick-log/
+40960        bootloader  24 MiB  FAT    boot logo, battery pictures; crystaline-log/
 90112        env          1 MiB         U-Boot settings
 98304        env-redund   1 MiB         the other copy, in its own 4 MiB unit (from 48 MiB)
 100352       boot_a      32 MiB         boot.img of the version written to the card
@@ -100,11 +100,11 @@ setargs_mmc=<TrimUI's> brick.boot=${boot_partition}
 -root_partition -blkoops_partition              removed (U-Boot would set blkoops_blkdev from the latter)
 ```
 
-Written twice, in `env` and `env-redund`, in U-Boot's redundant format: CRC-32 of bytes 5…0x20000 at 0, a flags byte at 4, then `key=value` strings separated by NULs. U-Boot uses one copy: never one whose CRC is bad; of two good ones, the one with the higher flags byte, except that 0 beats 255 (each save adds 1, so it wraps); with equal flags, `env`. Neither good: its built-in settings, which name a `boot` partition our layouts don't have, so the disk doesn't start. `brick-install` changes them in an order that keeps one copy valid at every moment ([install-and-update.md](install-and-update.md)); `tools/sdboot/uboot-env.py <image or device>` shows which copy U-Boot will use and what it holds. The kernel command line is U-Boot's `bootargs` (built from these settings: `root=${mmc_root}`, `rdinit=/rdinit`, `loglevel=8`, `cma=64M`, …), then U-Boot's additions (`partitions=`, `androidboot.serialno=`, `lcd=`, …), then the boot image's command line last, so ours wins for repeated keys.
+Written twice, in `env` and `env-redund`, in U-Boot's redundant format: CRC-32 of bytes 5…0x20000 at 0, a flags byte at 4, then `key=value` strings separated by NULs. U-Boot uses one copy: never one whose CRC is bad; of two good ones, the one with the higher flags byte, except that 0 beats 255 (each save adds 1, so it wraps); with equal flags, `env`. Neither good: its built-in settings, which name a `boot` partition our layouts don't have, so the disk doesn't start. `crystaline-install` changes them in an order that keeps one copy valid at every moment ([install-and-update.md](install-and-update.md)); `tools/sdboot/uboot-env.py <image or device>` shows which copy U-Boot will use and what it holds. The kernel command line is U-Boot's `bootargs` (built from these settings: `root=${mmc_root}`, `rdinit=/rdinit`, `loglevel=8`, `cma=64M`, …), then U-Boot's additions (`partitions=`, `androidboot.serialno=`, `lcd=`, …), then the boot image's command line last, so ours wins for repeated keys.
 
 ### Initramfs
 
-`/init` does, in order: mount `/proc`, `/sys`, `/dev`; start the watchdog daemon; note whether MENU is held (`status --held MENU`) and log the boot slot from `brick.boot=`; find the system partition by UUID (retrying 5 s); start copying its log, `dmesg` and `ps` to `brick-log/` on the bootloader partition every second; run `e2fsck -p` (exit 2: reboot; 4 or more: fail; past 2 s a message says the storage is being checked after a power-off); mount the system partition; show the recovery menu if MENU was held; loop-mount `images/<version>/rootfs.squashfs`; put a developer layer over it if `overlay/<version>/` exists ([system-image.md](system-image.md)); save the log to `/system/logs/init.log`; move `/system`, `/dev`, `/proc`, `/sys` and `switch_root`. It holds only BusyBox, `e2fsck`, `status`, `brick-install`, their libraries, the update keys (`/etc/brick/update-keys/`, as in the system) and the SD card's mount options.
+`/init` does, in order: mount `/proc`, `/sys`, `/dev`; start the watchdog daemon; note whether MENU is held (`status --held MENU`) and log the boot slot from `brick.boot=`; find the system partition by UUID (retrying 5 s); start copying its log, `dmesg` and `ps` to `crystaline-log/` on the bootloader partition every second; run `e2fsck -p` (exit 2: reboot; 4 or more: fail; past 2 s a message says the storage is being checked after a power-off); mount the system partition; show the recovery menu if MENU was held; loop-mount `images/<version>/rootfs.squashfs`; put a developer layer over it if `overlay/<version>/` exists ([system-image.md](system-image.md)); save the log to `/system/logs/init.log`; move `/system`, `/dev`, `/proc`, `/sys` and `switch_root`. It holds only BusyBox, `e2fsck`, `status`, `crystaline-install`, their libraries, the update keys (`/etc/crystaline/update-keys/`, as in the system) and the SD card's mount options.
 
 ### Recovery menu
 
@@ -114,7 +114,7 @@ Version <running> (boot_b)
 Couldn't start: <reason>                   (after a failed start)
 No SD card | The SD card has no FAT32 or exFAT partition | No update files in updates/ on the SD card
 > Continue starting                        (only when nothing failed)
-  Start the previous version <P>           (brick-install slots names a "previous" slot)
+  Start the previous version <P>           (crystaline-install slots names a "previous" slot)
   Install an update from the SD card       → updates/*.update, newest first by name, 10 at most
   Power off
 Turns off after 10 minutes without a button press
@@ -122,9 +122,9 @@ D-pad: choose   A: select   B: check the SD card again   (shows this menu again;
 ```
 
 - **When:** MENU held at power-on, or any failure after the system partition is mounted (`fail()`). MENU is checked once, right after the watchdog starts, so it must be down then; "Opening the recovery menu..." confirms it at once, and the menu follows once the system partition is checked and mounted. An earlier failure shows only its message.
-- **SD card:** its data partition is mounted at `/card` with the options `mount-card` uses, from the file both read (`/usr/libexec/brick/card-options`; www-data's group number is written into the initramfs at build time, since it has no user database): the partition named `sdcard`, otherwise the first one other than `bootloader` that mounts as FAT32 or exFAT, otherwise the whole card (one formatted without partitions). Nothing is made or formatted. It is unmounted again before "Continue starting", since the system mounts it itself.
-- **Actions** run `brick-install update <file>` or `activate <P>` with `--system /system --data /card --status /brick-install.status`, piped into `status --task`, which draws its progress and waits for A. Once A is pressed after DONE the device restarts; after FAIL (e.g. a low battery) the menu returns.
-- **Logs:** the menu's log lines (the card's partition, `brick-install slots`, each choice) and the actions' output go to the start-up log (and so to `brick-log/`) and to `/system/logs/recovery-<time>.log` (the newest 10 are kept), which starts with the start-up log so far. brick-install's own log goes to `logs/` on the card; with no card it is lost (it goes to memory), but its output is still in the recovery log.
+- **SD card:** its data partition is mounted at `/card` with the options `mount-card` uses, from the file both read (`/usr/libexec/crystaline/card-options`; www-data's group number is written into the initramfs at build time, since it has no user database): the partition named `sdcard`, otherwise the first one other than `bootloader` that mounts as FAT32 or exFAT, otherwise the whole card (one formatted without partitions). Nothing is made or formatted. It is unmounted again before "Continue starting", since the system mounts it itself.
+- **Actions** run `crystaline-install update <file>` or `activate <P>` with `--system /system --data /card --status /crystaline-install.status`, piped into `status --task`, which draws its progress and waits for A. Once A is pressed after DONE the device restarts; after FAIL (e.g. a low battery) the menu returns.
+- **Logs:** the menu's log lines (the card's partition, `crystaline-install slots`, each choice) and the actions' output go to the start-up log (and so to `crystaline-log/`) and to `/system/logs/recovery-<time>.log` (the newest 10 are kept), which starts with the start-up log so far. crystaline-install's own log goes to `logs/` on the card; with no card it is lost (it goes to memory), but its output is still in the recovery log.
 - **Idle:** 10 minutes without a press on a menu or on an action's result powers the device off (`poweroff -f`). The watchdog daemon runs throughout.
 
 ### Progress codes

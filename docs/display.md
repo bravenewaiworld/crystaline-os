@@ -73,7 +73,7 @@ ioctl(fb, FBIO_WAITFORVSYNC, &(__u32){0});
 
 ### Planned: vblank gating and refresh rate
 
-Not built yet: waits on the experiments in Open questions. Paths are under `linux/drivers/video/fbdev/sunxi/disp2/disp/`.
+Not built yet: waits on the experiments in Open questions. Paths are under `linux-brick/drivers/video/fbdev/sunxi/disp2/disp/`.
 
 **Vblank gating.** A new `de/disp_vblank_gate.c` owns the DSI vblank enable bit, so the rest of the driver only reports "I need the next vblank":
 

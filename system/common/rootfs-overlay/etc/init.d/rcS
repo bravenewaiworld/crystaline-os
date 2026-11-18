@@ -1,0 +1,58 @@
+#!/bin/sh
+# System start-up, run once by init before the services (see /etc/inittab). The initramfs has
+# already mounted the system partition at /system (images, state, logs) and moved /dev, /proc
+# and /sys here.
+# All output of this start-up goes to /system/logs/rcS.log (replaced each boot). The system log
+# isn't running yet, so scripts run from here report on stderr (logger -s).
+exec >/system/logs/rcS.log 2>&1
+# The family's start-up hooks: progress (codes: see the initramfs's init), start_hardware.
+. /usr/libexec/crystaline/family-hooks
+progress 0x10
+mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
+# The board's names, for the scripts that differ by board (see board-env). Without them those
+# scripts fail, but the services, SSH included, still start.
+mkdir -p /run/crystaline
+if b=$(/usr/libexec/crystaline/board-env); then
+	cp "$b" /run/crystaline/board.env && echo "board: $b"
+fi
+mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /tmp
+mkdir -p /dev/pts /dev/shm
+mount -t devpts devpts /dev/pts
+mount -t tmpfs -o nosuid,nodev tmpfs /dev/shm
+hostname -F /etc/hostname
+# Loopback: the kernel leaves it down, and local services rely on 127.0.0.1 (Specular checks the
+# file transfer server is up by connecting to it).
+ip link set lo up
+# How the last run ended (/run/crystaline/last-shutdown, for Specular), and this run marked as running.
+/usr/libexec/crystaline/last-shutdown start
+
+# Devices that appear from now on (USB drives, network interfaces) get their nodes from mdev.
+echo /sbin/mdev >/proc/sys/kernel/hotplug
+mdev -s
+
+start_hardware
+
+# The kernel's time zone offset, before the card is mounted: the FAT driver converts file times
+# with it (see crystaline-timezone).
+crystaline-timezone kernel
+# The data card: mounted now, and kept matching the card in the slot from here on (mdev.conf).
+/usr/libexec/crystaline/mount-card start
+progress 0x11
+# State that survives reboots and updates, on the system partition (see usr/libexec/crystaline/state).
+/usr/libexec/crystaline/state
+
+# Kernel crash records (the log at an oops or panic, kept on the disk's pstore partition): copied
+# to /system/logs/crash-<UTC time>/ and removed, which erases them from the partition. The newest
+# 10 copies are kept (newest by name, so this relies on the clock chip's time).
+mount -t pstore pstore /sys/fs/pstore 2>/dev/null
+if [ -n "$(ls /sys/fs/pstore 2>/dev/null)" ]; then
+	d=/system/logs/crash-$(date -u +%Y%m%d-%H%M%S)
+	mkdir -p "$d" && cp /sys/fs/pstore/* "$d/" && rm /sys/fs/pstore/* &&
+		logger -s -t crash "kernel crash records saved in $d"
+	ls -d /system/logs/crash-* | head -n -10 | xargs rm -rf
+fi
+
+# Services: copied to RAM (/etc/service links there), since runsv writes its control files
+# (supervise/) into each service's directory and the root filesystem is read-only.
+cp -a /etc/sv /run/sv
+progress 0x12

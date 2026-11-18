@@ -1,0 +1,16 @@
+#!/bin/sh
+# Prints the path of this device's board description (/usr/share/crystaline/boards/<board>.env):
+# the one whose BOARD_COMPATIBLE is among the device tree's compatible strings, the device's most
+# specific string first. One root filesystem serves every board of a family, so the board is known
+# only here, at run time. rcS copies the result to /run/crystaline/board.env, which the system's
+# scripts read; the initramfs runs this itself.
+# Exit status 1, with the device's compatible strings on stderr, when no description matches.
+# For tests (tools/system/test-board-env.sh): BOARDS, the descriptions' folder; DT, the device tree.
+BOARDS=${BOARDS:-/usr/share/crystaline/boards} DT=${DT:-/proc/device-tree}
+for c in $(tr '\0' ' ' <$DT/compatible); do
+	f=$(grep -lxF "BOARD_COMPATIBLE=$c" "$BOARDS"/*.env 2>/dev/null | head -n 1)
+	[ -z "$f" ] || { echo "$f"; exit 0; }
+done
+echo "board-env: no board in $BOARDS has one of this device's compatible strings:" \
+	"$(tr '\0' ' ' <$DT/compatible 2>&1)" >&2
+exit 1

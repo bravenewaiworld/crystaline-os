@@ -29,14 +29,14 @@ power: BLDO1 3.3 V (main), ALDO3 3.3 V (I/O); WiFi enable PL5; Bluetooth reset P
 Services (runit, `/etc/sv`):
 
 ```
-wpa_supplicant  modprobe xr829_wlan; wpa_supplicant -i wlan0 -D nl80211 -c /var/state/wifi/wpa_supplicant.conf   down at start-up
+wpa_supplicant  modprobe $BOARD_WIFI_MODULE (xr829_wlan); wpa_supplicant -i wlan0 -D nl80211 -c /var/state/wifi/wpa_supplicant.conf   down at start-up
 wifi-dhcp       udhcpc -f -i wlan0, once wpa_supplicant runs                                                     down at start-up
 xr829-attach    xr829-attach                   Bluetooth: power, firmware upload, address, attach as hci0
 bluetoothd      BlueZ, once D-Bus runs
 bluealsa        bluealsa -p a2dp-source, once D-Bus runs
 ```
 
-The state area. `/var/state` links to `/system/state`. The start-up script `/usr/libexec/brick/state` creates it:
+The state area. `/var/state` links to `/system/state`. The start-up script `/usr/libexec/crystaline/state` creates it:
 
 ```
 /var/state/bluetooth/xr_bt.conf        the Bluetooth address: "%02x " per byte, most significant first, trailing space

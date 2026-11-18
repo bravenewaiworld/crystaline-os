@@ -3,20 +3,20 @@
 # (dt-edits.sh), builds dt-edits-apply with the kernel's own fdt_edits.c and libfdt, and checks
 # that applying it to TrimUI's tree gives what dt-tweaks.sh gives, that it is idempotent, that values
 # set before the kernel are kept or reported, that a failed edit leaves the tree unchanged, and that
-# the recorder refuses what the kernel can't redo. Trees captured from devices in build/dt-samples/
+# the recorder refuses what the kernel can't redo. Trees captured from devices in build/brick/dt-samples/
 # (dt-check.sh) are applied too, and their log lines printed for review.
-# Needs build/stock-fw (make stock-fw), dtc and a C compiler. Prints PASS or the first failure.
-# Usage: test-dt-edits.sh          KERNEL_SRC overrides the kernel source tree (default linux/).
+# Needs build/brick/stock-fw (make stock-fw), dtc and a C compiler. Prints PASS or the first failure.
+# Usage: test-dt-edits.sh          KERNEL_SRC overrides the kernel source tree (default linux-brick/).
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-PKG=$ROOT/build/stock-fw/boot_package.fex
+PKG=$ROOT/build/brick/stock-fw/boot_package.fex
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 fail() { { echo "FAIL: $*"; [ ! -s $T/log ] || sed 's/^/  | /' $T/log; } >&2; exit 1; }
 
 "$ROOT/tools/system/build-dt-edits-apply.sh" $T
 python3 -I "$ROOT/tools/sdboot/toc1.py" "$PKG" 0 $T/pkg >/dev/null
 cp $T/pkg/dtb.bin $T/stock.dtb
-cp $T/stock.dtb $T/tweaked.dtb && "$ROOT/system/board/brick/dt-tweaks.sh" $T/tweaked.dtb
+cp $T/stock.dtb $T/tweaked.dtb && "$ROOT/system/family/brick/dt-tweaks.sh" $T/tweaked.dtb
 
 # apply IN OUT [EXIT]: runs the edits (log in $T/log), expecting exit EXIT (default 0).
 apply() {
@@ -83,8 +83,8 @@ refused 'fdtput -t u "$DTB" /memory reg 0 0'
 refused 'fdtput -r "$DTB" /brick-keys'
 refused 'fdtput -t u "$DTB" /cpus/cpu@0 x "$(fdtget -l "$DTB" /cpus)"'
 
-echo "7. trees captured from devices (build/dt-samples) apply"
-for s in "$ROOT"/build/dt-samples/*.dtb; do
+echo "7. trees captured from devices (build/brick/dt-samples) apply"
+for s in "$ROOT"/build/brick/dt-samples/*.dtb; do
 	[ -e "$s" ] || continue
 	apply "$s" $T/sample.dtb
 	sed "s|^|  ${s##*/}: |" $T/log

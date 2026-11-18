@@ -1,0 +1,23 @@
+# What start-up does differently in the Brick family. Sourced by the initramfs's init and by rcS,
+# which call these functions; every family defines all of them.
+
+# progress CODE: record how far start-up got (the codes are listed in the initramfs's init): the
+# clock chip's spare register 7 (0x0700011C), which survives resets and power-off, as 0xB007XXYY.
+# After a start that failed without a message, boot another card and read it (memreg 0x0700011C).
+progress() { devmem 0x0700011C 32 $((0xB0070000 | $1)) 2>/dev/null; }
+
+# start_hardware: rcS, before the data card is mounted: the outcome of the kernel's device-tree
+# edits (docs/boot.md), the GPU driver, and the balanced CPU profile (Specular applies its own when
+# it starts). Other modules are loaded by the services that use them (WiFi).
+start_hardware() {
+	echo "device-tree edits: $(tr -d '\0' </proc/device-tree/chosen/crystaline,dt-edits 2>/dev/null ||
+		echo 'none (kernel without them)')"
+	dmesg | grep dt-edits
+	modprobe pvrsrvkm
+	modprobe dc_sunxi
+	crystaline-power profile balanced
+}
+
+# rescue: the initramfs's start-up has failed for good (its message is on screen, and the recovery
+# menu, if it could be shown, was left). A chance to offer a way in; the Brick has none to add.
+rescue() { :; }

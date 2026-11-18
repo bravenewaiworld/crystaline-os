@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build a TrimUI Brick (TG3040, A133P) SD-card image that boots the vendor boot0 + vendor
 # U-Boot 2018.05 from the card. U-Boot doesn't touch the internal eMMC when booting from the card;
-# whether the kernel sees it is up to the device tree (system/board/brick/dt-tweaks.sh enables it).
+# whether the kernel sees it is up to the device tree (system/family/brick/dt-tweaks.sh enables it).
 #
 # Usage: build_sd_image.sh OUT.img BOOT0 BOOT_PACKAGE BASE_ENV BOOT_IMG BOOTLOADER_FAT [ROOTFS_IMG]
 #   BOOT0          vendor boot0_sdcard.fex (Allwinner "eGON" first-stage loader, unmodified)
@@ -85,7 +85,7 @@ ENV=$(mktemp); trap 'rm -f "$ENV"' EXIT
 python3 -I "$TOOLS/mkenv.py" "$BASE_ENV" "$ENV" $ENV_SIZE -root_partition -blkoops_partition \
 	"mmc_root=$ROOT_REF" boot_partition=boot_a "blkoops_blkdev=PARTUUID=$PSTORE_UUID" \
 	'setargs_mmc+= brick.boot=${boot_partition}' >/dev/null
-# U-Boot keeps two copies and uses the newer one whose CRC is good (env.rs in brick-install).
+# U-Boot keeps two copies and uses the newer one whose CRC is good (env.rs in crystaline-install).
 put "$ENV" $((ENV_AT*MiB)) $((ENV_MiB*MiB))
 put "$ENV" $((ENV2_AT*MiB)) $((ENV_MiB*MiB))
 put "$BOOTIMG" $((BOOTA_AT*MiB)) $((BOOT_MiB*MiB))

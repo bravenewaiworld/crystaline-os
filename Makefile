@@ -1,9 +1,21 @@
-# Top-level build for the TrimUI Brick firmware. `make help` lists the targets.
-# Everything is built into build/. Third-party inputs (cross compiler, GPU driver source, TrimUI's
-# stock firmware, dufs) are set in tools/env.sh and fetched by tools/fetch-third-party.sh.
+# Top-level build for Crystaline OS. `make help` lists the targets.
+# DEVICE=<board> (default brick) picks a folder in system/board/; its board.mk names the board's
+# family, which decides how the kernel, the image and the card are built. Everything is built into
+# build/<family>/, except what a checkout shares across families: build/ssh-host-keys/ and
+# build/downloads/. Third-party inputs (cross compiler, GPU driver source, TrimUI's stock firmware,
+# dufs) are set in tools/env.sh and fetched by tools/fetch-third-party.sh.
 
 ROOT := $(CURDIR)
-B := $(ROOT)/build
+DEVICE ?= brick
+ifeq ($(wildcard system/board/$(DEVICE)/board.mk),)
+$(error DEVICE=$(DEVICE): no system/board/$(DEVICE)/board.mk; boards: $(notdir $(wildcard system/board/*)))
+endif
+include system/board/$(DEVICE)/board.mk
+# DEVICE also names Specular's device crate, and sub-makes (Buildroot, Specular) would otherwise
+# inherit it from the command line.
+MAKEOVERRIDES := $(filter-out DEVICE=%,$(MAKEOVERRIDES))
+B := $(ROOT)/build/$(FAMILY)
+BUILDROOT_DEFCONFIG := $(FAMILY)_defconfig
 # $(call env,NAME): NAME's value from tools/env.sh (which keeps any value set in the environment).
 env = $(shell ROOT='$(ROOT)' && . '$(ROOT)/tools/env.sh' && echo "$$$(1)")
 CROSS_COMPILE := $(call env,CROSS_COMPILE)
@@ -20,30 +32,32 @@ STATIC := -static $(if $(DEBUG),,-s) -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--
 
 .PHONY: help all kernel gpu userspace specular installer device-tools buildroot system \
 	sd-card update-file update-device debug-running-release deploy-specular run-specular test-installer test-battery-guard \
-	test-mount-card test-last-shutdown test-cardlog test-xr829-attach test-timezone test-dt-edits test-exfat stock-fw install-image clean
+	test-mount-card test-board-env test-last-shutdown test-cardlog test-xr829-attach test-timezone test-dt-edits test-exfat stock-fw install-image clean
 
 help:
+	@echo 'DEVICE=<board> (default brick; boards in system/board/) picks what is built, into build/<family>/.'
 	@echo 'Our system:'
-	@echo '  system           one version of the system: build/system/<version>/ (boot.img,'
-	@echo '                   rootfs.squashfs, manifest.json), also build/system/latest;'
+	@echo '  system           one version of the system: build/<family>/system/<version>/ (boot.img,'
+	@echo '                   rootfs.squashfs, manifest.json), also build/<family>/system/latest;'
 	@echo '                   RELEASE=1: a release image (no development SSH key, serial login,'
 	@echo '                   debugging or hardware test tools)'
-	@echo '  sd-card          build/sd-card.img: an SD card that runs the latest version'
-	@echo '  update-file      build/updates/crystaline-<version>.update: the latest version as a'
+	@echo '  sd-card          build/<family>/sd-card.img: an SD card that runs the latest version'
+	@echo '  update-file      build/<family>/updates/crystaline-<version>.update: the latest version as a'
 	@echo '                   signed update file (KEY=<key.pem>, default the development key)'
 	@echo '  update-device    build system, install it on a Brick running our system as an update,'
-	@echo '                   reboot (SSH; BRICK=<address>, default 192.168.7.2 over USB; KEY= as above)'
+	@echo '                   reboot (SSH; ADDR=<address>, default 192.168.7.2 over USB; KEY= as above)'
 	@echo '  debug-running-release  copy the debugging and hardware test tools a release image'
 	@echo '                   leaves out (strace, perf, gdbserver, memreg, ...) to a Brick running'
 	@echo '                   a release image, in memory until it restarts (SSH switched on there'
-	@echo '                   with your own key: SSH_KEY=<private key file>; BRICK= as above)'
+	@echo '                   with your own key: SSH_KEY=<private key file>; ADDR= as above)'
 	@echo '  deploy-specular  build Specular, replace it on the Brick and restart it (kept across'
 	@echo '                   restarts until the next update-device)'
 	@echo '  run-specular     build Specular and run it once in the foreground on the Brick'
 	@echo '  test-installer   test the installer on the PC against image files (after sd-card)'
 	@echo '  test-battery-guard  test the low-battery guard'"'"'s decisions on the PC'
 	@echo '  test-mount-card  test the SD card mounting script on the PC against image files'
-	@echo '  test-timezone    test brick-timezone on the PC'
+	@echo '  test-timezone    test crystaline-timezone on the PC'
+	@echo '  test-board-env   test how a device finds its board'"'"'s names, and check every board'"'"'s, on the PC'
 	@echo '  test-last-shutdown  test the record of how the last run ended, on the PC'
 	@echo '                   (these four with the device'"'"'s BusyBox once buildroot has built it)'
 	@echo '  test-cardlog     test the log service that copies Specular'"'"'s log to the SD card, on the PC'
@@ -55,8 +69,8 @@ help:
 	@echo '  kernel  gpu  userspace  installer  device-tools'
 	@echo '  specular       Specular and its emulator cores (the specular/ submodule'"'"'s own build)'
 	@echo '  buildroot      the base system (C library, BusyBox, daemons) with Buildroot'
-	@echo '  stock-fw       TrimUI'"'"'s stock firmware, unpacked into build/stock-fw'
-	@echo '  clean          remove build/ (keeps the development SSH keys)'
+	@echo '  stock-fw       TrimUI'"'"'s stock firmware, unpacked into build/brick/stock-fw'
+	@echo '  clean          remove build/<family>/ (build/brick/ for DEVICE=brick)'
 
 all: sd-card
 
@@ -77,28 +91,29 @@ gpu: kernel
 
 # --- Base system (Buildroot) ------------------------------------------------------------------
 # Buildroot, pinned to a long-term release and checked against the checksum it publishes. Our
-# configuration and additions are in system/ (BR2_EXTERNAL); its output goes to $(B)/buildroot
-# and its downloads to $(B)/downloads/buildroot.
+# configuration and additions are in system/ (BR2_EXTERNAL); its output goes to $(B)/buildroot.
+# Its source tree and downloads (build/downloads/buildroot) are shared by every family.
 # Always run: Buildroot decides what is out of date.
 BUILDROOT_VERSION := 2026.02.3
 BUILDROOT_SHA256 := 5a59e7501b0b4ec52c41f4bfa79412320e0b37eae5f719605a258e8d0c6fc7fb
-BUILDROOT_SRC := $(B)/buildroot-$(BUILDROOT_VERSION)
+DL := $(ROOT)/build/downloads
+BUILDROOT_SRC := $(ROOT)/build/buildroot-$(BUILDROOT_VERSION)
 BR := $(MAKE) -C $(BUILDROOT_SRC) O=$(B)/buildroot BR2_EXTERNAL=$(ROOT)/system \
-	BR2_DL_DIR=$(B)/downloads/buildroot
+	BR2_DL_DIR=$(DL)/buildroot
 
 $(BUILDROOT_SRC)/.done:
-	@mkdir -p $(B)/downloads
-	curl -sSfL -o $(B)/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz \
+	@mkdir -p $(DL)
+	curl -sSfL -o $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz \
 		https://buildroot.org/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz
-	echo '$(BUILDROOT_SHA256)  $(B)/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz' | sha256sum -c --quiet
-	tar xf $(B)/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz -C $(B)
+	echo '$(BUILDROOT_SHA256)  $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz' | sha256sum -c --quiet
+	tar xf $(DL)/buildroot-$(BUILDROOT_VERSION).tar.xz -C $(ROOT)/build
 	@touch $@
 
-# The configuration is regenerated from system/configs/brick_defconfig every time, so that file is
-# the only place to change it. Buildroot doesn't rebuild a package whose options changed; that
-# needs `make -C $(BUILDROOT_SRC) O=$(B)/buildroot <package>-dirclean` first.
+# The configuration is regenerated from system/configs/$(BUILDROOT_DEFCONFIG) every time, so that
+# file is the only place to change it. Buildroot doesn't rebuild a package whose options changed;
+# that needs `make -C $(BUILDROOT_SRC) O=$(B)/buildroot <package>-dirclean` first.
 buildroot: $(BUILDROOT_SRC)/.done
-	$(BR) -s brick_defconfig
+	$(BR) -s $(BUILDROOT_DEFCONFIG)
 	$(BR)
 
 # --- Userspace services -------------------------------------------------------------------
@@ -124,11 +139,11 @@ specular:
 	rm -rf $(SPECULAR_STAGE)
 	$(SPECULAR) install DESTDIR=$(SPECULAR_STAGE) PREFIX=$(SPECULAR_PREFIX)
 
-# The installer (userspace/brick-install), into $(B)/installer. Always run: cargo decides what is
+# The installer (userspace/crystaline-install), into $(B)/installer. Always run: cargo decides what is
 # out of date. CC_aarch64_unknown_linux_gnu: the cross C compiler for crates that build C code,
 # which would otherwise use the PC's. Run from its directory, where rustup finds its pinned toolchain.
 installer:
-	cd userspace/brick-install && \
+	cd userspace/crystaline-install && \
 		CARGO_TARGET_DIR=$(B)/installer CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(CC) CC_aarch64_unknown_linux_gnu=$(CC) \
 		cargo build --release --target aarch64-unknown-linux-gnu
 
@@ -139,8 +154,8 @@ device-tools: $(addprefix $(B)/tools/,$(DEVICE_TOOLS))
 
 # status: a plain screen of the device's state, which frontend-run falls back to when Specular keeps
 # crashing; the initramfs also shows its errors with it. It draws text with the kernel's 8x16
-# console font, extracted from the kernel source (linux/) into a header.
-$(B)/include/font8x16.h: linux/lib/fonts/font_8x16.c
+# console font, extracted from the kernel source (linux-brick/) into a header.
+$(B)/include/font8x16.h: linux-brick/lib/fonts/font_8x16.c
 	@mkdir -p $(@D)
 	sed -n '/^static const unsigned char fontdata_8x16/,/^};/p' $< | \
 		sed '1s/.*/static const unsigned char font8x16[4096] = {/' > $@
@@ -187,7 +202,7 @@ sd-card: system
 update-file: system
 	tools/system/dev-keys.sh
 	v=$$(basename "$$(readlink -f $(B)/system/latest)") && tools/system/sign-update.sh $(B)/system/latest \
-		$(or $(KEY),$(B)/ssh-host-keys/update_key.pem) $(B)/updates/crystaline-$$v.update
+		$(or $(KEY),$(ROOT)/build/ssh-host-keys/update_key.pem) $(B)/updates/crystaline-$$v.update
 
 update-device: system
 	UPDATE_KEY=$(KEY) tools/system/update-device.sh $(B)/system/latest
@@ -202,11 +217,11 @@ deploy-specular: specular
 run-specular: specular
 	tools/run-specular.sh $(SPECULAR_STAGE)$(SPECULAR_PREFIX)/specular
 
-# Its own PC build of the installer has the test-only cut points (userspace/brick-install/src/cut.rs).
+# Its own PC build of the installer has the test-only cut points (userspace/crystaline-install/src/cut.rs).
 test-installer:
 	tools/system/test-installer.sh
 
-# These four run their script under a PC build of the device's BusyBox (build/pc-busybox) once
+# These four run their script under a PC build of the device's BusyBox (build/brick/pc-busybox) once
 # Buildroot has built it, and under the PC's shell and tools before then.
 WITH_PC_BUSYBOX = bb=$$(tools/system/pc-busybox.sh $(B)/pc-busybox) && PATH="$${bb:+$$bb:}$$PATH"
 test-battery-guard:
@@ -221,6 +236,9 @@ test-timezone:
 test-last-shutdown:
 	$(WITH_PC_BUSYBOX) tools/system/test-last-shutdown.sh
 
+test-board-env:
+	tools/system/test-board-env.sh
+
 test-cardlog:
 	tools/system/test-cardlog.sh
 
@@ -234,4 +252,4 @@ test-exfat:
 	tools/system/test-exfat.sh
 
 clean:
-	@[ ! -d $(B) ] || find $(B) -mindepth 1 -maxdepth 1 ! -name ssh-host-keys -exec rm -rf {} +
+	rm -rf $(B)

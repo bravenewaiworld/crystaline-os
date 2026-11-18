@@ -1,0 +1,4 @@
+#!/bin/sh
+# Powers the device off cleanly when the battery is empty (usr/libexec/crystaline/battery-guard).
+exec 2>&1
+exec /usr/libexec/crystaline/battery-guard
