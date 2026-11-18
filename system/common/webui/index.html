@@ -1,19 +1,21 @@
 <!DOCTYPE html>
 <!-- Served by dufs (--assets) at every folder's address. dufs replaces __ASSETS_PREFIX__ with the
      address it serves app.js and app.css from. build-system.sh replaces @VERSION@ with the system's
-     version: dufs tells browsers to keep those files forever, so each version needs new addresses. -->
+     version: dufs tells browsers to keep those files forever, so each version needs new addresses.
+     The webdav service replaces @BOARD_NAME@ with the device's name (BOARD_NAME), known only at run
+     time, as one root filesystem serves every board of a family. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Brick</title>
+<title>@BOARD_NAME@</title>
 <link rel="icon" href="data:,"><!-- none, so browsers don't ask the card for favicon.ico -->
 <link rel="stylesheet" href="__ASSETS_PREFIX__app.css?v=@VERSION@">
 <script src="__ASSETS_PREFIX__app.js?v=@VERSION@" defer></script>
 </head>
 <body>
 <header>
-	<h1>Brick</h1>
+	<h1>@BOARD_NAME@</h1>
 	<nav id="tabs">
 		<a href="#games/" data-view="games">Games</a>
 		<a href="#saves/" data-view="saves">Saves</a>

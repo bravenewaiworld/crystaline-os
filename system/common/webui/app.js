@@ -1,5 +1,5 @@
 "use strict";
-// The Brick's file page: views of the data card for games, saves and BIOS files, using only the
+// The device's file page: views of the data card for games, saves and BIOS files, using only the
 // HTTP interface of dufs, the file server (listed in docs/system-image.md, "Browser page").
 // Paths here are relative to the card: folders end in "/", and the card's root is "".
 
@@ -22,14 +22,15 @@ const VIEWS = {
 	bios: { title: "BIOS", root: "bios/",
 		hint: "BIOS files. Emulators look for them by exact file name, so keep the names they expect." },
 	files: { title: "All files", root: "", showHidden: true,
-		hint: "Everything on the card. backups/, made when installing to internal storage, holds the copy of TrimUI's system: your way back to it, so don't delete it. updates/ is where Crystaline OS update files (.update) go. logs/ has reports of installs, updates and card repairs. config/ holds your settings. cache/ holds box art and game lists, and is safe to delete." },
+		hint: "Everything on the card. backups/, made when installing to internal storage, holds a copy of the system the device came with: your way back to it, so don't delete it. updates/ is where Crystaline OS update files (.update) go. logs/ has reports of installs, updates and card repairs. config/ holds your settings. cache/ holds box art and game lists, and is safe to delete." },
 };
 
 /** The largest file FAT32 can hold. */
 const FAT32_MAX = 2 ** 32 - 1;
 /** Uploads are written under their name plus this, and renamed once complete. */
 const PARTIAL = ".uploading";
-const UNREACHABLE = "Can't reach the Brick. Is its File transfer screen open, and is this device on the same network?";
+/** The page's title is the device's name (index.html). */
+const UNREACHABLE = `Can't reach the ${document.title}. Is its File transfer screen open, and is this device on the same network?`;
 
 const $ = id => document.getElementById(id);
 

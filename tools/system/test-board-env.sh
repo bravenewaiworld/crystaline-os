@@ -30,12 +30,14 @@ grep -q 'rockchip,rk3566-x' $T/err || fail "no match: stderr should list the dev
 rm $T/dt/compatible
 if pick >/dev/null; then fail "no compatible property: should fail"; fi
 
-# Every real board description: the names the scripts read, and a FAT label mkfs.fat accepts.
+# Every real board description: the names every board must give, and a FAT label mkfs.fat
+# accepts. The other names are for hardware a board may not have (e.g. BOARD_WIFI_MODULE), and
+# their readers do without them.
 for f in "$ROOT"/system/board/*/rootfs-overlay/usr/share/crystaline/boards/*.env; do
 	(
 		set +u
 		. "$f"
-		for v in BOARD_COMPATIBLE BOARD_NAME BOARD_CARD_CONTROLLER BOARD_CARD_LABEL BOARD_BATTERY BOARD_WIFI_MODULE; do
+		for v in BOARD_COMPATIBLE BOARD_NAME BOARD_CARD_CONTROLLER BOARD_CARD_LABEL; do
 			[ -n "${!v}" ] || echo "FAIL: ${f#$ROOT/}: $v is empty"
 		done
 		[ ${#BOARD_CARD_LABEL} -le 11 ] || echo "FAIL: ${f#$ROOT/}: BOARD_CARD_LABEL is over 11 characters"
