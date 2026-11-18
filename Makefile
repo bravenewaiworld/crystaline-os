@@ -150,8 +150,9 @@ $(BUILDROOT_SRC)/.done: $(BUILDROOT_PATCHES)
 	for p in $(BUILDROOT_PATCHES); do patch -s -p1 -d $(BUILDROOT_SRC) <$$p || exit 1; done
 	@touch $@
 
-# The configuration is regenerated every time from system/common/buildroot.config followed by
-# system/family/$(FAMILY)/buildroot.config, so those files are the only place to change it. The
+# The configuration is regenerated every time from system/common/buildroot.config, then
+# system/family/$(FAMILY)/buildroot.config, then each board's of the family, if it has one (e.g.
+# its chips' firmware from linux-firmware), so those files are the only place to change it. The
 # root filesystem's overlays are added to it: common, the family's, and every board's of the
 # family (each board's names are picked at start-up, so all must be there).
 BR_OVERLAYS := $(foreach l,common family/$(FAMILY) $(addprefix board/,$(FAMILY_BOARDS)),$$(BR2_EXTERNAL_CRYSTALINE_PATH)/$(l)/rootfs-overlay)
@@ -159,7 +160,8 @@ BR_OVERLAYS := $(foreach l,common family/$(FAMILY) $(addprefix board/,$(FAMILY_B
 # `make -C $(BUILDROOT_SRC) O=$(B)/buildroot <package>-dirclean` first.
 buildroot: $(BUILDROOT_SRC)/.done
 	@mkdir -p $(B)
-	cat system/common/buildroot.config system/family/$(FAMILY)/buildroot.config >$(B)/buildroot.defconfig
+	cat system/common/buildroot.config system/family/$(FAMILY)/buildroot.config \
+		$(wildcard $(foreach b,$(FAMILY_BOARDS),system/board/$(b)/buildroot.config)) >$(B)/buildroot.defconfig
 	echo 'BR2_ROOTFS_OVERLAY="$(BR_OVERLAYS)"' >>$(B)/buildroot.defconfig
 	$(BR) -s BR2_DEFCONFIG=$(B)/buildroot.defconfig defconfig
 	$(BR)

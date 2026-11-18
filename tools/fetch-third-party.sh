@@ -106,13 +106,6 @@ download rkbin/rk3566_ddr_1056MHz_v1.23.bin \
 download rkbin/rk3568_bl31_v1.45.elf \
 	$RKBIN/ef49d0c2852b16ce0d72d7ee4849638cb5de27b7/bin/rk35/rk3568_bl31_v1.45.elf \
 	76634f10e535bbe981fb9132fd6815a71586cc1b96aae1159bec6797579e5b9f
-# The RTL8723DS's Bluetooth firmware (the RGB20 Pro's), which linux-firmware doesn't carry: Armbian's
-# firmware collection (tools/env.sh, RTL8723DS_BT).
-RTL_BT=https://raw.githubusercontent.com/armbian/firmware/bf5f7a802b8e1998e6bf95daed5ea965441af83d/rtl_bt
-download rtl8723ds-bt/rtl8723ds_fw.bin $RTL_BT/rtl8723ds_fw.bin \
-	19c1bed7a9359b1a021c20f81b525bdebf5067f9021716991d94be9101f76e63
-download rtl8723ds-bt/rtl8723ds_config.bin $RTL_BT/rtl8723ds_config.bin \
-	7d1e18df7654da8f6382520841bb535f2d1246fc8495e3ae652f7b23e820168d
 
 DUFS_TAR=dufs-v0.46.0/dufs-v0.46.0-aarch64-unknown-linux-musl.tar.gz
 download $DUFS_TAR https://github.com/sigoden/dufs/releases/download/v0.46.0/${DUFS_TAR#*/} \
@@ -125,4 +118,8 @@ if [ ! -e "$T/$DUFS" ] && [ -e "$T/$DUFS_TAR" ] && missing $DUFS; then
 fi
 [ ! -e "$T/$DUFS" ] || verdict $DUFS "$(sha256 "$T/$DUFS")" \
 	5753d125dedb51bc4194e491de7d9081d7a1914a62c1fb4390d68ae55620334b "remove it and $DUFS_TAR, and run again"
+
+# Each board's own inputs, from its optional system/board/<board>/fetch.sh (sourced, with download
+# and the names above), e.g. firmware that linux-firmware doesn't carry.
+for f in "$ROOT"/system/board/*/fetch.sh; do [ ! -e "$f" ] || . "$f"; done
 exit $FAILED
