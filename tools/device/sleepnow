@@ -34,6 +34,33 @@ ifconfig wlan0 down 2>/dev/null
 [ -z "${BOARD_WIFI_MODULE:-}" ] || [ ! -e /sys/module/$BOARD_WIFI_MODULE ] || rmmod $BOARD_WIFI_MODULE
 echo 0 >/sys/class/rtc/rtc0/wakealarm	# clear any old alarm: a new one can't be set over it
 [ "${1:-0}" -gt 0 ] && echo "+$(($1 * 60))" >/sys/class/rtc/rtc0/wakealarm
-echo mem >/sys/power/state
+
+# A sleep request that hangs (a driver's sleep step waiting forever, e.g. on a stuck SD card
+# scan) would otherwise leave WiFi off and Specular waiting with nothing logged. After
+# GUARD_SECONDS a guard logs the stacks of the tasks stuck in the kernel and starts WiFi again.
+# It can't end the stuck step, so this script still returns only once that step does; the
+# device may then go on to sleep, so the guard also keeps the clock chip's alarm a few seconds
+# ahead, and such a sleep ends at once. Only awake time counts: the guard is frozen with every
+# other task while the device sleeps.
+GUARD_SECONDS=30
+guard() {
+	sleep $GUARD_SECONDS
+	logger -s -t sleepnow "the sleep request hasn't returned after $GUARD_SECONDS s"
+	for p in /proc/[0-9]*; do
+		grep -q '^State:.D' $p/status 2>/dev/null || continue
+		echo "stuck task ${p#/proc/} $(cat $p/comm 2>/dev/null):"
+		cat $p/stack 2>/dev/null
+	done | logger -t sleepnow
+	if [ "$running" ]; then sv start $WIFI >/dev/null; fi
+	while :; do
+		echo 0 >/sys/class/rtc/rtc0/wakealarm
+		echo +5 >/sys/class/rtc/rtc0/wakealarm
+		sleep 4
+	done
+}
+guard & GUARD=$!
+echo mem >/sys/power/state || logger -s -t sleepnow "the sleep request failed"
+kill $GUARD
+echo 0 >/sys/class/rtc/rtc0/wakealarm	# awake now: the alarm (ours or the guard's) has done its job
 poweroff_if_empty
 if [ "$running" ]; then sv start $WIFI >/dev/null; fi

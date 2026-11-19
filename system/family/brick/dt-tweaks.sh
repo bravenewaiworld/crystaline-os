@@ -170,6 +170,16 @@ USB_PSY=/soc@03000000/s_twi@0x07081400/pmu@34/usb_power_supply
 fdtput -t u "$DTB" $USB_PSY pmu_bc12_en 1
 fdtput -t u "$DTB" /soc@03000000/usbc0@0 extcon "$(fdtget "$DTB" $USB_PSY phandle)"
 
+# SD card controller: turn on the driver's own request timeout (ctl-spec-caps bit 0x200,
+# SUNXI_SC_EN_TIMEOUT_DETECT) beside TrimUI's retry bit (0x8). Without it a command the card
+# never answers waits forever: a card left in 1.8 V mode (its power is never cut: it shares
+# the main 3.3 V rail) never completes the switch-to-1.8 V command, the card scan hangs, and
+# so does every later card scan and going to sleep, which waits for the scan. With it the
+# driver retries every 5 s and fails the command after 24 retries (about 2 minutes). The 5 s
+# limit applies to every command on this slot.
+SDC0=/soc@03000000/sdmmc@04020000
+fdtput -t x "$DTB" $SDC0 ctl-spec-caps 208
+
 # Internal storage (eMMC, controller sdc2), which U-Boot leaves disabled when booting from the card.
 # Enabled with the limits U-Boot itself sets when it boots TrimUI's system from the eMMC, the
 # settings stock has always used: 50 MHz and no HS200/HS400, so the eMMC runs in DDR52 mode.
