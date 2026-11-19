@@ -1,6 +1,6 @@
 # Power
 
-Status: In progress · Updated: 2026-10-19
+Status: In progress · Updated: 2026-11-18
 
 Everything that decides how long the TrimUI Brick runs on a charge: the power chip (X-Powers AXP2202) and the separate CPU voltage regulator (TCS4838), the battery gauge and charger, CPU speed and its voltages, thermal limits, deep sleep, the system clock that survives sleep and its time zone, and how we measure drain. Battery life is one of the project's goals, and most of it is decided here and by the display's idle behaviour ([display.md](display.md)).
 
@@ -138,6 +138,7 @@ For an automatic zone, Specular asks the user once whether it may tell a lookup 
 - (2026-10-12, bsp) The vendor regulator driver's work-mode setter read the regulator's delay data as the PMIC, so forced-PWM/automatic settings never worked for any AXP variant. Source: linux a2f8d4029.
 - (2026-10-10, device) Stock charger: 4.2 V target, 960 mA charge, 128 mA pre-charge (the tree asks 450 mA, not applied), 128 mA termination, input limit 500 mA ("PC" detection), power-off at 3.2 V, JEITA on. Battery 3000 mAh, 147 mΩ.
 - (2026-10-11, device) With charger detection on, a USB-C charger or dock reports "DCP" and the chip sets a 3000 mA input limit itself; with nothing connected the limit reads 2000 mA. The stored detection result (0x05) is read-only and can't be re-run. Source: tests with a dock, a MacBook charger and a drive.
+- (2026-11-18, device) Correction to the above: the 3000 mA comes from the USB-C charger's advertised current and needs the chip's USB-C detection on; a USB-A wall charger also reports "DCP" but gets 1500 mA. Source: [usb.md](usb.md), Findings of 2026-11-18.
 - (2026-10-10, device) CPU speed bin c0. Speeds and voltages (MHz @ mV): 408–1008 @ 900, 1200 @ 937.5, 1416 @ 1020, 1608 @ 1100, 1800 @ 1180, 2000 @ 1250. TrimUI sells the A133P as 1.8 GHz but enables 2.0 GHz; mainline's table stops at 1.464 GHz.
 - (2026-10-10, stock) Stock CPU policy: `ondemand`, with a 1.2 GHz floor while TrimUI's menu runs and 408 MHz once a game starts (`preload.sh`); its function-key editor offers performance (2.0 GHz fixed), power-save (1.0–1.2 GHz) and balanced modes. Stock never enters cluster sleep.
 - (2026-10-10, stock) Stock's idle sequence: dim after a set time, screen off (backlight 0, WiFi stopped) 60 s later, suspend 10 s after that unless `/tmp/stay_alive` exists. Below 10 % it shows warnings and the LED driver dims the LEDs from 15 %; at 1 % it powers off. On the unit we snapshotted (on a cable) suspend counts were all 0 with a `usb_connecting` wakelock held.
