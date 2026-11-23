@@ -2,9 +2,10 @@
 # sleepnow [minutes]: deep sleep until the power button is pressed or, if minutes > 0, until the
 # real-time clock's alarm after that long. Returns once the device is awake again, unless the
 # battery is empty (below).
-# The WiFi drivers refuse to suspend while connected (the Brick's XR829), or hang the suspend (the
-# RGB20 Pro's RTL8821CS under ROCKNIX), so WiFi is stopped and its driver (BOARD_WIFI_MODULE)
-# unloaded first and, if it was running, started again afterwards (its service loads the driver).
+# The radios are stopped first and, if they were running, started again afterwards (below). The WiFi
+# drivers refuse to suspend while connected (the Brick's XR829), or hang the suspend (the RGB20
+# Pro's RTL8821CS under ROCKNIX), so WiFi's driver (BOARD_WIFI_MODULE) is also unloaded (its
+# service loads it again).
 # Not while an install or a restore runs (it holds a lock on its status file, see
 # userspace/crystaline-install/src/status.rs): sleeping would stop it partway.
 STATUS=/run/crystaline-install.status
@@ -27,21 +28,20 @@ poweroff_if_empty() {
 	exec poweroff
 }
 poweroff_if_empty
-WIFI="wpa_supplicant wifi-dhcp" running=
-if sv status wpa_supplicant | grep -q '^run:'; then running=1; sv stop $WIFI >/dev/null; fi
-ifconfig wlan0 down 2>/dev/null
 . /run/crystaline/board.env
+# The radios running now, stopped for sleep and started again after it (one sv command each way:
+# sv stops or starts its services together). WiFi: its driver refuses to suspend while connected.
+# Bluetooth: on the Brick a controller left attached keeps the WiFi/Bluetooth chip powered through
+# sleep (about 0.1 W, nearly half the sleep drain); stopping the board's attach service
+# (BOARD_BT_ATTACH) powers it off. Paired devices reconnect a few seconds after waking.
+RADIOS=
+sv status wpa_supplicant | grep -q '^run:' && RADIOS="wpa_supplicant wifi-dhcp"
+sv status "${BOARD_BT_ATTACH:-bluetoothd}" 2>/dev/null | grep -q '^run:' &&
+	RADIOS="$RADIOS bluealsa bluetoothd ${BOARD_BT_ATTACH:-}"
+[ -z "$RADIOS" ] || sv stop $RADIOS >/dev/null
+ifconfig wlan0 down 2>/dev/null
 [ -z "${BOARD_WIFI_MODULE:-}" ] || [ ! -e /sys/module/$BOARD_WIFI_MODULE ] || rmmod $BOARD_WIFI_MODULE
-# Bluetooth too: on the Brick its controller kept the WiFi/Bluetooth chip powered through sleep
-# (about 0.1 W, nearly half the sleep drain). Stopping the board's attach service (BOARD_BT_ATTACH)
-# powers the controller off; it is started again after waking, so paired devices reconnect a few
-# seconds later.
-BT="bluealsa bluetoothd ${BOARD_BT_ATTACH:-}" bt_running=
-if sv status bluetoothd 2>/dev/null | grep -q '^run:'; then bt_running=1; sv stop $BT >/dev/null; fi
-restart_radios() {
-	if [ "$bt_running" ]; then sv start ${BOARD_BT_ATTACH:-} bluetoothd bluealsa >/dev/null; fi
-	if [ "$running" ]; then sv start $WIFI >/dev/null; fi
-}
+restart_radios() { [ -z "$RADIOS" ] || sv start $RADIOS >/dev/null; }
 echo 0 >/sys/class/rtc/rtc0/wakealarm	# clear any old alarm: a new one can't be set over it
 [ "${1:-0}" -gt 0 ] && echo "+$(($1 * 60))" >/sys/class/rtc/rtc0/wakealarm
 

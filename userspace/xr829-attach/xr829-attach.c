@@ -16,8 +16,8 @@
  *      controller's version
  *   4. attach: hand the port to the kernel's HCI UART driver (line discipline N_HCI, H4 framing),
  *      which creates hci0, and stay running until SIGTERM, SIGINT or SIGHUP; then detach (back
- *      to N_TTY), which removes hci0, and power the Bluetooth side off. The port's settings are never touched after attaching: the
- *      controller stays at 1.5 Mbaud with flow control.
+ *      to N_TTY), which removes hci0, and power the Bluetooth side off. The port's settings are
+ *      never touched after attaching: the controller stays at 1.5 Mbaud with flow control.
  * Steps 1-2 get up to BOOT_TRIES tries in all, each retry after a longer power-off; a failure
  * from step 3 on isn't retried: it exits. Every read has a timeout, and the whole start-up is bounded by
  * ATTACH_TIMEOUT_S.
@@ -91,23 +91,24 @@ static const char *step = "start";
 static char rfkill_state[256];	/* the state file of the chip's rfkill switch, once found */
 
 /* Powers the chip's Bluetooth side off, so that with WiFi off too the chip's supply (BLDO1) turns
- * off (about 0.1 W, awake or asleep). Done on every way out once powered up, so a stop during
- * start-up or a failure doesn't leave it on. Async-signal-safe: signal handlers call it. */
-static void power_off(void)
+ * off (about 0.1 W, awake or asleep). Called on every way out; -1 until find_rfkill has found the
+ * switch, or if it can't be written. Safe to call from a signal handler. */
+static int power_off(void)
 {
 	int fd = rfkill_state[0] ? open(rfkill_state, O_WRONLY) : -1;
+	int ok = fd >= 0 && write(fd, "0", 1) == 1;
 
-	if (fd >= 0) {
-		(void)!write(fd, "0", 1);
+	if (fd >= 0)
 		close(fd);
-	}
+	return ok ? 0 : -1;
 }
 
-/* SIGTERM, SIGINT or SIGHUP before attaching (they are blocked once attached). */
+/* SIGTERM, SIGINT or SIGHUP during start-up. From attaching on they are blocked and taken by
+ * sigwait (attach), so that hci0 is removed before the power-off. */
 static void on_stop(int sig)
 {
 	(void)sig;
-	power_off();
+	(void)power_off();
 	_exit(1);
 }
 
@@ -128,12 +129,10 @@ static void on_timeout(int sig)
 	static const char msg[] = "xr829-attach: gave up: not attached within "
 				  STR(ATTACH_TIMEOUT_S) " s; last step: ";
 
-	(void)sig;
 	write(2, msg, sizeof(msg) - 1);
 	write(2, step, strlen(step));
 	write(2, "\n", 1);
-	power_off();
-	_exit(1);
+	on_stop(sig);
 }
 
 /* Bytes as hex, for error messages; the result lasts until the next call. */
@@ -441,7 +440,6 @@ static int boot(int fd)
 
 /* --- Power ----------------------------------------------------------------------------------- */
 
-
 static int find_rfkill(void)
 {
 	glob_t g;
@@ -555,11 +553,6 @@ static int start_hci(int fd, const uint8_t a[6])
 	    hci_command(fd, "read the controller's version", HCI_READ_VERSION, NULL, 0, version, 8) < 0)
 		return -1;
 	log_version(version);
-	step = "attach";
-	if (ioctl(fd, TIOCSETD, &(int){ N_HCI }) < 0)
-		return fail("set line discipline N_HCI: %m");
-	if (ioctl(fd, HCIUARTSETPROTO, HCI_UART_H4) < 0)
-		return fail("set protocol H4: %m");
 	return 0;
 }
 
@@ -597,13 +590,22 @@ static int attach(void)
 	if (start_hci(fd, addr) < 0)
 		return 1;
 	alarm(0);
-	say("attached in %ld ms", now_ms() - start);
-
+	/* From here a stop waits for sigwait: detach first, then power off. */
 	sigemptyset(&stops);
 	sigaddset(&stops, SIGTERM);
 	sigaddset(&stops, SIGINT);
 	sigaddset(&stops, SIGHUP);
 	sigprocmask(SIG_BLOCK, &stops, NULL);
+	step = "attach";
+	if (ioctl(fd, TIOCSETD, &(int){ N_HCI }) < 0) {
+		fail("set line discipline N_HCI: %m");
+		return 1;
+	}
+	if (ioctl(fd, HCIUARTSETPROTO, HCI_UART_H4) < 0) {
+		fail("set protocol H4: %m");
+		return 1;
+	}
+	say("attached in %ld ms", now_ms() - start);
 	sigwait(&stops, &sig);
 	if (ioctl(fd, TIOCSETD, &(int){ N_TTY }) < 0) {
 		say("detach: %m");
@@ -617,7 +619,9 @@ int main(void)
 {
 	int ret = attach();
 
-	power_off();
-	say("powered off");
+	if (rfkill_state[0] && power_off() < 0)
+		say("power off: %m");
+	else if (rfkill_state[0])
+		say("powered off");
 	return ret;
 }

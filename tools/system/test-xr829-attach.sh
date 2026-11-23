@@ -4,7 +4,8 @@
 # file) runs against a fake XR829 on a pty (test-xr829-attach.py), which checks the boot ROM
 # protocol, the port's settings at each stage, the uploaded firmware and the HCI commands. Cases:
 # the address (derived, kept, replaced), a boot ROM that answers late, errs or never answers,
-# unexpected and refusing HCI events, the 20 s time limit, and a missing chip ID or rfkill switch.
+# unexpected and refusing HCI events, the 20 s time limit, and a missing chip ID or rfkill switch;
+# every way out leaves the chip's Bluetooth side powered off.
 # Attaching itself (line discipline N_HCI) can't work on a pty, so a good run ends there.
 # Takes about 40 s. Prints PASS or the first failure.
 set -euo pipefail
@@ -94,6 +95,7 @@ c="a boot ROM error: three tries, then exit"
 fresh; out=$(run "$c" romerr)
 expect "$c" 'firmware upload at byte 2048: boot ROM error 3 (bad checksum)$' "$out" 3
 expect "$c" '^fake: exit 1$' "$out"
+holds "$c" "$R/sys/class/rfkill/rfkill1/state" 0
 
 c="a boot ROM that never answers: three tries, then exit"
 fresh; out=$(run "$c" mute)
@@ -115,6 +117,7 @@ c="the 20 s time limit"
 fresh; out=$(run "$c" flood)
 expect "$c" 'gave up: not attached within 20 s; last step: HCI reset$' "$out"
 expect "$c" '^fake: exit 1$' "$out"
+holds "$c" "$R/sys/class/rfkill/rfkill1/state" 0
 
 c="no chip ID and no address file"
 fresh; rm "$R/sys/bus/nvmem/devices/sunxi-sid0/nvmem"
@@ -126,6 +129,7 @@ c="no rfkill switch for the chip"
 fresh; echo other >"$R/sys/class/rfkill/rfkill1/name"
 out=$(run "$c" ok)
 expect "$c" 'power: no rfkill switch named "sunxi-bt"$' "$out"
+expect "$c" 'powered off' "$out" 0
 holds "$c" "$R/sys/class/rfkill/rfkill0/state" untouched
 
 echo PASS
