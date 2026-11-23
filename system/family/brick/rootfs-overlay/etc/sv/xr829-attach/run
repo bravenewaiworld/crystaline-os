@@ -1,6 +1,8 @@
 #!/bin/sh
 # Powers up the XR829's Bluetooth side on ttyS1, loads its firmware, sets its address and attaches
 # it as hci0 (userspace/xr829-attach). It stays running while attached; if it exits, runit starts
-# it again a second later.
+# it again a second later. Stopped, it powers the Bluetooth side off. Down at start-up (the `down`
+# file): Specular, which finds this service through BOARD_BT_ATTACH in the board's env file, brings
+# it up and down with its Bluetooth setting. By hand: sv up xr829-attach.
 exec 2>&1
 exec /usr/bin/xr829-attach

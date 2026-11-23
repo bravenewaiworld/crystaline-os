@@ -13,6 +13,7 @@ WiFi and Bluetooth on the TrimUI Brick's XR829 chip, and Bluetooth audio. WiFi c
 - **The vendor driver's power saving stays on** (2026-10-10). Rejected: PocketForge's fix for its disconnects and stuck scans, which turns power saving off entirely (too costly for the battery).
 - **Our own program, `xr829-attach`, starts Bluetooth** (2026-10-18). It powers up the chip's Bluetooth side, uploads its firmware, sets its address and hands it to the kernel as `hci0`. It is a rewrite of Xradio's `hciattach_xradio.c` (GPL-2.0-or-later, from Allwinner's BlueZ), with a time limit on every step, one log line per step, and an exit on failure so runit starts it again. It leaves the serial port at 1.5 Mbaud with flow control on. Rejected: TrimUI's closed `hciattach` (chosen 2026-10-11; no source, it retries a silent chip without end, and its log lines only reach the log when it exits); BlueZ's own `hciattach` (no XR829 support); the Sakura and PocketForge builds of the Xradio source (after attaching, their `hciattach` wrappers set the port again from settings saved before, which turns flow control off).
 - **Stopped, `xr829-attach` powers the Bluetooth side off, and `sleepnow` stops Bluetooth for sleep** (2026-11-23). With WiFi off too, the chip's supply then turns off: sleep drain halves (0.244 to 0.125 W at the USB input). Bluetooth is started again after waking; paired devices reconnect about 4 s later. Every way out `xr829-attach` handles powers off (a stop, a failure, the start-up time limit); only a forced kill or a crash leaves the chip on, until its next start.
+- **Bluetooth's controller is powered only while Specular's Bluetooth setting is On** (2026-11-23). The board's attach service (`BOARD_BT_ATTACH`, `xr829-attach` on the Brick) is down at start-up, and Specular brings it up and down with the setting (Off, the default, saves about 0.11 W awake). `bluetoothd` and `bluealsa` keep running: without the controller BlueZ just has no adapter, which Specular takes as Bluetooth being off. `sleepnow` starts again after waking only what was running, so Bluetooth left off stays off. Rejected, for now: also powering it off while On but unused (nothing paired, its screen closed); with headphones paired it must stay on for them to reconnect by themselves, so the gain is only for an On setting with nothing paired.
 - **The Bluetooth address is derived from the chip's ID, like the WiFi MAC address, and written into `xr_bt.conf` when that file is missing** (2026-10-18). The XR829 has no Bluetooth address of its own. `xr829-attach` reads it from that file, the same file and format TrimUI's `hciattach` used (it made up a random address and saved it there). A derived address stays the same across state wipes and reinstalls, so headphones never need pairing again. A unit that already has a valid saved address keeps it, so its pairings stay. A file that holds no valid address (wrong format, all zero, or a reserved address) is replaced by the derived address, with a warning in the log. Rejected: keeping the saved random address (2026-10-11, commit 425274e; a state wipe means re-pairing everything); deriving it as commit ed92b5d did (2026-10-11), which relied on NextUI's replacement `hciattach`, not TrimUI's; setting it through BlueZ (`btmgmt public-addr` can't work over this serial link).
 - **Pairings, the Bluetooth address and saved WiFi networks are kept in the state area on the system partition** (2026-10-14). They survive reboots and system updates.
 - **Bluetooth audio goes through bluez-alsa, playback only (A2DP source), with the SBC codec** (2026-10-11). Each paired device becomes an ALSA output. Other codecs are on the roadmap. Each needs a licence check first (fdk-aac's licence, for AAC, is not GPL-compatible) and a check of how much CPU it costs to encode on this chip.
@@ -32,7 +33,7 @@ Services (runit, `/etc/sv`):
 ```
 wpa_supplicant  modprobe $BOARD_WIFI_MODULE (xr829_wlan); wpa_supplicant -i wlan0 -D nl80211 -c /var/state/wifi/wpa_supplicant.conf   down at start-up
 wifi-dhcp       udhcpc -f -i wlan0, once wpa_supplicant runs                                                     down at start-up
-xr829-attach    xr829-attach                   Bluetooth: power, firmware upload, address, attach as hci0
+xr829-attach    xr829-attach                   Bluetooth: power, firmware upload, address, attach as hci0   down at start-up
 bluetoothd      BlueZ, once D-Bus runs
 bluealsa        bluealsa -p a2dp-source, once D-Bus runs
 ```
@@ -55,7 +56,9 @@ WiFi on        modprobe xr829_wlan; sv up wpa_supplicant wifi-dhcp
 WiFi off       sv -v down wifi-dhcp wpa_supplicant; rmmod xr829_wlan
 network joined ip -4 addr flush dev wlan0; sv restart wifi-dhcp      (an address at once; none left from the last network)
 WiFi control   wpa_supplicant's control socket /run/wpa_supplicant/wlan0
-Bluetooth      BlueZ over D-Bus (adapter power, search, pair, connect)
+Bluetooth on   sv up $BOARD_BT_ATTACH (xr829-attach), then BlueZ's adapter powered once it appears (2.5–4 s)
+Bluetooth off  BlueZ's adapter unpowered, then sv down $BOARD_BT_ATTACH (the adapter goes away)
+Bluetooth      BlueZ over D-Bus (search, pair, connect)
 Bluetooth out  ALSA "bluealsa:DEV=<address>,PROFILE=a2dp", with its own volume through bluez-alsa
 sleep          sleepnow (see Decisions)
 ```
