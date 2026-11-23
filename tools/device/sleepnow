@@ -60,7 +60,9 @@ guard() {
 }
 guard & GUARD=$!
 echo mem >/sys/power/state || logger -s -t sleepnow "the sleep request failed"
-kill $GUARD
+# SIGKILL: a plain kill (SIGTERM) does nothing here, as Specular starts this script with SIGTERM
+# blocked, which children inherit. The guard's sleep, left behind, ends by itself.
+kill -KILL $GUARD
 echo 0 >/sys/class/rtc/rtc0/wakealarm	# awake now: the alarm (ours or the guard's) has done its job
 poweroff_if_empty
 if [ "$running" ]; then sv start $WIFI >/dev/null; fi
