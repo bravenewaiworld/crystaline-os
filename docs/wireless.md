@@ -1,13 +1,13 @@
 # Wireless
 
-Status: In progress · Updated: 2026-10-18
+Status: In progress · Updated: 2026-11-23
 
 WiFi and Bluetooth on the TrimUI Brick's XR829 chip, and Bluetooth audio. WiFi carries file transfer, network time and SSH, and Bluetooth carries wireless headphones. This is also the hardware with the weakest driver support: only Allwinner's vendor driver exists. When connected, WiFi is the biggest power cost on an idle device, so the system keeps it off unless something needs it.
 
 ## Decisions
 
 - **We use Allwinner's vendor XR829 WiFi driver as a module, loaded only while WiFi is on** (2026-10-14). Loading the module powers up the chip's WiFi side, and unloading it powers it down. Bluetooth, on the same chip, is not affected. Rejected: the open `xradio` driver (it supports only the XR819).
-- **WiFi starts off, and Specular switches it on and off** (2026-10-14). WiFi has three settings: On, Off and Auto. Auto, the default, keeps WiFi on only while Specular needs it, for example for file transfer, time sync or a download. A connected XR829 wakes the CPU about 30 times a second and blocks deep sleep.
+- **WiFi starts off, and Specular switches it on and off** (2026-10-14). WiFi has three settings: On, Off and Auto. Auto, the default, keeps WiFi on only while Specular needs it: while the Wi-Fi or File transfer screen is open, or box art is downloading. Network time and the time zone lookup use WiFi when it is on, but don't turn it on. On a development system Auto keeps WiFi on, so SSH over WiFi works from start-up (2026-11-23; see Specular's docs/wireless.md). A connected XR829 wakes the CPU about 30 times a second and blocks deep sleep.
 - **The WiFi MAC address is derived from the SoC's unique chip ID** (2026-10-10; this is PocketForge's kernel change, which we took). The chip has no MAC address of its own. Without this, the driver makes up a new random address at every boot, which breaks DHCP reservations.
 - **WiFi is stopped before sleep and restarted after** (2026-10-11). The driver refuses to suspend while connected. `sleepnow` stops `wpa_supplicant` and DHCP, takes `wlan0` down, sleeps, and restarts WiFi only if it was running.
 - **The vendor driver's power saving stays on** (2026-10-10). Rejected: PocketForge's fix for its disconnects and stuck scans, which turns power saving off entirely (too costly for the battery).
