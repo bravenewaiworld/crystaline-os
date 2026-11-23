@@ -8,6 +8,13 @@ exec >/system/logs/rcS.log 2>&1
 # The family's start-up hooks: progress (codes: see the initramfs's init), start_hardware.
 . /usr/libexec/crystaline/family-hooks
 progress 0x10
+# The clock chip's time against the system's (UTC seconds), now and 5 s later in the background.
+# The kernel set the system time from the chip a moment ago, so both start out equal (within a
+# second); if the chip's reading then moves against the system's, the kernel's start-up read of
+# the chip was stale (docs/power.md).
+clock_check() { logger -s -t clock "chip $(cat /sys/class/rtc/rtc0/since_epoch 2>&1) system $(date +%s)"; }
+clock_check
+(sleep 5; clock_check) &
 mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
 # The board's names, for the scripts that differ by board (see board-env). Without them those
 # scripts fail, but the services, SSH included, still start.
