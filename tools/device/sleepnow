@@ -32,12 +32,22 @@ if sv status wpa_supplicant | grep -q '^run:'; then running=1; sv stop $WIFI >/d
 ifconfig wlan0 down 2>/dev/null
 . /run/crystaline/board.env
 [ -z "${BOARD_WIFI_MODULE:-}" ] || [ ! -e /sys/module/$BOARD_WIFI_MODULE ] || rmmod $BOARD_WIFI_MODULE
+# Bluetooth too: on the Brick its controller kept the WiFi/Bluetooth chip powered through sleep
+# (about 0.1 W, nearly half the sleep drain). Stopping the board's attach service (BOARD_BT_ATTACH)
+# powers the controller off; it is started again after waking, so paired devices reconnect a few
+# seconds later.
+BT="bluealsa bluetoothd ${BOARD_BT_ATTACH:-}" bt_running=
+if sv status bluetoothd 2>/dev/null | grep -q '^run:'; then bt_running=1; sv stop $BT >/dev/null; fi
+restart_radios() {
+	if [ "$bt_running" ]; then sv start ${BOARD_BT_ATTACH:-} bluetoothd bluealsa >/dev/null; fi
+	if [ "$running" ]; then sv start $WIFI >/dev/null; fi
+}
 echo 0 >/sys/class/rtc/rtc0/wakealarm	# clear any old alarm: a new one can't be set over it
 [ "${1:-0}" -gt 0 ] && echo "+$(($1 * 60))" >/sys/class/rtc/rtc0/wakealarm
 
 # A sleep request that hangs (a driver's sleep step waiting forever, e.g. on a stuck SD card
-# scan) would otherwise leave WiFi off and Specular waiting with nothing logged. After
-# GUARD_SECONDS a guard logs the stacks of the tasks stuck in the kernel and starts WiFi again.
+# scan) would otherwise leave the radios off and Specular waiting with nothing logged. After
+# GUARD_SECONDS a guard logs the stacks of the tasks stuck in the kernel and starts the radios again.
 # It can't end the stuck step, so this script still returns only once that step does; the
 # device may then go on to sleep, so the guard also keeps the clock chip's alarm a few seconds
 # ahead, and such a sleep ends at once. Only awake time counts: the guard is frozen with every
@@ -51,7 +61,7 @@ guard() {
 		echo "stuck task ${p#/proc/} $(cat $p/comm 2>/dev/null):"
 		cat $p/stack 2>/dev/null
 	done | logger -t sleepnow
-	if [ "$running" ]; then sv start $WIFI >/dev/null; fi
+	restart_radios
 	while :; do
 		echo 0 >/sys/class/rtc/rtc0/wakealarm
 		echo +5 >/sys/class/rtc/rtc0/wakealarm
@@ -65,4 +75,4 @@ echo mem >/sys/power/state || logger -s -t sleepnow "the sleep request failed"
 kill -KILL $GUARD
 echo 0 >/sys/class/rtc/rtc0/wakealarm	# awake now: the alarm (ours or the guard's) has done its job
 poweroff_if_empty
-if [ "$running" ]; then sv start $WIFI >/dev/null; fi
+restart_radios

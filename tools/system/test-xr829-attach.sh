@@ -63,7 +63,7 @@ expect "$c" 'controller: Bluetooth 4.1 (HCI version 7, revision 0x0e19), LMP ver
 expect "$c" 'attach: set line discipline N_HCI: ' "$out"
 expect "$c" '^fake: exit 1$' "$out"
 holds "$c" "$R/var/state/bluetooth/xr_bt.conf" "0e e5 71 99 0b 9f "
-holds "$c" "$R/sys/class/rfkill/rfkill1/state" 1
+holds "$c" "$R/sys/class/rfkill/rfkill1/state" 0	# powered off on the way out
 holds "$c" "$R/sys/class/rfkill/rfkill0/state" untouched
 holds "$c" "$R/proc/bluetooth/sleep/btwake" 1
 holds "$c" "$R/proc/bluetooth/sleep/lpm" 0

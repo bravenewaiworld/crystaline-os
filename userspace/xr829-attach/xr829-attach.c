@@ -16,7 +16,7 @@
  *      controller's version
  *   4. attach: hand the port to the kernel's HCI UART driver (line discipline N_HCI, H4 framing),
  *      which creates hci0, and stay running until SIGTERM, SIGINT or SIGHUP; then detach (back
- *      to N_TTY), which removes hci0. The port's settings are never touched after attaching: the
+ *      to N_TTY), which removes hci0, and power the Bluetooth side off. The port's settings are never touched after attaching: the
  *      controller stays at 1.5 Mbaud with flow control.
  * Steps 1-2 get up to BOOT_TRIES tries in all, each retry after a longer power-off; a failure
  * from step 3 on isn't retried: it exits. Every read has a timeout, and the whole start-up is bounded by
@@ -88,6 +88,28 @@ enum { HCI_RESET = 0x0c03, HCI_READ_VERSION = 0x1001, XR_SET_BAUD = 0xfc18, XR_S
 
 /* What is being done, for the failure message; on_timeout prints it too. */
 static const char *step = "start";
+static char rfkill_state[256];	/* the state file of the chip's rfkill switch, once found */
+
+/* Powers the chip's Bluetooth side off, so that with WiFi off too the chip's supply (BLDO1) turns
+ * off (about 0.1 W, awake or asleep). Done on every way out once powered up, so a stop during
+ * start-up or a failure doesn't leave it on. Async-signal-safe: signal handlers call it. */
+static void power_off(void)
+{
+	int fd = rfkill_state[0] ? open(rfkill_state, O_WRONLY) : -1;
+
+	if (fd >= 0) {
+		(void)!write(fd, "0", 1);
+		close(fd);
+	}
+}
+
+/* SIGTERM, SIGINT or SIGHUP before attaching (they are blocked once attached). */
+static void on_stop(int sig)
+{
+	(void)sig;
+	power_off();
+	_exit(1);
+}
 
 /* One log line. fail() logs "<step>: <message>" and evaluates to -1, for `return fail(...)`. */
 #define say(fmt, ...)	fprintf(stderr, "xr829-attach: " fmt "\n", ##__VA_ARGS__)
@@ -110,6 +132,7 @@ static void on_timeout(int sig)
 	write(2, msg, sizeof(msg) - 1);
 	write(2, step, strlen(step));
 	write(2, "\n", 1);
+	power_off();
 	_exit(1);
 }
 
@@ -418,7 +441,6 @@ static int boot(int fd)
 
 /* --- Power ----------------------------------------------------------------------------------- */
 
-static char rfkill_state[256];	/* the state file of the chip's rfkill switch */
 
 static int find_rfkill(void)
 {
@@ -541,7 +563,8 @@ static int start_hci(int fd, const uint8_t a[6])
 	return 0;
 }
 
-int main(void)
+/* Start-up, attach, then wait for a stop signal and detach; 0 after a clean detach. */
+static int attach(void)
 {
 	long start = now_ms();
 	sigset_t stops;
@@ -549,6 +572,9 @@ int main(void)
 	int fd, try, sig;
 
 	signal(SIGALRM, on_timeout);
+	signal(SIGTERM, on_stop);
+	signal(SIGINT, on_stop);
+	signal(SIGHUP, on_stop);
 	alarm(ATTACH_TIMEOUT_S);
 	if (get_address(addr) < 0 || find_rfkill() < 0)
 		return 1;
@@ -585,4 +611,13 @@ int main(void)
 	}
 	say("detached (signal %d)", sig);
 	return 0;
+}
+
+int main(void)
+{
+	int ret = attach();
+
+	power_off();
+	say("powered off");
+	return ret;
 }
